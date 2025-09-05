@@ -23,7 +23,7 @@ A private, local-only iOS app to track the 75 Hard challenge with:
    ```bash
    git clone https://github.com/<you>/SeventyFiveHard.git
    cd SeventyFiveHard
-````
+    ```
 
 2. **Open** `SeventyFiveHard.xcodeproj` in Xcode 15+.
 3. **Capabilities / Privacy**
