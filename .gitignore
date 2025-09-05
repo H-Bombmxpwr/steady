@@ -1,0 +1,50 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode noise
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+*.xcuserstate
+
+# Build output
+build/
+DerivedData/
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# SwiftPM
+.swiftpm/
+.build/
+Package.pins
+# Keep the lockfile if you use SPM dependencies:
+# !Package.resolved
+
+# CocoaPods (not used here, but safe)
+Pods/
+*.xcworkspace
+
+# Carthage
+Carthage/Build/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+# Archives
+*.xcarchive
+
+# User secrets / temp exports
+*.75hard-backup.json
+*.zip
+
+# Editor
+*.swp
+*.swo
+.idea/
+.vscode/
