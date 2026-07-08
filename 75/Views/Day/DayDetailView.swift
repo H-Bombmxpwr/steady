@@ -152,10 +152,10 @@ struct DayDetailView: View {
                 Text("1 standard drink = 12 oz beer, 5 oz wine, or 1.5 oz spirits (~98 cal, counted toward your budget).")
             }
 
-            // ===== Supplements
-            if !plan.supplements.isEmpty {
+            // ===== Supplements (only those due today)
+            if plan.supplements.contains(where: { $0.isDue(on: date) }) {
                 Section("Supplements") {
-                    ForEach(plan.supplements) { s in
+                    ForEach(plan.supplements.filter { $0.isDue(on: date) }) { s in
                         Button {
                             toggleSupplement(s.name)
                         } label: {
@@ -244,7 +244,11 @@ struct DayDetailView: View {
         .navigationTitle(Text(date, style: .date))
         .onChange(of: selectedItems) { _ in Task { await handlePicked() } }
         .sheet(isPresented: $showCamera) { CameraCaptureView { saveImage($0) } }
-        .onDisappear { try? context.save() }
+        .onDisappear {
+            try? context.save()
+            let day = self.day
+            Task { await HealthKitService.shared.syncDay(day) }
+        }
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {

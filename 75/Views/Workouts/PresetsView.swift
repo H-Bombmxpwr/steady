@@ -17,6 +17,7 @@ struct WorkoutsView: View {
     @State private var presetName = ""
     @State private var presetMinutes = 45
     @State private var presetOutdoor = false
+    @State private var presetCategory: WorkoutCategory = .strength
 
     // Calendar sync feedback
     @State private var syncMessage: String?
@@ -102,23 +103,38 @@ struct WorkoutsView: View {
                 // --- Presets
                 Section("New Preset") {
                     TextField("Name (e.g., Chest Day)", text: $presetName)
+                    Picker("Type", selection: $presetCategory) {
+                        ForEach(WorkoutCategory.allCases) { c in
+                            Label(c.label, systemImage: c.icon).tag(c)
+                        }
+                    }
                     Stepper("Default minutes: \(presetMinutes)", value: $presetMinutes, in: 5...180, step: 5)
                     Toggle("Outdoors", isOn: $presetOutdoor)
                     Button("Add Preset") {
-                        let p = WorkoutPreset(name: presetName, defaultMinutes: presetMinutes, outdoor: presetOutdoor)
+                        let p = WorkoutPreset(name: presetName, defaultMinutes: presetMinutes,
+                                              outdoor: presetOutdoor, category: presetCategory)
                         plan.presets.append(p)
                         try? context.save()
-                        presetName = ""; presetMinutes = 45; presetOutdoor = false
+                        presetName = ""; presetMinutes = 45; presetOutdoor = false; presetCategory = .strength
                     }.disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
                 Section("Presets") {
                     if plan.presets.isEmpty { Text("No presets yet.").foregroundStyle(.secondary) }
                     ForEach(plan.presets) { p in
-                        VStack(alignment: .leading) {
-                            Text(p.name).font(.headline)
-                            HStack { Text("\(p.defaultMinutes) min"); if p.outdoor { Text("outdoor") } }
+                        HStack {
+                            Image(systemName: p.category.icon)
+                                .foregroundStyle(Theme.accent)
+                                .frame(width: 26)
+                            VStack(alignment: .leading) {
+                                Text(p.name).font(.headline)
+                                HStack {
+                                    Text(p.category.label)
+                                    Text("· \(p.defaultMinutes) min")
+                                    if p.outdoor { Text("· outdoor") }
+                                }
                                 .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                     }
                     .onDelete { idx in

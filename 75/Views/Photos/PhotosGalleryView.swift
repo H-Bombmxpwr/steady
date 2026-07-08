@@ -26,6 +26,11 @@ struct PhotosGalleryView: View {
     @State private var showCompare = false
     @State private var showCamera = false
 
+    // Timelapse
+    @State private var buildingTimelapse = false
+    @State private var timelapseURL: URL?
+    @State private var timelapseError: String?
+
     var body: some View {
         NavigationStack {
             Group {
@@ -40,12 +45,36 @@ struct PhotosGalleryView: View {
             .navigationTitle("Progress Photos")
             .toolbar {
                 if appLock.photosUnlocked {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button {
+                            buildingTimelapse = true
+                            Task {
+                                do { timelapseURL = try await TimelapseService.build(plan: plan) }
+                                catch { timelapseError = error.localizedDescription }
+                                buildingTimelapse = false
+                            }
+                        } label: {
+                            if buildingTimelapse { ProgressView() }
+                            else { Image(systemName: "play.rectangle.on.rectangle") }
+                        }
+                        .disabled(buildingTimelapse)
                         Button { showCamera = true } label: {
                             Image(systemName: "camera.fill")
                         }
                     }
                 }
+            }
+            .sheet(isPresented: Binding(get: { timelapseURL != nil },
+                                        set: { if !$0 { timelapseURL = nil } })) {
+                if let url = timelapseURL {
+                    ActivityView(activityItems: [url])
+                }
+            }
+            .alert("Timelapse", isPresented: Binding(get: { timelapseError != nil },
+                                                     set: { if !$0 { timelapseError = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(timelapseError ?? "")
             }
             .sheet(isPresented: $showCamera) {
                 CameraCaptureView { saveToToday($0) }

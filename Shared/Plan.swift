@@ -17,6 +17,7 @@ final class Plan {
     @Relationship(deleteRule: .cascade) var presets: [WorkoutPreset]
     @Relationship(deleteRule: .cascade) var schedule: [WorkoutScheduleEntry]
     @Relationship(deleteRule: .cascade) var supplements: [Supplement]
+    @Relationship(deleteRule: .cascade) var measurements: [MeasurementLog]
 
     init(startDate: Date,
          startingWeight: Double,
@@ -38,6 +39,7 @@ final class Plan {
         self.presets = []
         self.schedule = []
         self.supplements = []
+        self.measurements = []
     }
 
     /// Most recent logged weight, falling back to the starting weight.
@@ -70,18 +72,69 @@ final class Plan {
     }
 }
 
+enum WorkoutCategory: String, Codable, CaseIterable, Identifiable {
+    case cardio, strength, mobility, sports, other
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .cardio: return "Cardio"
+        case .strength: return "Strength"
+        case .mobility: return "Mobility"
+        case .sports: return "Sports"
+        case .other: return "Other"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .cardio: return "figure.run"
+        case .strength: return "dumbbell.fill"
+        case .mobility: return "figure.cooldown"
+        case .sports: return "sportscourt.fill"
+        case .other: return "figure.mixed.cardio"
+        }
+    }
+}
+
 @Model
 final class WorkoutPreset {
     var name: String
     var defaultMinutes: Int
     var outdoor: Bool
+    var categoryRaw: String = WorkoutCategory.other.rawValue
     var notes: String?
 
-    init(name: String, defaultMinutes: Int = 45, outdoor: Bool = false, notes: String? = nil) {
+    init(name: String, defaultMinutes: Int = 45, outdoor: Bool = false,
+         category: WorkoutCategory = .other, notes: String? = nil) {
         self.name = name
         self.defaultMinutes = defaultMinutes
         self.outdoor = outdoor
+        self.categoryRaw = category.rawValue
         self.notes = notes
+    }
+
+    var category: WorkoutCategory {
+        get { WorkoutCategory(rawValue: categoryRaw) ?? .other }
+        set { categoryRaw = newValue.rawValue }
+    }
+}
+
+/// A dated set of body measurements (all inches, all optional).
+@Model
+final class MeasurementLog {
+    var date: Date
+    var waist: Double?
+    var hips: Double?
+    var chest: Double?
+    var arm: Double?
+    var thigh: Double?
+
+    init(date: Date) {
+        self.date = Calendar.current.startOfDay(for: date)
+    }
+
+    var isEmpty: Bool {
+        waist == nil && hips == nil && chest == nil && arm == nil && thigh == nil
     }
 }
 
@@ -118,22 +171,48 @@ final class WorkoutScheduleEntry {
 @Model
 final class Supplement {
     var name: String
-    var hour: Int                     // daily reminder time
+    var hour: Int                     // reminder time
     var minute: Int
     var remind: Bool
+    var frequencyRaw: String = Frequency.daily.rawValue   // "daily" | "weekly"
+    var weekday: Int = 2              // 1–7, used when weekly
     var createdAt: Date
 
-    init(name: String, hour: Int = 8, minute: Int = 0, remind: Bool = true) {
+    init(name: String, hour: Int = 8, minute: Int = 0, remind: Bool = true,
+         frequency: Frequency = .daily, weekday: Int = 2) {
         self.name = name
         self.hour = hour
         self.minute = minute
         self.remind = remind
+        self.frequencyRaw = frequency.rawValue
+        self.weekday = weekday
         self.createdAt = Date()
+    }
+
+    enum Frequency: String, Codable, CaseIterable, Identifiable {
+        case daily, weekly
+        var id: String { rawValue }
+        var label: String { rawValue.capitalized }
+    }
+
+    var frequency: Frequency {
+        get { Frequency(rawValue: frequencyRaw) ?? .daily }
+        set { frequencyRaw = newValue.rawValue }
+    }
+
+    /// Is this supplement due on the given date?
+    func isDue(on date: Date) -> Bool {
+        frequency == .daily || Calendar.current.component(.weekday, from: date) == weekday
     }
 
     var timeString: String {
         let comps = DateComponents(hour: hour, minute: minute)
         let date = Calendar.current.date(from: comps) ?? Date()
-        return date.formatted(date: .omitted, time: .shortened)
+        let time = date.formatted(date: .omitted, time: .shortened)
+        if frequency == .weekly {
+            let day = Calendar.current.shortWeekdaySymbols[max(0, min(6, weekday - 1))]
+            return "\(day) \(time)"
+        }
+        return time
     }
 }

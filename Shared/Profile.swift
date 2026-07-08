@@ -2,9 +2,17 @@ import Foundation
 import SwiftData
 
 enum BiologicalSex: String, Codable, CaseIterable, Identifiable {
-    case male, female
+    case male, female, unspecified
+
     var id: String { rawValue }
-    var label: String { rawValue.capitalized }
+
+    var label: String {
+        switch self {
+        case .male: return "Male"
+        case .female: return "Female"
+        case .unspecified: return "Prefer not to say"
+        }
+    }
 }
 
 enum ActivityLevel: String, Codable, CaseIterable, Identifiable {
@@ -61,7 +69,7 @@ final class UserProfile {
     }
 
     var sex: BiologicalSex {
-        get { BiologicalSex(rawValue: sexRaw) ?? .male }
+        get { BiologicalSex(rawValue: sexRaw) ?? .unspecified }
         set { sexRaw = newValue.rawValue }
     }
 

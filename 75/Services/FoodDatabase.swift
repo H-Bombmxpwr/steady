@@ -42,8 +42,10 @@ final class FoodDatabase {
         return items
     }
 
-    /// All query tokens must appear in the name; results ranked by how early
-    /// the first token appears, then by name length (shorter = more generic).
+    /// All query tokens must appear in the name. Ranking favors whole foods:
+    /// exact word matches beat substring hits ("Apples, raw" over "Applesauce"),
+    /// branded/restaurant entries (ALL-CAPS names like "APPLEBEE'S") sink,
+    /// earlier matches and shorter names rise.
     func search(_ query: String, limit: Int = 60) -> [FoodItem] {
         let tokens = query.lowercased()
             .split(separator: " ")
@@ -55,10 +57,36 @@ final class FoodDatabase {
         for item in foods {
             let name = item.n.lowercased()
             guard tokens.allSatisfy({ name.contains($0) }) else { continue }
+
+            var score = 0
+
+            // Branded/restaurant entries: 3+ consecutive capitals in original name
+            if Self.looksBranded(item.n) { score += 100_000 }
+
+            // Exact word match (incl. simple plural) is the strongest signal
+            let words = name.split(whereSeparator: { !$0.isLetter }).map(String.init)
+            for token in tokens {
+                if words.contains(token) || words.contains(token + "s") || words.contains(token + "es") {
+                    score -= 20_000
+                } else if !words.contains(where: { $0.hasPrefix(token) }) {
+                    score += 5_000   // only a mid-word substring hit
+                }
+            }
+
             let position = name.range(of: tokens[0])?.lowerBound.utf16Offset(in: name) ?? 999
-            scored.append((item, position * 1000 + name.count))
+            score += position * 100 + name.count
+            scored.append((item, score))
         }
         return scored.sorted { $0.1 < $1.1 }.prefix(limit).map { $0.0 }
+    }
+
+    private static func looksBranded(_ name: String) -> Bool {
+        var run = 0
+        for ch in name {
+            if ch.isUppercase { run += 1; if run >= 3 { return true } }
+            else if ch.isLetter { run = 0 }
+        }
+        return false
     }
 }
 

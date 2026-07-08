@@ -14,7 +14,8 @@ final class PersistenceController {
             PhotoEntry.self,
             WorkoutPreset.self,
             WorkoutScheduleEntry.self,
-            Supplement.self
+            Supplement.self,
+            MeasurementLog.self
         ])
         let config = ModelConfiguration(schema: schema, url: storeURL())
         let container = try! ModelContainer(for: schema, configurations: [config])

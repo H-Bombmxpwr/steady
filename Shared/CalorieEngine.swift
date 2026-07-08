@@ -40,7 +40,11 @@ enum CalorieEngine {
         let kg = weightLbs * 0.45359237
         let cm = heightInches * 2.54
         let base = 10.0 * kg + 6.25 * cm - 5.0 * Double(ageYears)
-        return sex == .male ? base + 5 : base - 161
+        switch sex {
+        case .male: return base + 5
+        case .female: return base - 161
+        case .unspecified: return base - 78   // midpoint of the male/female constants
+        }
     }
 
     static func tdee(sex: BiologicalSex, weightLbs: Double, heightInches: Double,
@@ -53,7 +57,12 @@ enum CalorieEngine {
     /// are widely considered unsafe without medical supervision.
     static func dailyBudget(tdee: Double, paceLbsPerWeek: Double, sex: BiologicalSex) -> Int {
         let deficit = paceLbsPerWeek * 3500.0 / 7.0
-        let floor = sex == .male ? 1500.0 : 1200.0
+        let floor: Double
+        switch sex {
+        case .male: floor = 1500
+        case .female: floor = 1200
+        case .unspecified: floor = 1350
+        }
         return Int(max(floor, tdee - deficit).rounded())
     }
 

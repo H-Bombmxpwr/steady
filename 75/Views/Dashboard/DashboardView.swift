@@ -3,21 +3,43 @@ import SwiftData
 import Charts
 
 struct MainTabView: View {
+    @Environment(\.modelContext) private var context
     var plan: Plan
     var profile: UserProfile
+
+    // Widget deep links (seventyfive://log-food, seventyfive://log-workout)
+    @State private var showFoodLog = false
+    @State private var showWorkoutLog = false
 
     var body: some View {
         TabView {
             DashboardView(plan: plan, profile: profile)
                 .tabItem { Label("Dashboard", systemImage: "house.fill") }
+            StatsView(plan: plan, profile: profile)
+                .tabItem { Label("Stats", systemImage: "chart.xyaxis.line") }
             CalendarScreen(plan: plan, profile: profile)
                 .tabItem { Label("Calendar", systemImage: "calendar") }
             PhotosGalleryView(plan: plan)
                 .tabItem { Label("Photos", systemImage: "photo.on.rectangle") }
             WorkoutsView(plan: plan)
                 .tabItem { Label("Workouts", systemImage: "figure.strengthtraining.traditional") }
-            SettingsView(plan: plan, profile: profile)
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+        }
+        .onOpenURL { url in
+            switch url.host {
+            case "log-food": showFoodLog = true
+            case "log-workout": showWorkoutLog = true
+            default: break
+            }
+        }
+        .sheet(isPresented: $showFoodLog) {
+            NavigationStack {
+                FoodSearchView(day: ensureDay(plan: plan, date: Date()))
+            }
+        }
+        .sheet(isPresented: $showWorkoutLog) {
+            NavigationStack {
+                WorkoutFormView(day: ensureDay(plan: plan, date: Date()), plan: plan)
+            }
         }
     }
 }
@@ -29,6 +51,7 @@ struct DashboardView: View {
     var plan: Plan
     var profile: UserProfile
     @State private var today = Calendar.current.startOfDay(for: Date())
+    @State private var showSettings = false
 
     private var dayNumber: Int { max(0, plan.startDate.days(to: today)) + 1 }
     private var todayLog: DayLog { ensureDay(plan: plan, date: today) }
@@ -64,6 +87,16 @@ struct DashboardView: View {
                 DayDetailView(plan: plan, profile: profile, date: d)
             }
             .navigationTitle("Day \(dayNumber)")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView(plan: plan, profile: profile)
+            }
         }
     }
 }

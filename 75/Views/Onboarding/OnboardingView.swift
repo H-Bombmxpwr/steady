@@ -18,8 +18,8 @@ struct OnboardingView: View {
     @State private var goalWeightText = ""
     @State private var pace = 1.0
 
-    // Workout schedule
-    @State private var selectedWeekdays: Set<Int> = [2, 4, 6]   // Mon/Wed/Fri
+    // Workout schedule — starts empty; the user picks their own days
+    @State private var selectedWeekdays: Set<Int> = []
     @State private var workoutName = "Workout"
     @State private var workoutMinutes = 45
     @State private var workoutTime = Calendar.current.date(from: DateComponents(hour: 7, minute: 0))!
@@ -190,7 +190,9 @@ struct OnboardingView: View {
             } header: {
                 Text("Which days will you train?")
             } footer: {
-                Text("Workouts only count against your daily goals on days you pick. You can fine-tune per-day workouts later in the Workouts tab.")
+                Text(selectedWeekdays.isEmpty
+                     ? "Example: many people start with Monday, Wednesday, and Friday. Workouts only count against your goals on days you pick — you can also skip this and set it up later in the Workouts tab."
+                     : "Workouts only count against your daily goals on days you pick. Fine-tune per-day workouts later in the Workouts tab.")
             }
             Section("Default Workout") {
                 TextField("Name (e.g., Gym, Run)", text: $workoutName)

@@ -36,12 +36,29 @@ struct SeventyFiveHardApp: App {
                         showPrivacyShield = true
                         appLock.lockPhotos()   // photos require Face ID again on return
                         WidgetCenter.shared.reloadAllTimelines()
+                        refreshStreakGuard()
                     @unknown default:
                         showPrivacyShield = true
                         appLock.lockPhotos()
                     }
                 }
         }
+    }
+
+    /// Re-evaluates the streak-at-risk notification whenever the app backgrounds.
+    private func refreshStreakGuard() {
+        let context = ModelContext(PersistenceController.shared.container)
+        guard let plan = try? context.fetch(FetchDescriptor<Plan>()).first,
+              let profile = try? context.fetch(FetchDescriptor<UserProfile>()).first else { return }
+        let targets = CalorieEngine.targets(profile: profile, plan: plan)
+        let today = Calendar.current.startOfDay(for: Date())
+        let day = plan.days.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
+        let met = day.map {
+            CalorieEngine.dayMet(day: $0, targets: targets,
+                                 workoutScheduled: plan.isWorkoutScheduled(on: today))
+        } ?? false
+        let streak = CalorieEngine.streakStats(plan: plan, targets: targets).current
+        NotificationManager.updateStreakGuard(todayMet: met, streak: streak)
     }
 }
 

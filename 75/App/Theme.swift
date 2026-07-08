@@ -1,16 +1,54 @@
 import SwiftUI
 
-/// Dark-first visual identity: deep slate surfaces, an emerald→cyan accent
-/// gradient, rounded type, and soft cards instead of stock grouped lists.
+// MARK: - User-selectable palette + appearance
+
+enum ThemePalette: String, CaseIterable, Identifiable {
+    case emerald, ocean, sunset, violet, rose
+
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+
+    var accents: (Color, Color) {
+        switch self {
+        case .emerald: return (Color(hex: 0x34D399), Color(hex: 0x22D3EE))
+        case .ocean:   return (Color(hex: 0x38BDF8), Color(hex: 0x6366F1))
+        case .sunset:  return (Color(hex: 0xFB923C), Color(hex: 0xF43F5E))
+        case .violet:  return (Color(hex: 0xA78BFA), Color(hex: 0xEC4899))
+        case .rose:    return (Color(hex: 0xFB7185), Color(hex: 0xFBBF24))
+        }
+    }
+}
+
+enum ThemeMode: String, CaseIterable, Identifiable {
+    case system, dark, light
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .dark: return .dark
+        case .light: return .light
+        }
+    }
+}
+
+/// Visual identity. Accent palette and light/dark mode are user-configurable
+/// (Settings → Appearance); surfaces adapt to the active color scheme.
 enum Theme {
-    static let background = Color(hex: 0x0E1116)
-    static let surface    = Color(hex: 0x171C24)
-    static let surface2   = Color(hex: 0x1F2630)
-    static let accent     = Color(hex: 0x34D399)   // emerald
-    static let accent2    = Color(hex: 0x22D3EE)   // cyan
-    static let warn       = Color(hex: 0xFBBF24)   // amber
-    static let danger     = Color(hex: 0xFB7185)   // rose
-    static let textDim    = Color.white.opacity(0.55)
+    static let paletteKey = "theme.palette"
+    static let modeKey = "theme.mode"
+
+    static var palette: ThemePalette {
+        ThemePalette(rawValue: UserDefaults.standard.string(forKey: paletteKey) ?? "") ?? .emerald
+    }
+
+    static var mode: ThemeMode {
+        ThemeMode(rawValue: UserDefaults.standard.string(forKey: modeKey) ?? "") ?? .dark
+    }
+
+    static var accent: Color { palette.accents.0 }
+    static var accent2: Color { palette.accents.1 }
 
     static var gradient: LinearGradient {
         LinearGradient(colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -20,6 +58,22 @@ enum Theme {
         LinearGradient(colors: [Color(hex: 0xF97316), Color(hex: 0xFBBF24)],
                        startPoint: .bottom, endPoint: .top)
     }
+
+    // Adaptive surfaces: deep slate in dark mode, soft neutrals in light.
+    static let background = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark ? UIColor(hex: 0x0E1116) : UIColor(hex: 0xF2F4F7)
+    })
+    static let surface = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark ? UIColor(hex: 0x171C24) : UIColor.white
+    })
+    static let surface2 = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark ? UIColor(hex: 0x1F2630) : UIColor(hex: 0xE4E8EE)
+    })
+
+    static let warn = Color(hex: 0xF59E0B)
+    static let danger = Color(hex: 0xE11D48)
+    static let textDim = Color.primary.opacity(0.55)
+    static let hairline = Color.primary.opacity(0.08)
 }
 
 extension Color {
@@ -29,6 +83,15 @@ extension Color {
                   green: Double((hex >> 8) & 0xFF) / 255,
                   blue: Double(hex & 0xFF) / 255,
                   opacity: 1)
+    }
+}
+
+extension UIColor {
+    convenience init(hex: UInt32) {
+        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255,
+                  green: CGFloat((hex >> 8) & 0xFF) / 255,
+                  blue: CGFloat(hex & 0xFF) / 255,
+                  alpha: 1)
     }
 }
 
@@ -55,7 +118,7 @@ struct Card<Content: View>: View {
                 .fill(Theme.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(.white.opacity(0.06))
+                        .strokeBorder(Theme.hairline)
                 )
         )
     }
@@ -84,7 +147,7 @@ struct StatRing: View {
                     .rotationEffect(.degrees(-90))
                 Text(detail)
                     .font(.system(.caption, design: .rounded).bold())
-                    .foregroundStyle(over ? Theme.danger : .white)
+                    .foregroundStyle(over ? Theme.danger : .primary)
                     .minimumScaleFactor(0.5)
                     .padding(.horizontal, 10)
             }
@@ -120,7 +183,7 @@ struct GradientBar: View {
 // MARK: - Form styling helper
 
 extension View {
-    /// Shared dark styling for Form-based screens.
+    /// Shared styling for Form-based screens.
     func themedForm() -> some View {
         self
             .scrollContentBackground(.hidden)
@@ -128,9 +191,20 @@ extension View {
     }
 
     func themedRoot() -> some View {
-        self
-            .tint(Theme.accent)
-            .preferredColorScheme(.dark)
+        modifier(ThemedRoot())
+    }
+}
+
+/// Applies tint, appearance mode, and rounded type; re-renders when the
+/// user changes theme settings.
+private struct ThemedRoot: ViewModifier {
+    @AppStorage(Theme.paletteKey) private var palette = ThemePalette.emerald.rawValue
+    @AppStorage(Theme.modeKey) private var mode = ThemeMode.dark.rawValue
+
+    func body(content: Content) -> some View {
+        content
+            .tint((ThemePalette(rawValue: palette) ?? .emerald).accents.0)
+            .preferredColorScheme((ThemeMode(rawValue: mode) ?? .dark).colorScheme)
             .fontDesign(.rounded)
     }
 }

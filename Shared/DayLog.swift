@@ -8,8 +8,8 @@ final class DayLog {
     var waterOunces: Int
     var caloriesEaten: Int            // manual quick-add, on top of logged foods
     var proteinGrams: Int             // manual quick-add, on top of logged foods
-    var standardDrinks: Double        // 1 std drink = 14 g alcohol (12 oz beer / 5 oz wine / 1.5 oz spirits)
-    var takenSupplements: [String]
+    var standardDrinks: Double = 0    // 1 std drink = 14 g alcohol (12 oz beer / 5 oz wine / 1.5 oz spirits)
+    var takenSupplements: [String] = []
     var notes: String?
 
     @Relationship(deleteRule: .cascade) var workouts: [WorkoutLog]
@@ -48,13 +48,20 @@ final class WorkoutLog {
     var name: String
     var minutes: Int
     var outdoor: Bool
+    var categoryRaw: String = WorkoutCategory.other.rawValue
     var createdAt: Date
 
-    init(name: String, minutes: Int, outdoor: Bool = false) {
+    init(name: String, minutes: Int, outdoor: Bool = false, category: WorkoutCategory = .other) {
         self.name = name
         self.minutes = minutes
         self.outdoor = outdoor
+        self.categoryRaw = category.rawValue
         self.createdAt = Date()
+    }
+
+    var category: WorkoutCategory {
+        get { WorkoutCategory(rawValue: categoryRaw) ?? .other }
+        set { categoryRaw = newValue.rawValue }
     }
 }
 

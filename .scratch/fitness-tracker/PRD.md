@@ -1,6 +1,8 @@
 # PRD: "75" — General Fitness & Weight-Loss Tracker
 
-Status: agreed scope (2026-07-07). App keeps the name **75** for now.
+Status: agreed scope (2026-07-07); phases 1–7 + most stretch items shipped
+(2026-07-07, see `issues/`). Remaining: exercise DB + templates (issue 09).
+App keeps the name **75** for now.
 
 ## Vision
 

@@ -16,6 +16,12 @@ struct FoodSearchView: View {
     @State private var scanError: String?
     @State private var looking = false
 
+    // Photo-of-food
+    @State private var showFoodCamera = false
+    @State private var recognizing = false
+    @State private var suggestions: [FoodPhotoRecognizer.Suggestion] = []
+    @State private var showSuggestions = false
+
     var body: some View {
         List {
             if query.isEmpty {
@@ -23,11 +29,17 @@ struct FoodSearchView: View {
                     Button { showScanner = true } label: {
                         Label("Scan Barcode", systemImage: "barcode.viewfinder")
                     }
+                    Button { showFoodCamera = true } label: {
+                        HStack {
+                            Label("Photo of Food", systemImage: "camera.viewfinder")
+                            if recognizing { Spacer(); ProgressView() }
+                        }
+                    }
                     Button { showCustom = true } label: {
                         Label("Custom Food", systemImage: "square.and.pencil")
                     }
                 }
-                Section(footer: Text("Search 7,800 USDA foods — works fully offline.")) {
+                Section(footer: Text("Search 7,800 USDA foods — works fully offline. Photo recognition runs on-device; nothing is uploaded.")) {
                     EmptyView()
                 }
             }
@@ -93,6 +105,52 @@ struct FoodSearchView: View {
                 day.foods.append(log)
                 dismiss()
             }
+        }
+        .sheet(isPresented: $showFoodCamera) {
+            CameraCaptureView { image in
+                showFoodCamera = false
+                Task {
+                    recognizing = true
+                    suggestions = await FoodPhotoRecognizer.recognize(image: image)
+                    recognizing = false
+                    if suggestions.isEmpty {
+                        scanError = "Couldn't recognize a food in that photo. Try search or Custom Food."
+                    } else {
+                        showSuggestions = true
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showSuggestions) {
+            NavigationStack {
+                List {
+                    ForEach(suggestions) { s in
+                        Section("\(s.label) — \(Int(s.confidence * 100))% match") {
+                            ForEach(s.matches) { item in
+                                Button {
+                                    showSuggestions = false
+                                    portionItem = item
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.name).lineLimit(2).foregroundStyle(.primary)
+                                        Text(subtitle(for: item))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle("Is it one of these?")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { showSuggestions = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium, .large])
         }
         .alert("Product not found", isPresented: Binding(get: { scanError != nil },
                                                          set: { if !$0 { scanError = nil } })) {
@@ -220,6 +278,7 @@ private struct CustomFoodSheet: View {
     @State private var name = ""
     @State private var calories = 0
     @State private var protein = 0
+    @State private var proteinUnknown = false
 
     var body: some View {
         NavigationStack {
@@ -233,18 +292,21 @@ private struct CustomFoodSheet: View {
                         .multilineTextAlignment(.trailing)
                         .frame(width: 90)
                 }
-                HStack {
-                    Text("Protein (g)")
-                    Spacer()
-                    TextField("0", value: $protein, format: .number)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 90)
+                Toggle("Protein unknown", isOn: $proteinUnknown)
+                if !proteinUnknown {
+                    HStack {
+                        Text("Protein (g)")
+                        Spacer()
+                        TextField("0", value: $protein, format: .number)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 90)
+                    }
                 }
                 Button("Add to Today") {
                     onAdd(FoodLog(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                   calories: calories,
-                                  proteinGrams: protein,
+                                  proteinGrams: proteinUnknown ? 0 : protein,
                                   source: "custom"))
                     dismiss()
                 }
