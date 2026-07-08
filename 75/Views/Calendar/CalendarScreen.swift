@@ -7,6 +7,11 @@ struct CalendarScreen: View {
 
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
 
+    private func fraction(for day: DayLog) -> Double {
+        CalorieEngine.completionFraction(day: day, targets: targets,
+                                         workoutScheduled: plan.isWorkoutScheduled(on: day.date))
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -21,11 +26,11 @@ struct CalendarScreen: View {
                     .padding(.horizontal)
 
                     let day = ensureDay(plan: plan, date: selectedDate)
-                    let fraction = CalorieEngine.completionFraction(day: day, targets: targets)
+                    let f = fraction(for: day)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("\(formattedDayNumber(for: selectedDate)) — \(Int(fraction * 100))% of goals")
+                        Text("\(formattedDayNumber(for: selectedDate)) — \(Int(f * 100))% of goals")
                             .font(.headline)
-                        ProgressView(value: fraction)
+                        GradientBar(value: f)
                     }
                     .padding(.horizontal)
 
@@ -38,7 +43,7 @@ struct CalendarScreen: View {
                     // Logged days, most recent first
                     LazyVStack(spacing: 10) {
                         ForEach(plan.days.sorted(by: { $0.date > $1.date })) { d in
-                            let f = CalorieEngine.completionFraction(day: d, targets: targets)
+                            let f = fraction(for: d)
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(d.date, style: .date)
@@ -53,7 +58,7 @@ struct CalendarScreen: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Image(systemName: f >= 1.0 ? "checkmark.seal.fill" : "seal")
-                                    .foregroundStyle(f >= 1.0 ? .green : .secondary)
+                                    .foregroundStyle(f >= 1.0 ? Theme.accent : .secondary)
                             }
                             .padding(.horizontal)
                             .contentShape(Rectangle())
@@ -63,6 +68,7 @@ struct CalendarScreen: View {
                     .padding(.vertical, 6)
                 }
             }
+            .background(Theme.background.ignoresSafeArea())
             .navigationDestination(for: Date.self) { DayDetailView(plan: plan, profile: profile, date: $0) }
             .navigationTitle("Calendar")
         }

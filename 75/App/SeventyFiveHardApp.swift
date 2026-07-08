@@ -1,7 +1,7 @@
 
 import SwiftUI
 import SwiftData
-import Combine
+import UserNotifications
 
 @main
 struct SeventyFiveHardApp: App {
@@ -10,17 +10,19 @@ struct SeventyFiveHardApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showPrivacyShield = true
 
+    private static let notificationDelegate = NotificationDelegate()
+
+    init() {
+        UNUserNotificationCenter.current().delegate = Self.notificationDelegate
+        NotificationManager.registerCategories()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootRouterView()
                 .modelContainer(sharedModelContainer)
                 .environmentObject(appLock)
-                // FaceID gate
-                .overlay(alignment: .center) {
-                    if !appLock.isUnlocked {
-                        LockGateView().environmentObject(appLock).ignoresSafeArea()
-                    }
-                }
+                .themedRoot()
                 // Privacy blur when backgrounded/app switcher
                 .overlay(alignment: .center) {
                     if showPrivacyShield { PrivacyShieldView() }
@@ -29,21 +31,35 @@ struct SeventyFiveHardApp: App {
                     switch phase {
                     case .active:
                         showPrivacyShield = false
-                        appLock.authenticateIfNeeded()
                     case .inactive, .background:
                         showPrivacyShield = true
-                        appLock.lock()
+                        appLock.lockPhotos()   // photos require Face ID again on return
                     @unknown default:
                         showPrivacyShield = true
-                        appLock.lock()
+                        appLock.lockPhotos()
                     }
                 }
-                .task {
-                    // First launch: start shield, then immediately auth
-                    showPrivacyShield = true
-                    appLock.authenticateIfNeeded()
-                }
         }
+    }
+}
+
+/// Handles notification actions (e.g. "Log a bottle" on hydration nudges)
+/// and keeps banners visible while the app is foregrounded.
+final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        guard response.actionIdentifier == NotificationManager.logWaterAction else { return }
+        let context = ModelContext(PersistenceController.shared.container)
+        if let plan = try? context.fetch(FetchDescriptor<Plan>()).first {
+            let day = ensureDay(plan: plan, date: Date())
+            day.waterOunces += max(1, plan.waterStepOunces)
+            try? context.save()
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
     }
 }
 
@@ -55,6 +71,10 @@ struct RootRouterView: View {
     var body: some View {
         if let plan = plans.first, let profile = profiles.first {
             MainTabView(plan: plan, profile: profile)
+                .task {
+                    _ = await NotificationManager.requestAuthorization()
+                    NotificationManager.rescheduleAll(plan: plan)
+                }
         } else {
             OnboardingView()
         }

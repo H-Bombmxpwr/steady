@@ -4,6 +4,7 @@ import PhotosUI
 
 struct DayDetailView: View {
     @Environment(\.modelContext) private var context
+    @EnvironmentObject private var appLock: AppLockManager
     var plan: Plan
     var profile: UserProfile
     var date: Date
@@ -24,10 +25,11 @@ struct DayDetailView: View {
     }
 
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
+    private var workoutScheduled: Bool { plan.isWorkoutScheduled(on: date) }
 
     private func statusDot(_ ok: Bool) -> some View {
         Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
-            .foregroundStyle(ok ? Color.green : Color.red)
+            .foregroundStyle(ok ? Theme.accent : Theme.danger)
     }
 
     var body: some View {
@@ -35,16 +37,16 @@ struct DayDetailView: View {
             // ===== Live status vs today's targets
             Section("Status") {
                 HStack {
-                    statusDot(day.caloriesEaten > 0 && day.caloriesEaten <= targets.calories)
+                    statusDot(day.totalCalories > 0 && day.totalCalories <= targets.calories)
                     Text("Calories within budget")
                     Spacer()
-                    Text("\(day.caloriesEaten) / \(targets.calories)").foregroundStyle(.secondary)
+                    Text("\(day.totalCalories) / \(targets.calories)").foregroundStyle(.secondary)
                 }
                 HStack {
-                    statusDot(day.proteinGrams >= targets.proteinGrams)
+                    statusDot(day.totalProtein >= targets.proteinGrams)
                     Text("Protein ≥ \(targets.proteinGrams) g")
                     Spacer()
-                    Text("\(day.proteinGrams) g").foregroundStyle(.secondary)
+                    Text("\(day.totalProtein) g").foregroundStyle(.secondary)
                 }
                 HStack {
                     statusDot(day.waterOunces >= targets.waterOunces)
@@ -52,11 +54,13 @@ struct DayDetailView: View {
                     Spacer()
                     Text("\(day.waterOunces) oz").foregroundStyle(.secondary)
                 }
-                HStack {
-                    statusDot(!day.workouts.isEmpty)
-                    Text("Workout logged")
-                    Spacer()
-                    Text("\(day.workoutMinutes) min").foregroundStyle(.secondary)
+                if workoutScheduled {
+                    HStack {
+                        statusDot(!day.workouts.isEmpty)
+                        Text("Scheduled workout")
+                        Spacer()
+                        Text("\(day.workoutMinutes) min").foregroundStyle(.secondary)
+                    }
                 }
                 HStack {
                     statusDot(!day.photos.isEmpty)
@@ -66,27 +70,43 @@ struct DayDetailView: View {
                 }
             }
 
-            // ===== Nutrition (manual quick-log until the food database lands)
-            Section("Nutrition") {
-                HStack {
-                    Text("Calories eaten")
-                    Spacer()
-                    TextField("0", value: $day.caloriesEaten, format: .number)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 90)
-                        .focused($fieldFocused)
-                    Text("cal").foregroundStyle(.secondary)
+            // ===== Food
+            Section("Food") {
+                ForEach(day.foods) { f in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(f.name).lineLimit(1)
+                            Text(foodSubtitle(f))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("\(f.calories) cal").foregroundStyle(.secondary)
+                    }
+                }
+                .onDelete { idx in
+                    idx.map { day.foods[$0] }.forEach { context.delete($0) }
+                }
+                NavigationLink {
+                    FoodSearchView(day: day)
+                } label: {
+                    Label("Add Food", systemImage: "magnifyingglass")
                 }
                 HStack {
-                    Text("Protein")
+                    Text("Quick add")
                     Spacer()
-                    TextField("0", value: $day.proteinGrams, format: .number)
+                    TextField("cal", value: $day.caloriesEaten, format: .number)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
-                        .frame(width: 90)
+                        .frame(width: 70)
                         .focused($fieldFocused)
-                    Text("g").foregroundStyle(.secondary)
+                    Text("cal +").foregroundStyle(.secondary)
+                    TextField("g", value: $day.proteinGrams, format: .number)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 50)
+                        .focused($fieldFocused)
+                    Text("g protein").foregroundStyle(.secondary)
                 }
             }
 
@@ -118,20 +138,56 @@ struct DayDetailView: View {
             }
 
             // ===== Alcohol
-            Section("Alcohol") {
-                Stepper(value: $day.alcoholDrinks, in: 0...50) {
+            Section {
+                Stepper(value: $day.standardDrinks, in: 0...30, step: 0.5) {
                     HStack {
-                        Text("Drinks")
+                        Text("Standard drinks")
                         Spacer()
-                        Text("\(day.alcoholDrinks)").foregroundStyle(.secondary)
+                        Text(day.standardDrinks.formatted()).foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Alcohol")
+            } footer: {
+                Text("1 standard drink = 12 oz beer, 5 oz wine, or 1.5 oz spirits (~98 cal, counted toward your budget).")
+            }
+
+            // ===== Supplements
+            if !plan.supplements.isEmpty {
+                Section("Supplements") {
+                    ForEach(plan.supplements) { s in
+                        Button {
+                            toggleSupplement(s.name)
+                        } label: {
+                            HStack {
+                                Image(systemName: day.takenSupplements.contains(s.name)
+                                      ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(day.takenSupplements.contains(s.name)
+                                                     ? Theme.accent : .secondary)
+                                Text(s.name).foregroundStyle(.primary)
+                                Spacer()
+                                Text(s.timeString).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
             }
 
             // ===== Workouts
             Section("Workouts") {
-                if day.workouts.isEmpty {
-                    Text("No workouts logged.").foregroundStyle(.secondary)
+                if workoutScheduled && day.workouts.isEmpty {
+                    let planned = plan.scheduledWorkouts(on: date)
+                    ForEach(planned) { entry in
+                        HStack {
+                            Image(systemName: "calendar.badge.clock").foregroundStyle(Theme.warn)
+                            Text("Planned: \(entry.name), \(entry.minutes) min at \(entry.timeString)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if day.workouts.isEmpty && !workoutScheduled {
+                    Text("Rest day — nothing scheduled.").foregroundStyle(.secondary)
                 }
                 ForEach(day.workouts) { w in
                     HStack {
@@ -148,28 +204,32 @@ struct DayDetailView: View {
                 .onDelete { idx in
                     idx.map { day.workouts[$0] }.forEach { context.delete($0) }
                 }
-                NavigationLink("Add Workout") {
+                NavigationLink("Log Workout") {
                     WorkoutFormView(day: day, plan: plan)
                 }
             }
 
-            // ===== Photos
+            // ===== Photos (Face ID gated)
             Section("Progress Photos") {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(day.photos) { p in
-                            let url = photosDir().appendingPathComponent(p.filename)
-                            if let img = UIImage(contentsOfFile: url.path) {
-                                Image(uiImage: img)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 80, height: 120)
-                                    .clipped()
-                                    .cornerRadius(6)
+                if !day.photos.isEmpty && !appLock.photosUnlocked {
+                    PhotoLockGate(compact: true)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(day.photos) { p in
+                                let url = photosDir().appendingPathComponent(p.filename)
+                                if let img = UIImage(contentsOfFile: url.path) {
+                                    Image(uiImage: img)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 80, height: 120)
+                                        .clipped()
+                                        .cornerRadius(6)
+                                }
                             }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
                 HStack {
                     Button("Take Photo") { showCamera = true }
@@ -180,6 +240,7 @@ struct DayDetailView: View {
                 }
             }
         }
+        .themedForm()
         .navigationTitle(Text(date, style: .date))
         .onChange(of: selectedItems) { _ in Task { await handlePicked() } }
         .sheet(isPresented: $showCamera) { CameraCaptureView { saveImage($0) } }
@@ -190,6 +251,22 @@ struct DayDetailView: View {
                 Spacer()
                 Button("Done") { fieldFocused = false }
             }
+        }
+    }
+
+    private func foodSubtitle(_ f: FoodLog) -> String {
+        var parts: [String] = []
+        if let g = f.grams { parts.append("\(Int(g)) g") }
+        if f.proteinGrams > 0 { parts.append("\(f.proteinGrams) g protein") }
+        if f.source == "barcode" { parts.append("scanned") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func toggleSupplement(_ name: String) {
+        if let i = day.takenSupplements.firstIndex(of: name) {
+            day.takenSupplements.remove(at: i)
+        } else {
+            day.takenSupplements.append(name)
         }
     }
 

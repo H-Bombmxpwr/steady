@@ -6,5 +6,7 @@
 	<array>
 		<dict/>
 	</array>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>To add your planned workouts to your calendar as repeating events.</string>
 </dict>
 </plist>

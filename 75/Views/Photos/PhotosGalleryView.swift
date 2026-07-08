@@ -2,6 +2,8 @@ import SwiftUI
 import Photos
 
 struct PhotosGalleryView: View {
+    @Environment(\.modelContext) private var context
+    @EnvironmentObject private var appLock: AppLockManager
     var plan: Plan
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
@@ -22,33 +24,32 @@ struct PhotosGalleryView: View {
     @State private var viewerIndex = 0
 
     @State private var showCompare = false
+    @State private var showCamera = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                header
-
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(items) { item in
-                            ThumbCell(item: item,
-                                      isSelected: compareMode && selectedForCompare.contains(item))
-                            .onTapGesture {
-                                if compareMode {
-                                    toggleSelect(item)
-                                } else {
-                                    if let idx = items.firstIndex(of: item) {
-                                        viewerIndex = idx
-                                        showViewer = true
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .padding(12)
+            Group {
+                if appLock.photosUnlocked {
+                    gallery
+                } else {
+                    PhotoLockGate()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Progress Photos")
+            .toolbar {
+                if appLock.photosUnlocked {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showCamera = true } label: {
+                            Image(systemName: "camera.fill")
+                        }
+                    }
+                }
+            }
+            .sheet(isPresented: $showCamera) {
+                CameraCaptureView { saveToToday($0) }
+            }
             .fullScreenCover(isPresented: $showViewer) {
                 PhotoDetailView(items: items, initialIndex: viewerIndex)
             }
@@ -58,6 +59,43 @@ struct PhotosGalleryView: View {
                 }
             }
         }
+    }
+
+    private var gallery: some View {
+        VStack(spacing: 0) {
+            header
+
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(items) { item in
+                        ThumbCell(item: item,
+                                  isSelected: compareMode && selectedForCompare.contains(item))
+                        .onTapGesture {
+                            if compareMode {
+                                toggleSelect(item)
+                            } else {
+                                if let idx = items.firstIndex(of: item) {
+                                    viewerIndex = idx
+                                    showViewer = true
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(12)
+            }
+        }
+    }
+
+    private func saveToToday(_ image: UIImage) {
+        let filename = "photo_\(Int(Date().timeIntervalSince1970)).jpg"
+        let url = photosDir().appendingPathComponent(filename)
+        if let data = image.jpegData(compressionQuality: 0.9) {
+            try? data.write(to: url)
+        }
+        let day = ensureDay(plan: plan, date: Date())
+        day.photos.append(PhotoEntry(filename: filename))
+        try? context.save()
     }
 
     // MARK: Header

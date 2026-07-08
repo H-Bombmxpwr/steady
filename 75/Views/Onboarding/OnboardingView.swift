@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// Multi-step plan setup: profile → goals → budget preview → hydration.
+/// Multi-step plan setup: profile → goals → budget preview → workout schedule → hydration.
 struct OnboardingView: View {
     @Environment(\.modelContext) private var context
     @State private var step = 0
@@ -17,6 +17,12 @@ struct OnboardingView: View {
     @State private var currentWeightText = ""
     @State private var goalWeightText = ""
     @State private var pace = 1.0
+
+    // Workout schedule
+    @State private var selectedWeekdays: Set<Int> = [2, 4, 6]   // Mon/Wed/Fri
+    @State private var workoutName = "Workout"
+    @State private var workoutMinutes = 45
+    @State private var workoutTime = Calendar.current.date(from: DateComponents(hour: 7, minute: 0))!
 
     // Hydration
     @State private var waterGoal = 96
@@ -42,9 +48,11 @@ struct OnboardingView: View {
                 case 0: profileStep
                 case 1: goalsStep
                 case 2: budgetStep
+                case 3: scheduleStep
                 default: hydrationStep
                 }
             }
+            .themedForm()
             .navigationTitle(titles[step])
             .toolbar {
                 if step > 0 {
@@ -59,9 +67,10 @@ struct OnboardingView: View {
             }
             .scrollDismissesKeyboard(.interactively)
         }
+        .themedRoot()
     }
 
-    private let titles = ["About You", "Your Goal", "Your Budget", "Hydration"]
+    private let titles = ["About You", "Your Goal", "Your Budget", "Workout Days", "Hydration"]
 
     // MARK: Step 1 — profile
 
@@ -160,7 +169,41 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: Step 4 — hydration + create
+    // MARK: Step 4 — workout schedule
+
+    private var scheduleStep: some View {
+        Form {
+            Section {
+                ForEach(1...7, id: \.self) { d in
+                    Button {
+                        if selectedWeekdays.contains(d) { selectedWeekdays.remove(d) }
+                        else { selectedWeekdays.insert(d) }
+                    } label: {
+                        HStack {
+                            Image(systemName: selectedWeekdays.contains(d) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selectedWeekdays.contains(d) ? Theme.accent : .secondary)
+                            Text(Calendar.current.weekdaySymbols[d - 1]).foregroundStyle(.primary)
+                            Spacer()
+                        }
+                    }
+                }
+            } header: {
+                Text("Which days will you train?")
+            } footer: {
+                Text("Workouts only count against your daily goals on days you pick. You can fine-tune per-day workouts later in the Workouts tab.")
+            }
+            Section("Default Workout") {
+                TextField("Name (e.g., Gym, Run)", text: $workoutName)
+                Stepper("Minutes: \(workoutMinutes)", value: $workoutMinutes, in: 5...300, step: 5)
+                DatePicker("Time", selection: $workoutTime, displayedComponents: .hourAndMinute)
+            }
+            Section {
+                Button(selectedWeekdays.isEmpty ? "Skip for Now" : "Continue") { step = 4 }
+            }
+        }
+    }
+
+    // MARK: Step 5 — hydration + create
 
     private var hydrationStep: some View {
         Form {
@@ -188,6 +231,18 @@ struct OnboardingView: View {
                         waterGoalOunces: waterGoal,
                         waterStepOunces: waterStep,
                         proteinTargetGrams: CalorieEngine.proteinTargetGrams(goalWeightLbs: g))
+
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: workoutTime)
+        let name = workoutName.trimmingCharacters(in: .whitespacesAndNewlines)
+        for weekday in selectedWeekdays.sorted() {
+            plan.schedule.append(WorkoutScheduleEntry(
+                weekday: weekday,
+                name: name.isEmpty ? "Workout" : name,
+                minutes: workoutMinutes,
+                hour: comps.hour ?? 7,
+                minute: comps.minute ?? 0))
+        }
+
         context.insert(profile)
         context.insert(plan)
         try? context.save()

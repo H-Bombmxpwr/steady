@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
@@ -10,6 +11,17 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var presentShare = false
     @State private var showEraseConfirm = false
+
+    // Notification settings
+    @AppStorage(NotificationManager.Keys.weighInEnabled) private var weighInEnabled = true
+    @AppStorage(NotificationManager.Keys.weighInHour) private var weighInHour = 8
+    @AppStorage(NotificationManager.Keys.hydrationEnabled) private var hydrationEnabled = true
+    @AppStorage(NotificationManager.Keys.workoutEnabled) private var workoutEnabled = true
+    @AppStorage(NotificationManager.Keys.streakEnabled) private var streakEnabled = true
+
+    // New supplement
+    @State private var supplementName = ""
+    @State private var supplementTime = Calendar.current.date(from: DateComponents(hour: 8, minute: 0))!
 
     @FocusState private var fieldFocused: Bool
 
@@ -80,9 +92,67 @@ struct SettingsView: View {
                             Text("\(plan.waterStepOunces) oz").foregroundStyle(.secondary)
                         }
                     }
-                    Text("Set the step to your bottle size (e.g., 48 oz).")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
+
+                // --- Supplements
+                Section {
+                    ForEach(plan.supplements) { s in
+                        HStack {
+                            Text(s.name)
+                            Spacer()
+                            Text(s.timeString).foregroundStyle(.secondary)
+                            Toggle("", isOn: Binding(get: { s.remind }, set: { s.remind = $0; reschedule() }))
+                                .labelsHidden()
+                        }
+                    }
+                    .onDelete { idx in
+                        idx.map { plan.supplements[$0] }.forEach { context.delete($0) }
+                        try? context.save()
+                        reschedule()
+                    }
+                    HStack {
+                        TextField("Add (e.g., Creatine)", text: $supplementName)
+                        DatePicker("", selection: $supplementTime, displayedComponents: .hourAndMinute)
+                            .labelsHidden()
+                        Button {
+                            let comps = Calendar.current.dateComponents([.hour, .minute], from: supplementTime)
+                            plan.supplements.append(Supplement(
+                                name: supplementName.trimmingCharacters(in: .whitespacesAndNewlines),
+                                hour: comps.hour ?? 8,
+                                minute: comps.minute ?? 0))
+                            try? context.save()
+                            supplementName = ""
+                            reschedule()
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                        .disabled(supplementName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("Supplements")
+                } footer: {
+                    Text("Each supplement gets a daily reminder and a check-off in the day view.")
+                }
+
+                // --- Notifications
+                Section("Notifications") {
+                    Toggle("Morning weigh-in", isOn: $weighInEnabled)
+                    if weighInEnabled {
+                        Picker("Weigh-in time", selection: $weighInHour) {
+                            ForEach(5...12, id: \.self) { h in
+                                Text("\(h):00").tag(h)
+                            }
+                        }
+                    }
+                    Toggle("Hydration nudges (11a, 3p, 7p)", isOn: $hydrationEnabled)
+                    Toggle("Workout reminders (30 min before)", isOn: $workoutEnabled)
+                    Toggle("Evening streak guard (8:30p)", isOn: $streakEnabled)
+                }
+                .onChange(of: weighInEnabled) { _ in reschedule() }
+                .onChange(of: weighInHour) { _ in reschedule() }
+                .onChange(of: hydrationEnabled) { _ in reschedule() }
+                .onChange(of: workoutEnabled) { _ in reschedule() }
+                .onChange(of: streakEnabled) { _ in reschedule() }
 
                 // --- Profile
                 Section("Profile") {
@@ -115,7 +185,7 @@ struct SettingsView: View {
 
                 // --- Security
                 Section("Security") {
-                    Label("Face ID is required at launch and resume", systemImage: "faceid")
+                    Label("Face ID protects your progress photos", systemImage: "faceid")
                         .foregroundStyle(.secondary)
                 }
 
@@ -149,6 +219,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            .themedForm()
             .navigationTitle("Settings")
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
@@ -158,6 +229,10 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private func reschedule() {
+        NotificationManager.rescheduleAll(plan: plan)
     }
 
     private func eraseAll() {
@@ -174,6 +249,7 @@ struct SettingsView: View {
             profiles.forEach { context.delete($0) }
         }
         try? context.save()
+        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
 
         // Delete photos directory
         try? FileManager.default.removeItem(at: photosDir())
