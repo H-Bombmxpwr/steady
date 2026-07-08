@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		5A4B209B2E6A67560082C3F0 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 5A4B209A2E6A67560082C3F0 /* ZIPFoundation */; };
+		AA000000000000000000000D /* WidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* WidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,18 +26,49 @@
 			remoteGlobalIDString = 5A4B20522E6A64870082C3F0;
 			remoteInfo = 75;
 		};
+		AA000000000000000000000B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5A4B204B2E6A64870082C3F0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000004;
+			remoteInfo = WidgetsExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		5A4B20532E6A64870082C3F0 /* 75.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = 75.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A4B20602E6A64890082C3F0 /* 75Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = 75Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		5A4B206A2E6A64890082C3F0 /* 75UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = 75UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000003 /* WidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AA0000000000000000000010 /* Exceptions for "Widgets" folder in "WidgetsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = AA0000000000000000000004 /* WidgetsExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		5A4B20552E6A64870082C3F0 /* 75 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = 75;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000002 /* Widgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0000000000000000000010 /* Exceptions for "Widgets" folder in "WidgetsExtension" target */,
+			);
+			path = Widgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -64,13 +96,36 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		AA000000000000000000000E /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA000000000000000000000D /* WidgetsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXGroup section */
 		5A4B204A2E6A64870082C3F0 = {
 			isa = PBXGroup;
 			children = (
 				5A4B20552E6A64870082C3F0 /* 75 */,
+				AA0000000000000000000001 /* Shared */,
+				AA0000000000000000000002 /* Widgets */,
 				5A4B20542E6A64870082C3F0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -81,6 +136,7 @@
 				5A4B20532E6A64870082C3F0 /* 75.app */,
 				5A4B20602E6A64890082C3F0 /* 75Tests.xctest */,
 				5A4B206A2E6A64890082C3F0 /* 75UITests.xctest */,
+				AA0000000000000000000003 /* WidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,13 +151,16 @@
 				5A4B204F2E6A64870082C3F0 /* Sources */,
 				5A4B20502E6A64870082C3F0 /* Frameworks */,
 				5A4B20512E6A64870082C3F0 /* Resources */,
+				AA000000000000000000000E /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA000000000000000000000C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				5A4B20552E6A64870082C3F0 /* 75 */,
+				AA0000000000000000000001 /* Shared */,
 			);
 			name = 75;
 			packageProductDependencies = (
@@ -151,6 +210,29 @@
 			productReference = 5A4B206A2E6A64890082C3F0 /* 75UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		AA0000000000000000000004 /* WidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000008 /* Build configuration list for PBXNativeTarget "WidgetsExtension" */;
+			buildPhases = (
+				AA0000000000000000000005 /* Sources */,
+				AA0000000000000000000006 /* Frameworks */,
+				AA0000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000002 /* Widgets */,
+				AA0000000000000000000001 /* Shared */,
+			);
+			name = WidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = WidgetsExtension;
+			productReference = AA0000000000000000000003 /* WidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -194,6 +276,7 @@
 				5A4B20522E6A64870082C3F0 /* 75 */,
 				5A4B205F2E6A64890082C3F0 /* 75Tests */,
 				5A4B20692E6A64890082C3F0 /* 75UITests */,
+				AA0000000000000000000004 /* WidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -214,6 +297,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		5A4B20682E6A64890082C3F0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000007 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -244,6 +334,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -256,6 +353,11 @@
 			isa = PBXTargetDependency;
 			target = 5A4B20522E6A64870082C3F0 /* 75 */;
 			targetProxy = 5A4B206B2E6A64890082C3F0 /* PBXContainerItemProxy */;
+		};
+		AA000000000000000000000C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000004 /* WidgetsExtension */;
+			targetProxy = AA000000000000000000000B /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -386,6 +488,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "75/75.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = U3PXY283T3;
@@ -421,6 +524,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "75/75.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = U3PXY283T3;
@@ -523,6 +627,64 @@
 			};
 			name = Release;
 		};
+		AA0000000000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "Widgets/Widgets.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = U3PXY283T3;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Widgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "75 Widgets";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hunter.seventyfivehard.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA000000000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "Widgets/Widgets.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = U3PXY283T3;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Widgets/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "75 Widgets";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hunter.seventyfivehard.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -558,6 +720,15 @@
 			buildConfigurations = (
 				5A4B207B2E6A64890082C3F0 /* Debug */,
 				5A4B207C2E6A64890082C3F0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+	AA0000000000000000000008 /* Build configuration list for PBXNativeTarget "WidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000009 /* Debug */,
+				AA000000000000000000000A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

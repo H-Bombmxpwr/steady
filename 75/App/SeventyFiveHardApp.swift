@@ -2,6 +2,7 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import WidgetKit
 
 @main
 struct SeventyFiveHardApp: App {
@@ -34,6 +35,7 @@ struct SeventyFiveHardApp: App {
                     case .inactive, .background:
                         showPrivacyShield = true
                         appLock.lockPhotos()   // photos require Face ID again on return
+                        WidgetCenter.shared.reloadAllTimelines()
                     @unknown default:
                         showPrivacyShield = true
                         appLock.lockPhotos()
@@ -54,6 +56,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
             let day = ensureDay(plan: plan, date: Date())
             day.waterOunces += max(1, plan.waterStepOunces)
             try? context.save()
+            WidgetCenter.shared.reloadAllTimelines()
         }
     }
 
