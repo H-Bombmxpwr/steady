@@ -2,16 +2,15 @@ import SwiftUI
 import Photos
 
 struct PhotosGalleryView: View {
-    var state: ChallengeState
+    var plan: Plan
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
     // Flatten days → ordered items
     var items: [PhotoItem] {
-        state.days
+        plan.days
             .sorted(by: { $0.date < $1.date })
             .flatMap { d -> [PhotoItem] in
-                let idx = max(0, state.startDate.days(to: d.date))
-                let dayNo = idx + 1
+                let dayNo = max(0, plan.startDate.days(to: d.date)) + 1
                 return d.photos.map { PhotoItem(dayNumber: dayNo, date: d.date, filename: $0.filename) }
             }
     }

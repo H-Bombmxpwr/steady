@@ -2,18 +2,20 @@ import SwiftUI
 import SwiftData
 
 struct MainTabView: View {
-    var state: ChallengeState
+    var plan: Plan
+    var profile: UserProfile
+
     var body: some View {
         TabView {
-            DashboardView(state: state)
+            DashboardView(plan: plan, profile: profile)
                 .tabItem { Label("Dashboard", systemImage: "house.fill") }
-            CalendarScreen(state: state)
+            CalendarScreen(plan: plan, profile: profile)
                 .tabItem { Label("Calendar", systemImage: "calendar") }
-            PhotosGalleryView(state: state)
+            PhotosGalleryView(plan: plan)
                 .tabItem { Label("Photos", systemImage: "photo.on.rectangle") }
-            PresetsView(state: state)
-                .tabItem { Label("Presets", systemImage: "list.bullet") }
-            SettingsView(state: state)
+            PresetsView(plan: plan)
+                .tabItem { Label("Workouts", systemImage: "figure.strengthtraining.traditional") }
+            SettingsView(plan: plan, profile: profile)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
     }
@@ -23,36 +25,25 @@ struct MainTabView: View {
 
 struct DashboardView: View {
     @Environment(\.modelContext) private var context
-    var state: ChallengeState
+    var plan: Plan
+    var profile: UserProfile
     @State private var today = Calendar.current.startOfDay(for: Date())
 
-    // Break the math out of body
-    private var elapsedDays: Int {
-        max(0, daysBetween(state.startDate, today))
-    }
-    private var cappedIndex: Int {
-        let cap = state.totalDays > 0 ? min(state.totalDays - 1, elapsedDays) : 0
-        return max(0, cap)
-    }
-    private var currentDayNumber: Int { cappedIndex + 1 }
-    private var remaining: Int { max(0, state.totalDays - currentDayNumber) }
-    private var todayEntry: DayEntry { ensureDay(state: state, date: today) }
+    private var dayNumber: Int { max(0, plan.startDate.days(to: today)) + 1 }
+    private var todayLog: DayLog { ensureDay(plan: plan, date: today) }
+    private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HeaderBox(
-                        currentDayNumber: currentDayNumber,
-                        total: state.totalDays,
-                        remaining: remaining,
-                        today: today
-                    )
+                    WeightBox(plan: plan, dayNumber: dayNumber, today: today)
 
+                    TodayBox(day: todayLog, targets: targets)
 
-                    TotalsBox(state: state, upTo: today)
-
-                    ChecklistBox(state: state, day: todayEntry)
+                    if let projected = plan.projectedGoalDate {
+                        ProjectionBox(plan: plan, projected: projected)
+                    }
 
                     NavigationLink(value: today) {
                         Label("Open Today", systemImage: "square.and.pencil")
@@ -62,153 +53,128 @@ struct DashboardView: View {
                 .padding()
             }
             .navigationDestination(for: Date.self) { d in
-                DayDetailView(state: state, date: d)
+                DayDetailView(plan: plan, profile: profile, date: d)
             }
             .navigationTitle("Dashboard")
         }
     }
-
-    // MARK: - Helpers
-
-    private func daysBetween(_ start: Date, _ end: Date) -> Int {
-        let a = Calendar.current.startOfDay(for: start)
-        let b = Calendar.current.startOfDay(for: end)
-        return Calendar.current.dateComponents([.day], from: a, to: b).day ?? 0
-    }
 }
 
-// MARK: - Subviews (keeps type-checker happy)
+// MARK: - Subviews
 
-private struct HeaderBox: View {
-    let currentDayNumber: Int
-    let total: Int
-    let remaining: Int
+private struct WeightBox: View {
+    let plan: Plan
+    let dayNumber: Int
     let today: Date
 
     var body: some View {
         GroupBox {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Day \(currentDayNumber) / \(total)")
+                    Text(String(format: "%.1f lb", plan.currentWeight))
                         .font(.title.bold())
-                    Text("\(remaining) days to go")
+                    let delta = plan.weightChange
+                    let deltaColor: Color = (delta == 0) ? .primary : (delta < 0 ? .green : .red)
+                    Text(String(format: "%@%.1f lb since start", delta > 0 ? "+" : "", delta))
+                        .foregroundStyle(deltaColor)
+                        .font(.subheadline.bold())
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(today, style: .date).font(.headline)
+                    Text("Day \(dayNumber)").foregroundStyle(.secondary)
+                    let toGo = plan.currentWeight - plan.goalWeight
+                    if toGo > 0 {
+                        Text(String(format: "%.1f lb to goal", toGo))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct TodayBox: View {
+    let day: DayLog
+    let targets: DailyTargets
+
+    var body: some View {
+        GroupBox("Today") {
+            VStack(spacing: 12) {
+                progressRow(
+                    title: "Calories",
+                    value: "\(day.caloriesEaten) / \(targets.calories) cal",
+                    fraction: Double(day.caloriesEaten) / Double(max(1, targets.calories)),
+                    overIsBad: true
+                )
+                progressRow(
+                    title: "Protein",
+                    value: "\(day.proteinGrams) / \(targets.proteinGrams) g",
+                    fraction: Double(day.proteinGrams) / Double(max(1, targets.proteinGrams)),
+                    overIsBad: false
+                )
+                progressRow(
+                    title: "Water",
+                    value: "\(day.waterOunces) / \(targets.waterOunces) oz",
+                    fraction: Double(day.waterOunces) / Double(max(1, targets.waterOunces)),
+                    overIsBad: false
+                )
+                HStack {
+                    ChecklistRow(title: workoutLabel, checked: !day.workouts.isEmpty)
+                }
+                ChecklistRow(title: "Progress photo", checked: !day.photos.isEmpty)
+                if day.alcoholDrinks > 0 {
+                    HStack {
+                        Image(systemName: "wineglass")
+                        Text("\(day.alcoholDrinks) drink\(day.alcoholDrinks == 1 ? "" : "s") logged")
+                        Spacer()
+                    }
+                    .foregroundStyle(.orange)
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+
+    private var workoutLabel: String {
+        day.workouts.isEmpty
+            ? "Workout"
+            : "Workout — \(day.workoutMinutes) min"
+    }
+
+    private func progressRow(title: String, value: String, fraction: Double, overIsBad: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value).foregroundStyle(.secondary)
+            }
+            ProgressView(value: min(1.0, fraction))
+                .tint(overIsBad && fraction > 1.0 ? .red : .accentColor)
+        }
+    }
+}
+
+private struct ProjectionBox: View {
+    let plan: Plan
+    let projected: Date
+
+    var body: some View {
+        GroupBox("Projection") {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Goal: \(String(format: "%.1f lb", plan.goalWeight))")
+                    Text(String(format: "%.1f lb / week", plan.paceLbsPerWeek))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 6) {
-                    Text(today, style: .date)
-                        .font(.headline)
-                    ProgressView(value: Double(currentDayNumber), total: Double(total))
-                        .frame(width: 140)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(projected.formatted(date: .abbreviated, time: .omitted)).bold()
+                    Text("estimated").font(.caption).foregroundStyle(.secondary)
                 }
             }
-        }
-    }
-}
-
-
-private struct TotalsBox: View {
-    let state: ChallengeState
-    let upTo: Date
-
-    var body: some View {
-        GroupBox("Totals so far") {
-            let s = sumStats(state: state, upTo: upTo)
-
-            HStack {
-                StatCell(title: "Indoor", value: hmString(s.indoorMin))
-                Spacer()
-                StatCell(title: "Outdoor", value: hmString(s.outdoorMin))
-                Spacer()
-                StatCell(title: "Pages", value: "\(s.pages)")
-                Spacer()
-                StatCell(title: "Water", value: "\(s.waterOz) oz")
-            }
-
-            if let start = state.startingWeight {
-                Divider().padding(.vertical, 4)
-
-                HStack {
-                    Text("Weight start").foregroundStyle(.secondary)
-                    Spacer()
-                    Text(String(format: "%.1f lb", start))
-                }
-                if let last = s.latestWeight {
-                    HStack {
-                        Text("Latest").foregroundStyle(.secondary)
-                        Spacer()
-                        Text(String(format: "%.1f lb", last))
-                    }
-                }
-                if let delta = s.deltaWeight {
-                    HStack {
-                        Text("Net change").foregroundStyle(.secondary)
-                        Spacer()
-                        let deltaColor: Color = (delta == 0) ? Color.primary : (delta < 0 ? Color.green : Color.red)
-                        Text(signedWeight(delta) + " lb")
-                            .foregroundColor(deltaColor)
-                            .bold()
-
-                    }
-                }
-            }
-        }
-    }
-
-    // Local helpers to keep generic types small
-    private func sumStats(state: ChallengeState, upTo date: Date) -> (indoorMin: Int, outdoorMin: Int, pages: Int, waterOz: Int, latestWeight: Double?, deltaWeight: Double?) {
-        var indoor = 0, outdoor = 0, pages = 0, water = 0
-        var lastWeight: Double? = nil
-        let cutoff = Calendar.current.startOfDay(for: date)
-
-        for d in state.days.sorted(by: { $0.date < $1.date }) {
-            if d.date > cutoff { break }
-            if d.workout1Outdoor { outdoor += d.workout1Minutes } else { indoor += d.workout1Minutes }
-            if d.workout2Outdoor { outdoor += d.workout2Minutes } else { indoor += d.workout2Minutes }
-            pages += max(0, d.pagesRead)
-            water += max(0, d.waterOunces)
-            if let w = d.weight { lastWeight = w }
-        }
-
-        var delta: Double? = nil
-        if let start = state.startingWeight, let last = lastWeight { delta = last - start }
-        return (indoor, outdoor, pages, water, lastWeight, delta)
-    }
-
-    private func hmString(_ minutes: Int) -> String {
-        let h = minutes / 60, m = minutes % 60
-        return h > 0 ? "\(h)h \(m)m" : "\(m)m"
-    }
-
-    private func signedWeight(_ d: Double) -> String {
-        let sign = d > 0 ? "+" : ""
-        return "\(sign)\(String(format: "%.1f", d))"
-    }
-}
-
-private struct ChecklistBox: View {
-    let state: ChallengeState
-    let day: DayEntry
-
-    var body: some View {
-        GroupBox("Today's Checklist") {
-            ChecklistRow(title: "Workout 1 ≥ 45 min", checked: day.workout1Minutes >= 45)
-            ChecklistRow(title: "Workout 2 ≥ 45 min", checked: day.workout2Minutes >= 45)
-            ChecklistRow(title: "One workout outdoors", checked: (day.workout1Outdoor || day.workout2Outdoor))
-            ChecklistRow(title: "Water ≥ 128 oz", checked: day.waterOunces >= 128)
-            ChecklistRow(title: "Read ≥ 10 pages", checked: day.pagesRead >= 10)
-            ChecklistRow(title: "Diet compliant (\(state.dietName))", checked: day.dietCompliant)
-            ChecklistRow(title: "Progress photo", checked: !day.photos.isEmpty)
-            ChecklistRow(title: "Alcohol used this month", checked: usedAlcoholThisMonth(state: state, reference: day.date))
-        }
-    }
-
-    private func usedAlcoholThisMonth(state: ChallengeState, reference: Date) -> Bool {
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.year, .month], from: reference)
-        return state.days.contains { d in
-            let dc = cal.dateComponents([.year, .month], from: d.date)
-            return dc.year == comps.year && dc.month == comps.month && d.alcoholUsed
         }
     }
 }
@@ -226,16 +192,5 @@ struct ChecklistRow: View {
         }
         .foregroundStyle(checked ? .green : .secondary)
         .padding(.vertical, 4)
-    }
-}
-
-private struct StatCell: View {
-    let title: String
-    let value: String
-    var body: some View {
-        VStack(alignment: .leading) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).bold()
-        }
     }
 }

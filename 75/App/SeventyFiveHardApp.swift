@@ -3,10 +3,6 @@ import SwiftUI
 import SwiftData
 import Combine
 
-import SwiftUI
-import SwiftData
-import Combine
-
 @main
 struct SeventyFiveHardApp: App {
     var sharedModelContainer: ModelContainer = PersistenceController.shared.container
@@ -51,15 +47,14 @@ struct SeventyFiveHardApp: App {
     }
 }
 
-
-
 struct RootRouterView: View {
     @Environment(\.modelContext) private var context
-    @Query(sort: \ChallengeState.createdAt, order: .forward) private var states: [ChallengeState]
+    @Query(sort: \Plan.createdAt, order: .forward) private var plans: [Plan]
+    @Query(sort: \UserProfile.createdAt, order: .forward) private var profiles: [UserProfile]
 
     var body: some View {
-        if let state = states.first {
-            MainTabView(state: state)
+        if let plan = plans.first, let profile = profiles.first {
+            MainTabView(plan: plan, profile: profile)
         } else {
             OnboardingView()
         }

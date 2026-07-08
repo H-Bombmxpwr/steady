@@ -11,7 +11,7 @@ final class AppLockManager: ObservableObject {
         guard !isUnlocked else { return }
         let context = LAContext()
         var error: NSError?
-        let reason = "Unlock to access your 75 Hard data"
+        let reason = "Unlock to access your fitness data"
 
         if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
             context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in

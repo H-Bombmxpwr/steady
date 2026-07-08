@@ -4,7 +4,7 @@ import SwiftData
 
 struct PresetsView: View {
     @Environment(\.modelContext) private var context
-    var state: ChallengeState
+    var plan: Plan
     @State private var name = ""
     @State private var minutes = 45
     @State private var outdoor = false
@@ -20,15 +20,15 @@ struct PresetsView: View {
                     TextField("Notes", text: $notes)
                     Button("Add Preset") {
                         let p = WorkoutPreset(name: name, defaultMinutes: minutes, outdoor: outdoor, notes: notes.isEmpty ? nil : notes)
-                        state.presets.append(p)
+                        plan.presets.append(p)
                         try? context.save()
                         name = ""; minutes = 45; outdoor = false; notes = ""
                     }.disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
                 Section("Existing Presets") {
-                    if state.presets.isEmpty { Text("No presets yet.").foregroundStyle(.secondary) }
-                    ForEach(state.presets) { p in
+                    if plan.presets.isEmpty { Text("No presets yet.").foregroundStyle(.secondary) }
+                    ForEach(plan.presets) { p in
                         VStack(alignment: .leading) {
                             Text(p.name).font(.headline)
                             HStack { Text("\(p.defaultMinutes) min"); if p.outdoor { Text("outdoor") } }
@@ -36,7 +36,7 @@ struct PresetsView: View {
                         }
                     }
                     .onDelete { idx in
-                        idx.map { state.presets[$0] }.forEach { context.delete($0) }
+                        idx.map { plan.presets[$0] }.forEach { context.delete($0) }
                         try? context.save()
                     }
                 }

@@ -1,12 +1,11 @@
 import SwiftUI
 
 struct CalendarScreen: View {
-    var state: ChallengeState
+    var plan: Plan
+    var profile: UserProfile
     @State private var selectedDate = Date().startOfDay()
 
-    private var lastChallengeDay: Date {
-        Calendar.current.date(byAdding: .day, value: state.totalDays - 1, to: state.startDate)!.startOfDay()
-    }
+    private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
 
     var body: some View {
         NavigationStack {
@@ -15,17 +14,18 @@ struct CalendarScreen: View {
                     DatePicker(
                         "",
                         selection: $selectedDate,
-                        in: state.startDate...min(lastChallengeDay, Date().startOfDay()),
+                        in: plan.startDate...Date().startOfDay(),
                         displayedComponents: .date
                     )
                     .datePickerStyle(.graphical)
                     .padding(.horizontal)
 
-                    let day = ensureDay(state: state, date: selectedDate)
+                    let day = ensureDay(plan: plan, date: selectedDate)
+                    let fraction = CalorieEngine.completionFraction(day: day, targets: targets)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("\(formattedDayNumber(for: selectedDate)) — \(day.isComplete ? "Complete" : "Incomplete")")
+                        Text("\(formattedDayNumber(for: selectedDate)) — \(Int(fraction * 100))% of goals")
                             .font(.headline)
-                        ProgressView(value: completionFraction(for: day))
+                        ProgressView(value: fraction)
                     }
                     .padding(.horizontal)
 
@@ -35,9 +35,10 @@ struct CalendarScreen: View {
 
                     Divider().padding(.horizontal)
 
-                    // All days grid/list — full page scrolls as one
+                    // Logged days, most recent first
                     LazyVStack(spacing: 10) {
-                        ForEach(state.days.sorted(by: { $0.date < $1.date })) { d in
+                        ForEach(plan.days.sorted(by: { $0.date > $1.date })) { d in
+                            let f = CalorieEngine.completionFraction(day: d, targets: targets)
                             HStack {
                                 VStack(alignment: .leading) {
                                     Text(d.date, style: .date)
@@ -46,8 +47,13 @@ struct CalendarScreen: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Image(systemName: d.isComplete ? "checkmark.seal.fill" : "xmark.seal")
-                                    .foregroundStyle(d.isComplete ? .green : .red)
+                                if let w = d.weight {
+                                    Text(String(format: "%.1f lb", w))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Image(systemName: f >= 1.0 ? "checkmark.seal.fill" : "seal")
+                                    .foregroundStyle(f >= 1.0 ? .green : .secondary)
                             }
                             .padding(.horizontal)
                             .contentShape(Rectangle())
@@ -57,26 +63,12 @@ struct CalendarScreen: View {
                     .padding(.vertical, 6)
                 }
             }
-            .navigationDestination(for: Date.self) { DayDetailView(state: state, date: $0) }
+            .navigationDestination(for: Date.self) { DayDetailView(plan: plan, profile: profile, date: $0) }
             .navigationTitle("Calendar")
         }
     }
 
-    func completionFraction(for d: DayEntry) -> Double {
-        let checks: [Bool] = [
-            d.workout1Minutes >= 45,
-            d.workout2Minutes >= 45,
-            (d.workout1Outdoor || d.workout2Outdoor),
-            d.waterOunces >= 128,
-            d.pagesRead >= 10,
-            d.dietCompliant,
-            !d.photos.isEmpty
-        ]
-        return Double(checks.filter { $0 }.count) / Double(checks.count)
-    }
-
     func formattedDayNumber(for date: Date) -> String {
-        let idx = max(0, min(state.totalDays - 1, state.startDate.days(to: date)))
-        return "Day \(idx + 1)"
+        "Day \(max(0, plan.startDate.days(to: date)) + 1)"
     }
 }

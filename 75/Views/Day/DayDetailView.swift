@@ -4,74 +4,59 @@ import PhotosUI
 
 struct DayDetailView: View {
     @Environment(\.modelContext) private var context
-    var state: ChallengeState
+    var plan: Plan
+    var profile: UserProfile
     var date: Date
-    @State private var day: DayEntry
+    @State private var day: DayLog
 
     // Photo capture/import UI state
     @State private var showCamera = false
     @State private var selectedItems: [PhotosPickerItem] = []
 
-    // Keyboard focus for weight field
-    @FocusState private var weightFocused: Bool
+    @FocusState private var fieldFocused: Bool
 
-    init(state: ChallengeState, date: Date) {
-        self.state = state
+    init(plan: Plan, profile: UserProfile, date: Date) {
+        self.plan = plan
+        self.profile = profile
         self.date = date.startOfDay()
-        let d = ensureDay(state: state, date: date)
+        let d = ensureDay(plan: plan, date: date)
         _day = State(initialValue: d)
     }
 
-    // MARK: - Threshold helpers + status dot
+    private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
+
     private func statusDot(_ ok: Bool) -> some View {
         Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
             .foregroundStyle(ok ? Color.green : Color.red)
     }
-    private func minutesOK(_ m: Int) -> Bool { m >= 45 }
-    private func waterOK(_ oz: Int) -> Bool { oz >= 128 }
-    private func pagesOK(_ p: Int) -> Bool { p >= 10 }
 
     var body: some View {
         Form {
-            // ===== Live status indicators (turn green/red as values change)
-            Section("Today’s Status") {
+            // ===== Live status vs today's targets
+            Section("Status") {
                 HStack {
-                    statusDot(minutesOK(day.workout1Minutes))
-                    Text("Workout 1 ≥ 45m")
+                    statusDot(day.caloriesEaten > 0 && day.caloriesEaten <= targets.calories)
+                    Text("Calories within budget")
                     Spacer()
-                    Text("\(day.workout1Minutes)m").foregroundStyle(.secondary)
+                    Text("\(day.caloriesEaten) / \(targets.calories)").foregroundStyle(.secondary)
                 }
                 HStack {
-                    statusDot(minutesOK(day.workout2Minutes))
-                    Text("Workout 2 ≥ 45m")
+                    statusDot(day.proteinGrams >= targets.proteinGrams)
+                    Text("Protein ≥ \(targets.proteinGrams) g")
                     Spacer()
-                    Text("\(day.workout2Minutes)m").foregroundStyle(.secondary)
+                    Text("\(day.proteinGrams) g").foregroundStyle(.secondary)
                 }
                 HStack {
-                    statusDot(day.workout1Outdoor || day.workout2Outdoor)
-                    Text("At least 1 outdoor")
-                    Spacer()
-                    Image(systemName: (day.workout1Outdoor || day.workout2Outdoor) ? "sun.max.fill" : "cloud")
-                        .foregroundStyle(.secondary)
-                }
-                HStack {
-                    statusDot(waterOK(day.waterOunces))
-                    Text("Water ≥ 128 oz")
+                    statusDot(day.waterOunces >= targets.waterOunces)
+                    Text("Water ≥ \(targets.waterOunces) oz")
                     Spacer()
                     Text("\(day.waterOunces) oz").foregroundStyle(.secondary)
                 }
                 HStack {
-                    statusDot(pagesOK(day.pagesRead))
-                    Text("Reading ≥ 10 pages")
+                    statusDot(!day.workouts.isEmpty)
+                    Text("Workout logged")
                     Spacer()
-                    Text("\(day.pagesRead)").foregroundStyle(.secondary)
-                }
-                HStack {
-                    statusDot(day.dietCompliant)
-                    Text("Diet compliant")
-                    Spacer()
-                    Image(systemName: day.dietCompliant ? "fork.knife.circle.fill" : "fork.knife")
-                        .foregroundStyle(.secondary)
+                    Text("\(day.workoutMinutes) min").foregroundStyle(.secondary)
                 }
                 HStack {
                     statusDot(!day.photos.isEmpty)
@@ -81,25 +66,33 @@ struct DayDetailView: View {
                 }
             }
 
-            // ===== Workouts
-            Section("Workouts") {
-                Stepper(value: $day.workout1Minutes, in: 0...300, step: 5) {
-                    Text("Workout 1: \(day.workout1Minutes) min")
+            // ===== Nutrition (manual quick-log until the food database lands)
+            Section("Nutrition") {
+                HStack {
+                    Text("Calories eaten")
+                    Spacer()
+                    TextField("0", value: $day.caloriesEaten, format: .number)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 90)
+                        .focused($fieldFocused)
+                    Text("cal").foregroundStyle(.secondary)
                 }
-                Toggle("Workout 1 was outdoors", isOn: $day.workout1Outdoor)
-                Stepper(value: $day.workout2Minutes, in: 0...300, step: 5) {
-                    Text("Workout 2: \(day.workout2Minutes) min")
-                }
-                Toggle("Workout 2 was outdoors", isOn: $day.workout2Outdoor)
-
-                NavigationLink("Add from Preset") {
-                    WorkoutFormView(day: day, state: state)
+                HStack {
+                    Text("Protein")
+                    Spacer()
+                    TextField("0", value: $day.proteinGrams, format: .number)
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 90)
+                        .focused($fieldFocused)
+                    Text("g").foregroundStyle(.secondary)
                 }
             }
 
-            // ===== Hydration & Reading (uses configurable bottle step)
-            Section("Hydration & Reading") {
-                let step = max(1, (state.waterStepOunces)) // requires Models change; default set in model
+            // ===== Hydration
+            Section("Hydration") {
+                let step = max(1, plan.waterStepOunces)
                 Stepper(value: $day.waterOunces, in: 0...10000, step: step) {
                     HStack {
                         Text("Water")
@@ -108,17 +101,10 @@ struct DayDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Stepper(value: $day.pagesRead, in: 0...500, step: 1) {
-                    HStack {
-                        Text("Pages read")
-                        Spacer()
-                        Text("\(day.pagesRead)").foregroundStyle(.secondary)
-                    }
-                }
             }
 
-            // ===== Weight (optional)
-            Section("Weight (optional)") {
+            // ===== Weight
+            Section("Weight") {
                 TextField(
                     "Weight (lb)",
                     value: Binding(
@@ -128,20 +114,43 @@ struct DayDetailView: View {
                     format: .number
                 )
                 .keyboardType(.decimalPad)
-                .focused($weightFocused)
+                .focused($fieldFocused)
             }
 
-            // ===== Diet & Alcohol
-            Section("Diet & Alcohol") {
-                Toggle("Diet compliant (\(state.dietName))", isOn: $day.dietCompliant)
-
-                Button(action: toggleAlcohol) {
-                    Label(
-                        day.alcoholUsed ? "Alcohol marked for this day" : "Mark alcohol used today",
-                        systemImage: day.alcoholUsed ? "checkmark.circle.fill" : "wineglass"
-                    )
+            // ===== Alcohol
+            Section("Alcohol") {
+                Stepper(value: $day.alcoholDrinks, in: 0...50) {
+                    HStack {
+                        Text("Drinks")
+                        Spacer()
+                        Text("\(day.alcoholDrinks)").foregroundStyle(.secondary)
+                    }
                 }
-                .disabled(!canUseAlcoholToday())
+            }
+
+            // ===== Workouts
+            Section("Workouts") {
+                if day.workouts.isEmpty {
+                    Text("No workouts logged.").foregroundStyle(.secondary)
+                }
+                ForEach(day.workouts) { w in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(w.name)
+                            Text("\(w.minutes) min\(w.outdoor ? " · outdoors" : "")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if w.outdoor { Image(systemName: "sun.max.fill").foregroundStyle(.secondary) }
+                    }
+                }
+                .onDelete { idx in
+                    idx.map { day.workouts[$0] }.forEach { context.delete($0) }
+                }
+                NavigationLink("Add Workout") {
+                    WorkoutFormView(day: day, plan: plan)
+                }
             }
 
             // ===== Photos
@@ -177,28 +186,11 @@ struct DayDetailView: View {
         .onDisappear { try? context.save() }
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
-            // Keyboard toolbar for weight field
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("Done") { weightFocused = false }
+                Button("Done") { fieldFocused = false }
             }
         }
-    }
-
-    // MARK: - Alcohol logic (1 per month)
-    func toggleAlcohol() {
-        if day.alcoholUsed { day.alcoholUsed = false; return }
-        if canUseAlcoholToday() { day.alcoholUsed = true }
-    }
-    func canUseAlcoholToday() -> Bool {
-        guard state.allowAlcoholMonthly else { return false }
-        let cal = Calendar.current
-        let comps = cal.dateComponents([.year, .month], from: day.date)
-        let used = state.days.contains { d in
-            let dc = cal.dateComponents([.year, .month], from: d.date)
-            return dc.year == comps.year && dc.month == comps.month && d.alcoholUsed
-        }
-        return !used || day.alcoholUsed
     }
 
     // MARK: - Photos import/save

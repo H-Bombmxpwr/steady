@@ -3,15 +3,18 @@ import SwiftData
 
 final class PersistenceController {
     static let shared: PersistenceController = {
-        // Define schema explicitly
         let schema = Schema([
-            ChallengeState.self,
-            DayEntry.self,
+            UserProfile.self,
+            Plan.self,
+            DayLog.self,
+            WorkoutLog.self,
             PhotoEntry.self,
             WorkoutPreset.self
         ])
-        // On-device storage
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        // New store file: the legacy 75 Hard store (default.store) is left
+        // untouched on disk so old challenge data remains recoverable.
+        let url = documentsURL().appendingPathComponent("Fitness.store")
+        let config = ModelConfiguration(schema: schema, url: url)
         let container = try! ModelContainer(for: schema, configurations: [config])
         return PersistenceController(container: container)
     }()
