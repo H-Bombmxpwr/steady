@@ -30,6 +30,18 @@ struct ScannedProduct {
 }
 
 enum OpenFoodFacts {
+    enum OFFError: LocalizedError {
+        case rateLimited, unreachable
+        var errorDescription: String? {
+            switch self {
+            case .rateLimited:
+                return "Open Food Facts is rate-limiting — wait a few seconds, then try again."
+            case .unreachable:
+                return "Couldn't reach Open Food Facts — check your connection, or use Custom Food."
+            }
+        }
+    }
+
     /// Fetch a product by barcode.
     static func lookup(barcode: String) async throws -> ScannedProduct? {
         let url = URL(string: "https://world.openfoodfacts.org/api/v2/product/\(barcode).json?fields=product_name,nutriments,serving_size")!
@@ -87,8 +99,12 @@ enum OpenFoodFacts {
             URLQueryItem(name: "fields", value: "product_name,brands,nutriments,serving_size")
         ]
         var request = URLRequest(url: comps.url!)
+        request.timeoutInterval = 10
         request.setValue("75-fitness-ios - personal use", forHTTPHeaderField: "User-Agent")
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw http.statusCode == 429 ? OFFError.rateLimited : OFFError.unreachable
+        }
 
         struct Response: Codable {
             struct Product: Codable {

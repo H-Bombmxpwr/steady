@@ -45,7 +45,8 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   that's the Garmin link).
 - **Widgets**: small/medium/large home screen + lock screen (circular, rectangular,
   inline). Streak is front and center; medium/large have one-tap water logging
-  plus log-food / log-workout shortcuts (deep links).
+  plus Food and Today shortcuts (Today deep-links into the current day's log).
+  Weight is deliberately never shown on widgets.
 - **Notifications**: morning weigh-in, hydration nudges (times configurable, with
   a log-water action), workout reminders (lead time configurable), smart
   streak-at-risk guard (fires only when the streak is actually in danger;
@@ -58,7 +59,8 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   app's Documents, invisible to the Photos app unless you save/share them.
 - **Photo timelapse**: builds an MP4 from your progress photos on-device.
 - **Themes**: five accent palettes + dark/light/system mode — applies live,
-  everywhere, no restart.
+  everywhere, no restart. Floating **glass tab bar** with swipe-between-tabs
+  (Settings → Appearance toggles back to the classic bar).
 - **Backup export** as a single JSON (embedded photos). All data persists across
   rebuilds/redeploys (same bundle ID) in the App Group container.
 

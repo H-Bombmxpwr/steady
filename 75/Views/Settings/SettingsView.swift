@@ -25,6 +25,7 @@ struct SettingsView: View {
 
     // Appearance — bound to the observable store so the change applies live
     @Bindable private var theme = ThemeStore.shared
+    @AppStorage("ui.glassBar") private var glassBar = true
 
     // Apple Health
     @AppStorage(HealthKitService.enabledKey) private var healthEnabled = false
@@ -213,7 +214,7 @@ struct SettingsView: View {
                 }
 
                 // --- Appearance
-                Section("Appearance") {
+                Section {
                     Picker("Accent", selection: $theme.palette) {
                         ForEach(ThemePalette.allCases) { p in
                             HStack {
@@ -226,6 +227,11 @@ struct SettingsView: View {
                         ForEach(ThemeMode.allCases) { m in Text(m.label).tag(m) }
                     }
                     .pickerStyle(.segmented)
+                    Toggle("Glass tab bar", isOn: $glassBar)
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("Glass tab bar floats over the content and lets you swipe left/right between tabs. Turn it off for the classic iOS tab bar.")
                 }
 
                 // --- Notifications

@@ -7,29 +7,71 @@ struct MainTabView: View {
     var plan: Plan
     var profile: UserProfile
 
-    // Widget deep links (seventyfive://log-food, seventyfive://log-workout)
+    /// Floating glass tab bar with swipe-between-tabs; off = classic iOS bar.
+    @AppStorage("ui.glassBar") private var glassBar = true
+    @State private var tab = 0
+
+    // Widget deep links (seventyfive://log-food, log-workout, today)
     @State private var showFoodLog = false
     @State private var showWorkoutLog = false
+    @State private var showToday = false
+
+    private static let tabs: [(label: String, icon: String)] = [
+        ("Dashboard", "house.fill"),
+        ("Stats", "chart.xyaxis.line"),
+        ("Calendar", "calendar"),
+        ("Photos", "photo.on.rectangle"),
+        ("Workouts", "figure.strengthtraining.traditional")
+    ]
+
+    @ViewBuilder
+    private func screen(_ index: Int) -> some View {
+        switch index {
+        case 0: DashboardView(plan: plan, profile: profile)
+        case 1: StatsView(plan: plan, profile: profile)
+        case 2: CalendarScreen(plan: plan, profile: profile)
+        case 3: PhotosGalleryView(plan: plan)
+        default: WorkoutsView(plan: plan)
+        }
+    }
 
     var body: some View {
-        TabView {
-            DashboardView(plan: plan, profile: profile)
-                .tabItem { Label("Dashboard", systemImage: "house.fill") }
-            StatsView(plan: plan, profile: profile)
-                .tabItem { Label("Stats", systemImage: "chart.xyaxis.line") }
-            CalendarScreen(plan: plan, profile: profile)
-                .tabItem { Label("Calendar", systemImage: "calendar") }
-            PhotosGalleryView(plan: plan)
-                .tabItem { Label("Photos", systemImage: "photo.on.rectangle") }
-            WorkoutsView(plan: plan)
-                .tabItem { Label("Workouts", systemImage: "figure.strengthtraining.traditional") }
+        Group {
+            if glassBar {
+                TabView(selection: $tab) {
+                    ForEach(0..<5) { i in
+                        screen(i).tag(i)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .background(Theme.background.ignoresSafeArea())
+                .safeAreaInset(edge: .bottom) {
+                    GlassTabBar(tabs: Self.tabs, selection: $tab)
+                }
+            } else {
+                TabView(selection: $tab) {
+                    ForEach(0..<5) { i in
+                        screen(i)
+                            .tabItem { Label(Self.tabs[i].label, systemImage: Self.tabs[i].icon) }
+                            .tag(i)
+                    }
+                }
+            }
         }
         .onOpenURL { url in
             switch url.host {
             case "log-food": showFoodLog = true
             case "log-workout": showWorkoutLog = true
+            case "today": showToday = true
             default: break
             }
+        }
+        .sheet(isPresented: $showToday) {
+            NavigationStack {
+                DayDetailView(plan: plan, profile: profile,
+                              date: Calendar.current.startOfDay(for: Date()))
+            }
+            .themedRoot()
         }
         .sheet(isPresented: $showFoodLog) {
             NavigationStack {
@@ -43,6 +85,53 @@ struct MainTabView: View {
             }
             .themedRoot()
         }
+    }
+}
+
+// MARK: - Floating glass tab bar
+
+/// Translucent floating capsule bar (the "liquid glass" look). Tabs are also
+/// swipeable left/right when this is active.
+private struct GlassTabBar: View {
+    let tabs: [(label: String, icon: String)]
+    @Binding var selection: Int
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(tabs.indices, id: \.self) { i in
+                Button {
+                    withAnimation(.snappy(duration: 0.25)) { selection = i }
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: tabs[i].icon)
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(tabs[i].label)
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(selection == i ? Theme.accent : Color.secondary)
+                    .background {
+                        if selection == i {
+                            Capsule().fill(Theme.accent.opacity(0.16))
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(5)
+        .background {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay(Capsule().strokeBorder(Theme.hairline))
+                .shadow(color: .black.opacity(0.25), radius: 14, y: 5)
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 2)
     }
 }
 
@@ -90,6 +179,15 @@ struct DashboardView: View {
             }
             .navigationTitle("Day \(dayNumber)")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink(value: today) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.pencil")
+                            Text("Today")
+                        }
+                        .font(.headline)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")

@@ -12,6 +12,7 @@ struct FoodSearchView: View {
     @State private var results: [FoodItem] = []
     @State private var searching = false
     @State private var searchFailed = false
+    @State private var searchErrorText = ""
     @State private var searchTask: Task<Void, Never>?
     @State private var portionItem: FoodItem?
     @State private var showScanner = false
@@ -61,8 +62,13 @@ struct FoodSearchView: View {
                             ProgressView()
                         }
                     } else if searchFailed {
-                        Text("Couldn't reach Open Food Facts — check your connection or use Custom Food.")
+                        Text(searchErrorText)
                             .foregroundStyle(.secondary)
+                        Button {
+                            runSearch(immediately: true)
+                        } label: {
+                            Label("Try Again", systemImage: "arrow.clockwise")
+                        }
                     } else if results.isEmpty && !searching && query.count >= 3 {
                         Text("No matches.").foregroundStyle(.secondary)
                     }
@@ -210,7 +216,7 @@ struct FoodSearchView: View {
     }
 
     /// Debounced live search — waits for a typing pause, then queries OFF.
-    private func runSearch() {
+    private func runSearch(immediately: Bool = false) {
         searchTask?.cancel()
         searchFailed = false
         guard query.count >= 3 else {
@@ -221,8 +227,10 @@ struct FoodSearchView: View {
         searching = true
         let q = query
         searchTask = Task {
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            guard !Task.isCancelled else { return }
+            if !immediately {
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                guard !Task.isCancelled else { return }
+            }
             do {
                 let items = try await OpenFoodFacts.search(q)
                 guard !Task.isCancelled else { return }
@@ -231,6 +239,7 @@ struct FoodSearchView: View {
                 guard !Task.isCancelled else { return }
                 results = []
                 searchFailed = true
+                searchErrorText = error.localizedDescription
             }
             searching = false
         }
@@ -264,6 +273,7 @@ private struct PortionSheet: View {
 
     // When the source has no protein value, Gemini fills it in automatically.
     @State private var aiProteinPer100g: Double?
+    @State private var aiAssumed = ""
     @State private var aiFetching = false
 
     init(item: FoodItem, source: String = "off", onAdd: @escaping (FoodLog) -> Void) {
@@ -336,6 +346,11 @@ private struct PortionSheet: View {
                             Text("\(effectiveProtein) g").bold()
                         }
                     }
+                    if !aiAssumed.isEmpty {
+                        Text("AI assumed: \(aiAssumed)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Button("Add to Today") {
                     onAdd(FoodLog(name: item.name,
@@ -359,7 +374,10 @@ private struct PortionSheet: View {
             .task {
                 guard !item.proteinKnown, !AIFoodEstimator.apiKey.isEmpty else { return }
                 aiFetching = true
-                aiProteinPer100g = try? await AIFoodEstimator.proteinPer100g(food: item.name)
+                if let est = try? await AIFoodEstimator.proteinPer100g(food: item.name) {
+                    aiProteinPer100g = est.gramsPer100g
+                    aiAssumed = est.assumed
+                }
                 aiFetching = false
             }
         }
@@ -383,6 +401,7 @@ private struct CustomFoodSheet: View {
     @State private var estimating = false
     @State private var estimateError: String?
     @State private var estimated = false
+    @State private var assumedText = ""
 
     /// `autoEstimate` runs the AI fill immediately — used when a search had
     /// no Open Food Facts match and the user asked AI to take over.
@@ -410,11 +429,16 @@ private struct CustomFoodSheet: View {
                     if let err = estimateError {
                         Text(err).font(.footnote).foregroundStyle(.red)
                     }
+                    if !assumedText.isEmpty {
+                        Text("AI assumed: \(assumedText)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 } footer: {
                     Text(AIFoodEstimator.apiKey.isEmpty
                          ? "Add a free Gemini API key in Settings → AI Assist to auto-estimate calories and protein from the name — no more googling protein counts."
                          : estimated
-                            ? "Estimated for one typical serving — adjust if your portion differs."
+                            ? "Estimated for one typical serving — if that's not what you meant, refine the name and estimate again."
                             : "Estimates one typical serving via Gemini using your API key.")
                 }
                 HStack {
@@ -473,6 +497,7 @@ private struct CustomFoodSheet: View {
             protein = result.proteinGrams
             proteinUnknown = false
             estimated = true
+            assumedText = result.assumed
         } catch {
             estimateError = error.localizedDescription
         }

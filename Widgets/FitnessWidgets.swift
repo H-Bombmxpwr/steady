@@ -14,8 +14,6 @@ struct TodaySnapshot {
     var waterGoal = 96
     var waterStep = 8
     var streak = 0
-    var trendWeight: Double = 0
-    var goalWeight: Double = 0
     var goalDate: Date?
     var hasPlan = false
 
@@ -41,8 +39,6 @@ struct TodaySnapshot {
         snapshot.protein = day?.totalProtein ?? 0
         snapshot.waterOz = day?.waterOunces ?? 0
         snapshot.streak = CalorieEngine.streakStats(plan: plan, targets: targets).current
-        snapshot.trendWeight = CalorieEngine.trendWeight(plan: plan)
-        snapshot.goalWeight = plan.goalWeight
         snapshot.goalDate = plan.projectedGoalDate
         return snapshot
     }
@@ -228,11 +224,6 @@ struct TodayWidgetView: View {
             HStack {
                 StreakBadge(streak: s.streak)
                 Spacer()
-                if s.trendWeight > 0 {
-                    Text(String(format: "%.1f lb", s.trendWeight))
-                        .font(.system(.subheadline, design: .rounded).bold())
-                        .foregroundStyle(.secondary)
-                }
             }
 
             HStack(spacing: 0) {
@@ -252,8 +243,8 @@ struct TodayWidgetView: View {
                 Link(destination: URL(string: "seventyfive://log-food")!) {
                     actionLabel("fork.knife", "Food", accent, wide: true)
                 }
-                Link(destination: URL(string: "seventyfive://log-workout")!) {
-                    actionLabel("dumbbell.fill", "Workout", .orange, wide: true)
+                Link(destination: URL(string: "seventyfive://today")!) {
+                    actionLabel("square.and.pencil", "Today", .orange, wide: true)
                 }
             }
         }
@@ -286,18 +277,10 @@ struct TodayWidgetView: View {
             HStack {
                 StreakBadge(streak: s.streak, large: true)
                 Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(String(format: "%.1f lb", s.trendWeight))
-                        .font(.system(.title3, design: .rounded).bold())
-                    if let d = s.goalDate {
-                        Text("goal \(String(format: "%.0f", s.goalWeight)) · est. \(d.formatted(.dateTime.month(.abbreviated).day()))")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("trend weight")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                if let d = s.goalDate {
+                    Text("goal est. \(d.formatted(.dateTime.month(.abbreviated).day()))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -322,8 +305,8 @@ struct TodayWidgetView: View {
                 Link(destination: URL(string: "seventyfive://log-food")!) {
                     actionLabel("fork.knife", "Log food", accent, wide: true)
                 }
-                Link(destination: URL(string: "seventyfive://log-workout")!) {
-                    actionLabel("dumbbell.fill", "Workout", .orange, wide: true)
+                Link(destination: URL(string: "seventyfive://today")!) {
+                    actionLabel("square.and.pencil", "Today", .orange, wide: true)
                 }
             }
         }

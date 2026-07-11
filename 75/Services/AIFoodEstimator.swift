@@ -26,6 +26,12 @@ enum AIFoodEstimator {
     struct Estimate {
         let calories: Int
         let proteinGrams: Int
+        let assumed: String        // what food + serving the model based this on
+    }
+
+    struct ProteinEstimate {
+        let gramsPer100g: Double
+        let assumed: String
     }
 
     private struct GeminiResponse: Decodable {
@@ -56,31 +62,39 @@ enum AIFoodEstimator {
         struct Payload: Decodable {
             let calories: Int?
             let protein_grams: Int?
+            let assumed: String?
         }
         let prompt = """
         Estimate the nutrition for one typical serving of: "\(food)".
-        Respond with only JSON: {"calories": <integer kcal>, "protein_grams": <integer grams>}
+        Respond with only JSON:
+        {"calories": <integer kcal>, "protein_grams": <integer grams>, \
+        "assumed": "<one short sentence: exactly what food and serving size you assumed>"}
         """
         let payload: Payload = try await generate(prompt: prompt)
         guard let calories = payload.calories else { throw EstimatorError.badResponse }
-        return Estimate(calories: calories, proteinGrams: payload.protein_grams ?? 0)
+        return Estimate(calories: calories,
+                        proteinGrams: payload.protein_grams ?? 0,
+                        assumed: payload.assumed ?? "")
     }
 
     /// Protein per 100 g — auto-fills Open Food Facts results that are
     /// missing a protein value.
-    static func proteinPer100g(food: String) async throws -> Double {
+    static func proteinPer100g(food: String) async throws -> ProteinEstimate {
         struct Payload: Decodable {
             let protein_grams_per_100g: Double?
+            let assumed: String?
         }
         let prompt = """
         Estimate the protein content of this food: "\(food)".
-        Respond with only JSON: {"protein_grams_per_100g": <number, grams of protein per 100 grams>}
+        Respond with only JSON:
+        {"protein_grams_per_100g": <number, grams of protein per 100 grams>, \
+        "assumed": "<short phrase: what food you assumed this is>"}
         """
         let payload: Payload = try await generate(prompt: prompt)
         guard let protein = payload.protein_grams_per_100g, protein >= 0 else {
             throw EstimatorError.badResponse
         }
-        return protein
+        return ProteinEstimate(gramsPer100g: protein, assumed: payload.assumed ?? "")
     }
 
     /// One JSON-mode Gemini call; decodes the model's JSON reply into `T`.
