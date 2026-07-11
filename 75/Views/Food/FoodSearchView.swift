@@ -16,6 +16,8 @@ struct FoodSearchView: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var portionItem: FoodItem?
     @State private var showScanner = false
+    @State private var showDescribe = false
+    @State private var searchActive = false
     @State private var customRequest: CustomFoodRequest?
     @State private var scanned: ScannedProduct?
     @State private var scanError: String?
@@ -29,6 +31,9 @@ struct FoodSearchView: View {
         List {
             if query.isEmpty {
                 Section {
+                    Button { searchActive = true } label: {
+                        Label("Search the Database", systemImage: "magnifyingglass")
+                    }
                     Button { showScanner = true } label: {
                         Label("Scan Barcode", systemImage: "barcode.viewfinder")
                     }
@@ -38,14 +43,20 @@ struct FoodSearchView: View {
                             if recognizing { Spacer(); ProgressView() }
                         }
                     }
+                    Button { showDescribe = true } label: {
+                        Label("Describe Your Meal", systemImage: "waveform")
+                    }
                     Button {
                         customRequest = CustomFoodRequest(name: "", autoEstimate: false)
                     } label: {
                         Label("Custom Food", systemImage: "square.and.pencil")
                     }
-                }
-                Section(footer: Text("Type to search ~3M crowd-sourced products from Open Food Facts, ranked by relevance. Anything it doesn't have, AI can estimate — including straight from a photo. No internet? Use Custom Food and enter the numbers manually.")) {
-                    EmptyView()
+                } footer: {
+                    Text("""
+                    Search covers ~3M crowd-sourced products (Open Food Facts); photos and meal descriptions go through AI. No internet? Custom Food takes manual numbers.
+
+                    Food colors are calorie density, Noom-style: 🟢 green = under 1 cal per gram (eat freely) · 🟠 orange = 1–2.4 (moderate) · 🔴 red = over 2.4 (calorie-dense — small portions add up fast).
+                    """)
                 }
             } else {
                 Section {
@@ -68,11 +79,16 @@ struct FoodSearchView: View {
                     }
                     ForEach(results) { item in
                         Button { portionItem = item } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.name).lineLimit(2).foregroundStyle(.primary)
-                                Text(subtitle(for: item))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(item.densityBucket?.color ?? Color.secondary)
+                                    .frame(width: 9, height: 9)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.name).lineLimit(2).foregroundStyle(.primary)
+                                    Text(subtitle(for: item))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
@@ -91,7 +107,8 @@ struct FoodSearchView: View {
         }
         .themedForm()
         .navigationTitle("Add Food")
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
+        .searchable(text: $query, isPresented: $searchActive,
+                    placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "Search foods (e.g. chicken breast)")
         .onChange(of: query) { _ in runSearch() }
         .sheet(item: $portionItem) { item in
@@ -134,6 +151,13 @@ struct FoodSearchView: View {
                     dismiss()
                 }
             }
+        }
+        .sheet(isPresented: $showDescribe) {
+            DescribeMealView { logs in
+                logs.forEach { day.foods.append($0) }
+                dismiss()
+            }
+            .themedRoot()
         }
         .sheet(item: $customRequest) { req in
             CustomFoodSheet(initialName: req.name,
@@ -279,6 +303,14 @@ private struct PortionSheet: View {
             Form {
                 Section {
                     Text(item.name).font(.headline)
+                    if let d = item.densityBucket {
+                        HStack(spacing: 8) {
+                            Circle().fill(d.color).frame(width: 10, height: 10)
+                            Text(d.label)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 if let pd = item.pd, item.pg != nil {
                     Section("Portion") {
@@ -335,7 +367,8 @@ private struct PortionSheet: View {
                                   calories: item.calories(grams: effectiveGrams),
                                   proteinGrams: effectiveProtein,
                                   grams: effectiveGrams,
-                                  source: source))
+                                  source: source,
+                                  density: item.densityBucket?.rawValue))
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)

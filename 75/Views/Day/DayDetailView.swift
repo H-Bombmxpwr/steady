@@ -73,7 +73,10 @@ struct DayDetailView: View {
             // ===== Food
             Section("Food") {
                 ForEach(day.foods) { f in
-                    HStack {
+                    HStack(spacing: 8) {
+                        if let d = FoodDensity(rawValue: f.density ?? "") {
+                            Circle().fill(d.color).frame(width: 9, height: 9)
+                        }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(f.name).lineLimit(1)
                             Text(foodSubtitle(f))

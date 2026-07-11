@@ -44,6 +44,52 @@ enum AIFoodEstimator {
         let assumed: String
     }
 
+    struct MealItem: Identifiable {
+        let id = UUID()
+        let name: String
+        let calories: Int
+        let proteinGrams: Int
+        let density: String?       // "green" | "orange" | "red"
+    }
+
+    struct MealBreakdown {
+        let items: [MealItem]
+        let assumed: String
+    }
+
+    /// "Describe your meal" — plain text (typed or dictated) in, itemized
+    /// estimate out.
+    static func mealBreakdown(description: String) async throws -> MealBreakdown {
+        struct PayloadItem: Decodable {
+            let name: String?
+            let calories: Int?
+            let protein_grams: Int?
+            let density: String?
+        }
+        struct Payload: Decodable {
+            let items: [PayloadItem]?
+            let assumed: String?
+        }
+        let prompt = """
+        Break this meal description into separate food items and estimate each one.
+        Meal: "\(description)"
+        Respond with only JSON:
+        {"items": [{"name": "<short item name>", "calories": <integer kcal>, \
+        "protein_grams": <integer grams>, \
+        "density": "<green if under 1 kcal per gram, orange if 1 to 2.4 kcal per gram, red if over 2.4>"}], \
+        "assumed": "<one short sentence: the portion sizes you assumed>"}
+        """
+        let payload: Payload = try await generate(prompt: prompt)
+        let items = (payload.items ?? []).compactMap { p -> MealItem? in
+            guard let name = p.name, !name.isEmpty, let calories = p.calories else { return nil }
+            return MealItem(name: name, calories: calories,
+                            proteinGrams: p.protein_grams ?? 0,
+                            density: FoodDensity(rawValue: p.density ?? "")?.rawValue)
+        }
+        guard !items.isEmpty else { throw EstimatorError.badResponse }
+        return MealBreakdown(items: items, assumed: payload.assumed ?? "")
+    }
+
     private struct GeminiResponse: Decodable {
         struct Candidate: Decodable {
             struct Content: Decodable {

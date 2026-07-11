@@ -17,6 +17,10 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>To dictate your meal so AI can estimate its calories and protein.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>To turn your spoken meal description into text for the AI estimate.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
 	<string>To add your planned workouts to your calendar as repeating events.</string>
 	<key>NSHealthShareUsageDescription</key>

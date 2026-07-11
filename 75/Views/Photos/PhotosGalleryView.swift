@@ -45,6 +45,13 @@ struct PhotosGalleryView: View {
             .navigationTitle("Progress Photos")
             .toolbar {
                 if appLock.photosUnlocked {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            appLock.lockPhotos()
+                        } label: {
+                            Image(systemName: "lock.fill")
+                        }
+                    }
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Button {
                             buildingTimelapse = true

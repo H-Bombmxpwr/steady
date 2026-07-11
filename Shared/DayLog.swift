@@ -91,15 +91,18 @@ final class FoodLog {
     var calories: Int
     var proteinGrams: Int
     var grams: Double?                // portion size when known
-    var source: String                // "usda" | "barcode" | "custom"
+    var source: String                // "off" | "barcode" | "custom" | "ai"
+    var density: String? = nil        // calorie density: "green" | "orange" | "red"
     var createdAt: Date
 
-    init(name: String, calories: Int, proteinGrams: Int, grams: Double? = nil, source: String = "custom") {
+    init(name: String, calories: Int, proteinGrams: Int, grams: Double? = nil,
+         source: String = "custom", density: String? = nil) {
         self.name = name
         self.calories = calories
         self.proteinGrams = proteinGrams
         self.grams = grams
         self.source = source
+        self.density = density
         self.createdAt = Date()
     }
 }

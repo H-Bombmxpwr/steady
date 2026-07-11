@@ -1,4 +1,37 @@
 import Foundation
+import SwiftUI
+
+/// Noom-style calorie-density buckets: green under 1 kcal/g, orange up to
+/// 2.4, red above. Computed from per-100g data, or supplied by the AI for
+/// described meals.
+enum FoodDensity: String {
+    case green, orange, red
+
+    init?(caloriesPer100g: Double) {
+        guard caloriesPer100g > 0 else { return nil }
+        switch caloriesPer100g / 100 {
+        case ..<1.0: self = .green
+        case ..<2.4: self = .orange
+        default: self = .red
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .green: return .green
+        case .orange: return .orange
+        case .red: return .red
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .green: return "Green — low calorie density"
+        case .orange: return "Orange — moderate calorie density"
+        case .red: return "Red — high calorie density"
+        }
+    }
+}
 
 /// One food, nutrients per 100 g. Sourced from Open Food Facts (text search
 /// or barcode scan); custom foods are entered manually.
@@ -15,6 +48,7 @@ struct FoodItem: Codable, Identifiable, Hashable {
     var id: String { n }
     var name: String { n }
     var proteinKnown: Bool { !(pu ?? false) }
+    var densityBucket: FoodDensity? { FoodDensity(caloriesPer100g: c) }
 
     func calories(grams: Double) -> Int { Int((c * grams / 100).rounded()) }
     func protein(grams: Double) -> Int { Int((p * grams / 100).rounded()) }

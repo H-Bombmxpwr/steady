@@ -15,16 +15,19 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
 - **Weight trend**: EWMA-smoothed trend line, goal line, projected goal date.
 
 ### Logging
-- **Food**: live **Open Food Facts search** as you type (~3M crowd-sourced
-  products, US-market first, re-ranked by text relevance since OFF orders by
-  popularity; transient OFF outages are retried and cached automatically),
-  barcode scan, portion picker. **Gemini fills the gaps**: OFF results missing
-  protein get it auto-estimated on the portion screen, anything OFF doesn't
-  have gets full calories + protein from AI ("Not listed?" row), and
-  **Photo of Food** sends the plate photo to Gemini vision for dish + macros
-  (food photos only — progress photos never leave the device). Offline?
-  Custom Food takes manual numbers. Gemini key loads from a git-ignored
-  `Secrets.plist` (a key pasted in Settings → AI Assist overrides it).
+- **Food** — five ways in: **search the database** (live Open Food Facts,
+  ~3M crowd-sourced products, US-market first, re-ranked by text relevance,
+  transient OFF outages retried + cached), **barcode scan**,
+  **photo of food** (Gemini vision reads the plate), **describe your meal**
+  (type or **dictate** plain text — "two eggs, toast with butter, and an OJ" —
+  and Gemini itemizes calories + protein per food), or manual custom entry.
+  Gemini also fills gaps everywhere: missing protein on OFF results is
+  auto-estimated, "Not listed?" estimates a whole food from the search text,
+  and every estimate echoes what it assumed. **Noom-style calorie-density
+  colors** (green < 1 cal/g · orange 1–2.4 · red > 2.4) tag foods in search,
+  portions, and the day log. Food names/photos go to AI; progress photos
+  never leave the device. Gemini key loads from a git-ignored `Secrets.plist`
+  (a key pasted in Settings → AI Assist overrides it).
 - **Workouts**: bundled **exercise database** (873 exercises with instructions,
   free-exercise-db), workout builder with per-exercise sets × reps × weight
   targets, **set-by-set logging** with progressive-overload history charts,
