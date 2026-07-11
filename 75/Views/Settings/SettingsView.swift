@@ -34,6 +34,10 @@ struct SettingsView: View {
     // AI assist
     @AppStorage(AIFoodEstimator.apiKeyKey) private var geminiKey = ""
 
+    // Lab-aware coaching
+    @AppStorage("labs.enabled") private var labsEnabled = false
+    @State private var showLabEntry = false
+
     // Backup PIN for the photo lock
     @State private var pinIsSet = PinStore.isSet
     @State private var pinCurrent = ""
@@ -199,6 +203,35 @@ struct SettingsView: View {
                     Text("Apple Health")
                 } footer: {
                     Text("Garmin, Apple Watch, and smart scales that write to Apple Health flow in automatically — this is the Garmin link.")
+                }
+
+                // --- Blood work (opt-in lab-aware coaching)
+                Section {
+                    Toggle("Lab-aware coaching", isOn: $labsEnabled)
+                    if labsEnabled {
+                        if let labs = plan.latestLabs {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Latest panel — \(labs.date.formatted(.dateTime.month(.abbreviated).day().year()))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(labSummaryText(labs))
+                                    .font(.subheadline)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                        Button { showLabEntry = true } label: {
+                            Label(plan.latestLabs == nil ? "Log Lab Results" : "Log a New Panel",
+                                  systemImage: "testtube.2")
+                        }
+                        .sheet(isPresented: $showLabEntry) {
+                            LabEntrySheet(plan: plan)
+                                .themedRoot()
+                        }
+                    }
+                } header: {
+                    Text("Blood Work")
+                } footer: {
+                    Text("Not medical advice — think of it as prep for your next doctor visit. Log a few numbers from a recent panel and day summaries and nutrition targets lean toward improving them. Values stay on this device; while this is on, only the bare numbers (never your name, age, or anything identifying) are included when a day summary is generated.")
                 }
 
                 // --- Where AI is used (the one place the app talks about it)
@@ -498,4 +531,84 @@ struct ActivityView: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Blood work entry
+
+/// One-line recap of the latest panel for the settings row.
+private func labSummaryText(_ labs: LabResult) -> String {
+    var parts: [String] = []
+    if let v = labs.ldl { parts.append("LDL \(Int(v))") }
+    if let v = labs.hdl { parts.append("HDL \(Int(v))") }
+    if let v = labs.triglycerides { parts.append("Trig \(Int(v))") }
+    if let v = labs.fastingGlucose { parts.append("Glucose \(Int(v))") }
+    if let v = labs.a1c { parts.append("A1C \(v.formatted(.number.precision(.fractionLength(1))))%") }
+    return parts.joined(separator: " · ")
+}
+
+/// Log a lab panel — a few numbers off the report, all optional.
+struct LabEntrySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
+    var plan: Plan
+
+    @State private var date = Date()
+    @State private var ldl = ""
+    @State private var hdl = ""
+    @State private var triglycerides = ""
+    @State private var glucose = ""
+    @State private var a1c = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("Test date", selection: $date, in: ...Date(), displayedComponents: .date)
+                Section {
+                    field("LDL cholesterol", $ldl, unit: "mg/dL")
+                    field("HDL cholesterol", $hdl, unit: "mg/dL")
+                    field("Triglycerides", $triglycerides, unit: "mg/dL")
+                    field("Fasting glucose", $glucose, unit: "mg/dL")
+                    field("A1C", $a1c, unit: "%")
+                } header: {
+                    Text("From your lab report (leave blank to skip)")
+                } footer: {
+                    Text("Copy the numbers straight off the report. They stay on this device and only the bare values steer summaries — nothing identifying.")
+                }
+                Button("Save") {
+                    let labs = LabResult(date: date)
+                    labs.ldl = Double(ldl)
+                    labs.hdl = Double(hdl)
+                    labs.triglycerides = Double(triglycerides)
+                    labs.fastingGlucose = Double(glucose)
+                    labs.a1c = Double(a1c)
+                    if !labs.isEmpty {
+                        plan.labs.append(labs)
+                        try? context.save()
+                    }
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .themedForm()
+            .keyboardDoneButton()
+            .navigationTitle("Lab Results")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func field(_ label: String, _ text: Binding<String>, unit: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("–", text: text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 70)
+            Text(unit).foregroundStyle(.secondary).font(.caption)
+        }
+    }
 }

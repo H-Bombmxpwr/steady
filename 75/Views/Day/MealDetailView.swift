@@ -86,6 +86,7 @@ struct DaySummarySheet: View {
     @Environment(\.dismiss) private var dismiss
     let day: DayLog
     let targets: DailyTargets
+    var labs: AIFoodEstimator.LabSnapshot? = nil
 
     @State private var review: AIFoodEstimator.DayReview?
     @State private var error: String?
@@ -176,7 +177,7 @@ struct DaySummarySheet: View {
     private func run() async {
         guard review == nil else { return }
         do {
-            review = try await AIFoodEstimator.reviewDay(day: day, targets: targets)
+            review = try await AIFoodEstimator.reviewDay(day: day, targets: targets, labs: labs)
         } catch {
             self.error = error.localizedDescription
         }

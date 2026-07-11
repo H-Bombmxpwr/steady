@@ -163,6 +163,40 @@ struct FoodNutritionSheet: View {
     }
 }
 
+// MARK: - Daily nutrient goals
+
+/// Daily limits/goals. Defaults are FDA daily values; a logged lab panel
+/// (opt-in) tightens the relevant ones — framed as talking points for the
+/// doctor, not medical advice.
+struct NutrientGoals {
+    var satFatG = 20.0
+    var cholesterolMg = 300.0
+    var sodiumMg = 2300.0
+    var addedSugarG = 50.0
+    var fiberG = 28.0
+    var note: String?
+
+    static func adjusted(for labs: LabResult?) -> NutrientGoals {
+        var goals = NutrientGoals()
+        guard let labs else { return goals }
+        var reasons: [String] = []
+        if (labs.ldl ?? 0) >= 130 || (labs.triglycerides ?? 0) >= 150 {
+            goals.satFatG = 13
+            goals.cholesterolMg = 200
+            goals.fiberG = 35
+            reasons.append("cholesterol")
+        }
+        if (labs.fastingGlucose ?? 0) >= 100 || (labs.a1c ?? 0) >= 5.7 {
+            goals.addedSugarG = 25
+            reasons.append("blood sugar")
+        }
+        if !reasons.isEmpty {
+            goals.note = "Some targets are tightened because of the \(reasons.joined(separator: " and ")) numbers you logged. These are general guardrails, not medical advice — bring them to your doctor."
+        }
+        return goals
+    }
+}
+
 // MARK: - Whole-day nutrition report
 
 /// Noom-level day report: energy + macro split, "keep under" limits,
@@ -171,6 +205,7 @@ struct FoodNutritionSheet: View {
 struct DayNutritionView: View {
     let day: DayLog
     let targets: DailyTargets
+    var goals = NutrientGoals()
 
     private var facts: NutritionFacts { day.totalFacts }
 
@@ -210,7 +245,7 @@ struct DayNutritionView: View {
 
             Section {
                 TargetRow(label: "Saturated Fat", value: facts.saturatedFatGrams,
-                          target: 20, unit: "g", limit: true)
+                          target: goals.satFatG, unit: "g", limit: true)
                 HStack {
                     Text("Trans Fat")
                     Spacer()
@@ -218,11 +253,11 @@ struct DayNutritionView: View {
                         .foregroundStyle(facts.transFatGrams > 0 ? Theme.danger : .secondary)
                 }
                 TargetRow(label: "Cholesterol", value: facts.cholesterolMg,
-                          target: 300, unit: "mg", limit: true)
+                          target: goals.cholesterolMg, unit: "mg", limit: true)
                 TargetRow(label: "Sodium", value: facts.sodiumMg,
-                          target: 2300, unit: "mg", limit: true)
+                          target: goals.sodiumMg, unit: "mg", limit: true)
                 TargetRow(label: "Added Sugar", value: facts.addedSugarGrams,
-                          target: 50, unit: "g", limit: true)
+                          target: goals.addedSugarG, unit: "g", limit: true)
                 HStack {
                     Text("Total Sugar")
                     Spacer()
@@ -232,11 +267,11 @@ struct DayNutritionView: View {
             } header: {
                 SectionHeader(icon: "arrow.down.circle.fill", title: "Keep Under")
             } footer: {
-                Text("Daily limits: ≤20 g saturated fat, 0 g trans fat, ≤300 mg cholesterol, ≤2,300 mg sodium, ≤50 g added sugar.")
+                Text(goals.note ?? "Daily limits: ≤\(Int(goals.satFatG)) g saturated fat, 0 g trans fat, ≤\(Int(goals.cholesterolMg)) mg cholesterol, ≤\(Int(goals.sodiumMg)) mg sodium, ≤\(Int(goals.addedSugarG)) g added sugar.")
             }
 
             Section {
-                TargetRow(label: "Fiber", value: facts.fiberGrams, target: 28, unit: "g")
+                TargetRow(label: "Fiber", value: facts.fiberGrams, target: goals.fiberG, unit: "g")
                 TargetRow(label: "Potassium", value: facts.potassiumMg,
                           target: 4700, unit: "mg")
                 TargetRow(label: "Calcium", value: facts.calciumMg,

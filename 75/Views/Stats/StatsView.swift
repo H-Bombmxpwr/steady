@@ -86,6 +86,7 @@ struct StatsView: View {
                         fiberChart
                         sodiumChart
                         alcoholChart
+                        if plan.labs.contains(where: { !$0.isEmpty }) { labsChart }
                     }
                 }
                 .padding()
@@ -344,6 +345,34 @@ struct StatsView: View {
                     .foregroundStyle(Theme.warn.opacity(0.7))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
             }
+        }
+    }
+
+    /// Logged lab panels over time — the levers the Food charts above
+    /// pull on (worth bringing to the doctor, not medical advice).
+    private var labsChart: some View {
+        struct Point: Identifiable {
+            let date: Date; let marker: String; let value: Double
+            var id: String { "\(date)-\(marker)" }
+        }
+        let panels = plan.labs.filter { !$0.isEmpty }.sorted { $0.date < $1.date }
+        let points: [Point] = panels.flatMap { l -> [Point] in
+            var out: [Point] = []
+            if let v = l.ldl { out.append(Point(date: l.date, marker: "LDL", value: v)) }
+            if let v = l.hdl { out.append(Point(date: l.date, marker: "HDL", value: v)) }
+            if let v = l.triglycerides { out.append(Point(date: l.date, marker: "Triglycerides", value: v)) }
+            if let v = l.fastingGlucose { out.append(Point(date: l.date, marker: "Glucose", value: v)) }
+            return out
+        }
+        return ChartCard(title: "Lab Panels (mg/dL)", empty: points.isEmpty,
+                         emptyText: "Log lab results in Settings → Blood Work to track them here.") {
+            Chart(points) { pt in
+                LineMark(x: .value("Date", pt.date, unit: .day), y: .value("mg/dL", pt.value))
+                    .foregroundStyle(by: .value("Marker", pt.marker))
+                    .symbol(by: .value("Marker", pt.marker))
+            }
+            .chartYScale(domain: .automatic(includesZero: false))
+            .chartLegend(position: .bottom, spacing: 8)
         }
     }
 

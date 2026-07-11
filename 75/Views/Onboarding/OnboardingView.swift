@@ -6,6 +6,14 @@ struct OnboardingView: View {
     @Environment(\.modelContext) private var context
     @State private var step = 0
 
+    // Blood work (optional, opt-in)
+    @AppStorage("labs.enabled") private var labsEnabled = false
+    @State private var ldlText = ""
+    @State private var hdlText = ""
+    @State private var trigText = ""
+    @State private var glucoseText = ""
+    @State private var a1cText = ""
+
     // Profile
     @State private var birthDate = Calendar.current.date(byAdding: .year, value: -30, to: Date())!
     @State private var sex: BiologicalSex = .male
@@ -54,6 +62,7 @@ struct OnboardingView: View {
                 case 2: budgetStep
                 case 3: scheduleStep
                 case 4: hydrationStep
+                case 5: labsStep
                 default: privacyStep
                 }
             }
@@ -75,7 +84,7 @@ struct OnboardingView: View {
         .themedRoot()
     }
 
-    private let titles = ["About You", "Your Goal", "Your Budget", "Workout Days", "Hydration", "Photo Privacy"]
+    private let titles = ["About You", "Your Goal", "Your Budget", "Workout Days", "Hydration", "Blood Work", "Photo Privacy"]
 
     // MARK: Step 1 — profile
 
@@ -224,7 +233,44 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: Step 6 — photo privacy PIN + create
+    // MARK: Step 6 — blood work (optional)
+
+    private var labsStep: some View {
+        Form {
+            Section {
+                Toggle("Lab-aware coaching", isOn: $labsEnabled)
+            } footer: {
+                Text("Optional. Log a few numbers from a recent blood panel and day summaries and nutrition targets lean toward improving them — framed as things to raise with your doctor, never medical advice. Values stay on this device; when this is on, only the bare numbers are used to steer summaries. You can change this anytime in Settings → Blood Work.")
+            }
+            if labsEnabled {
+                Section("From your lab report (leave blank to skip)") {
+                    labField("LDL cholesterol", $ldlText, unit: "mg/dL")
+                    labField("HDL cholesterol", $hdlText, unit: "mg/dL")
+                    labField("Triglycerides", $trigText, unit: "mg/dL")
+                    labField("Fasting glucose", $glucoseText, unit: "mg/dL")
+                    labField("A1C", $a1cText, unit: "%")
+                }
+            }
+            Section {
+                Button("Continue") { step = 6 }
+            }
+        }
+    }
+
+    private func labField(_ label: String, _ text: Binding<String>, unit: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("–", text: text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 70)
+                .focused($weightFocused)
+            Text(unit).foregroundStyle(.secondary).font(.caption)
+        }
+    }
+
+    // MARK: Step 7 — photo privacy PIN + create
 
     private var pinValid: Bool {
         (pin.isEmpty && pinConfirm.isEmpty)
@@ -286,6 +332,16 @@ struct OnboardingView: View {
                 minutes: workoutMinutes,
                 hour: comps.hour ?? 7,
                 minute: comps.minute ?? 0))
+        }
+
+        if labsEnabled {
+            let labs = LabResult(date: Date())
+            labs.ldl = Double(ldlText)
+            labs.hdl = Double(hdlText)
+            labs.triglycerides = Double(trigText)
+            labs.fastingGlucose = Double(glucoseText)
+            labs.a1c = Double(a1cText)
+            if !labs.isEmpty { plan.labs.append(labs) }
         }
 
         context.insert(profile)

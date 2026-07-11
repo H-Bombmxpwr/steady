@@ -17,6 +17,9 @@ struct DayDetailView: View {
     // Gemini end-of-day review
     @State private var showDaySummary = false
 
+    // Lab-aware coaching (opt-in; Settings → Blood Work)
+    @AppStorage("labs.enabled") private var labsEnabled = false
+
     @FocusState private var fieldFocused: Bool
 
     init(plan: Plan, profile: UserProfile, date: Date) {
@@ -120,7 +123,8 @@ struct DayDetailView: View {
                     }
                 }
                 NavigationLink {
-                    DayNutritionView(day: day, targets: targets)
+                    DayNutritionView(day: day, targets: targets,
+                                     goals: .adjusted(for: labsEnabled ? plan.latestLabs : nil))
                 } label: {
                     Label("Nutrition Report", systemImage: "chart.bar.doc.horizontal")
                 }
@@ -321,7 +325,9 @@ struct DayDetailView: View {
         .themedForm()
         .navigationTitle(Text(date, style: .date))
         .sheet(isPresented: $showDaySummary) {
-            DaySummarySheet(day: day, targets: targets)
+            DaySummarySheet(day: day, targets: targets,
+                            labs: labsEnabled
+                                ? AIFoodEstimator.LabSnapshot(labs: plan.latestLabs) : nil)
                 .themedRoot()
         }
         .onChange(of: selectedItems) { _ in Task { await handlePicked() } }

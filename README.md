@@ -60,6 +60,16 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   green/orange/red per day), fiber vs 28 g goal, sodium vs 2,300 mg limit,
   alcohol; tiles for avg calories/protein/fiber/sodium.
 
+### Blood work (opt-in)
+- Log a few numbers from a recent lab panel (LDL, HDL, triglycerides, fasting
+  glucose, A1C) at onboarding or anytime in Settings → Blood Work. With the
+  toggle on, day summaries weight their food swaps toward improving those
+  markers and the nutrition report tightens the relevant limits (sat fat,
+  cholesterol, fiber, added sugar) — always framed as prep for the doctor
+  conversation, never medical advice. Values stay on-device; only the bare
+  numbers (nothing identifying) steer the summary request. Panels chart over
+  time on the Food stats tab.
+
 ### Integrations
 - **Apple Health two-way**: writes weight/water/nutrition/workouts, reads steps,
   sleep, and external weigh-ins (Garmin/Watch/smart scales flow in via Health —

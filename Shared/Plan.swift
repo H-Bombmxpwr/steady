@@ -18,6 +18,7 @@ final class Plan {
     @Relationship(deleteRule: .cascade) var schedule: [WorkoutScheduleEntry]
     @Relationship(deleteRule: .cascade) var supplements: [Supplement]
     @Relationship(deleteRule: .cascade) var measurements: [MeasurementLog]
+    @Relationship(deleteRule: .cascade) var labs: [LabResult] = []
 
     init(startDate: Date,
          startingWeight: Double,
@@ -166,6 +167,36 @@ final class MeasurementLog {
 
     var isEmpty: Bool {
         waist == nil && hips == nil && chest == nil && arm == nil && thigh == nil
+    }
+}
+
+/// A dated lab panel (mg/dL except A1C, which is %). All optional — log
+/// whatever the report had. Numbers only; nothing identifying is stored
+/// beyond the date, and values are used off-device only when lab-aware
+/// coaching is switched on.
+@Model
+final class LabResult {
+    var date: Date
+    var ldl: Double?
+    var hdl: Double?
+    var triglycerides: Double?
+    var fastingGlucose: Double?
+    var a1c: Double?
+
+    init(date: Date) {
+        self.date = Calendar.current.startOfDay(for: date)
+    }
+
+    var isEmpty: Bool {
+        ldl == nil && hdl == nil && triglycerides == nil
+            && fastingGlucose == nil && a1c == nil
+    }
+}
+
+extension Plan {
+    /// Most recent non-empty lab panel.
+    var latestLabs: LabResult? {
+        labs.filter { !$0.isEmpty }.sorted { $0.date < $1.date }.last
     }
 }
 

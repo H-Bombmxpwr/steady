@@ -171,9 +171,40 @@ enum AIFoodEstimator {
         let suggestions: [Suggestion]
     }
 
+    /// Bare lab numbers for lab-aware coaching — values only, nothing
+    /// identifying, and only sent when the user has the toggle on.
+    struct LabSnapshot {
+        let ldl: Double?
+        let hdl: Double?
+        let triglycerides: Double?
+        let fastingGlucose: Double?
+        let a1c: Double?
+
+        init?(labs: LabResult?) {
+            guard let labs, !labs.isEmpty else { return nil }
+            ldl = labs.ldl
+            hdl = labs.hdl
+            triglycerides = labs.triglycerides
+            fastingGlucose = labs.fastingGlucose
+            a1c = labs.a1c
+        }
+
+        var promptLine: String {
+            var parts: [String] = []
+            if let ldl { parts.append("LDL \(Int(ldl)) mg/dL") }
+            if let hdl { parts.append("HDL \(Int(hdl)) mg/dL") }
+            if let triglycerides { parts.append("triglycerides \(Int(triglycerides)) mg/dL") }
+            if let fastingGlucose { parts.append("fasting glucose \(Int(fastingGlucose)) mg/dL") }
+            if let a1c { parts.append("A1C \(a1c.formatted(.number.precision(.fractionLength(1))))%") }
+            return parts.joined(separator: ", ")
+        }
+    }
+
     /// End-of-day coach: looks at everything eaten vs the targets and
-    /// suggests concrete substitutions for next time.
-    static func reviewDay(day: DayLog, targets: DailyTargets) async throws -> DayReview {
+    /// suggests concrete substitutions for next time. When a lab snapshot is
+    /// provided (opt-in), suggestions lean toward improving those markers.
+    static func reviewDay(day: DayLog, targets: DailyTargets,
+                          labs: LabSnapshot? = nil) async throws -> DayReview {
         struct PayloadSuggestion: Decodable {
             let issue: String?
             let swap: String?
@@ -199,11 +230,28 @@ enum AIFoodEstimator {
             .joined(separator: "\n")
 
         let totals = day.totalFacts
+        let labSection: String
+        if let labs {
+            labSection = """
+
+            The user chose to share recent lab numbers (values only) to steer \
+            food choices: \(labs.promptLine).
+            Weight your suggestions toward improving these markers — for \
+            high LDL or triglycerides favor swaps that cut saturated and \
+            trans fat and add soluble fiber; for high glucose or A1C favor \
+            swaps that cut added sugar and refined carbs. Where a suggestion \
+            relates to a marker, phrase it as something worth raising with \
+            their doctor. You are not giving medical advice and must not \
+            diagnose or recommend medication.
+            """
+        } else {
+            labSection = ""
+        }
         let prompt = """
         You are a supportive nutrition coach reviewing one day of eating. \
         Be specific and practical, never preachy. Suggestions must be food \
         SUBSTITUTIONS into what was actually eaten (swap X for Y in that \
-        meal), not generic advice.
+        meal), not generic advice.\(labSection)
         Targets: \(targets.calories) cal, \(targets.proteinGrams) g protein.
         Eaten (total \(day.totalCalories) cal, \(day.totalProtein) g protein, \
         \(Int(totals.sodiumMg)) mg sodium, \(Int(totals.saturatedFatGrams)) g sat fat, \
