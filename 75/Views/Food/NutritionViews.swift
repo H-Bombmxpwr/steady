@@ -137,7 +137,7 @@ struct DayNutritionView: View {
 
     var body: some View {
         Form {
-            Section("Energy") {
+            Section {
                 TargetRow(label: "Calories", value: Double(day.totalCalories),
                           target: Double(targets.calories), unit: "cal", limit: true)
                 if day.alcoholCalories > 0 {
@@ -147,6 +147,8 @@ struct DayNutritionView: View {
                         Text("\(day.alcoholCalories) cal").foregroundStyle(.secondary)
                     }
                 }
+            } header: {
+                SectionHeader(icon: "flame.fill", title: "Energy")
             }
 
             Section {
@@ -156,7 +158,7 @@ struct DayNutritionView: View {
                 macroRow("Carbs", grams: facts.carbsGrams, cal: carbsCal)
                 macroRow("Fat", grams: facts.fatGrams, cal: fatCal)
             } header: {
-                Text("Macros")
+                SectionHeader(icon: "chart.pie.fill", title: "Macros")
             } footer: {
                 Text("Percentages are the calorie split across itemized foods. A rough guide: 10–35% protein, 45–65% carbs, 20–35% fat.")
             }
@@ -183,7 +185,7 @@ struct DayNutritionView: View {
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Keep Under")
+                SectionHeader(icon: "arrow.down.circle.fill", title: "Keep Under")
             } footer: {
                 Text("Daily limits: ≤20 g saturated fat, 0 g trans fat, ≤300 mg cholesterol, ≤2,300 mg sodium, ≤50 g added sugar.")
             }
@@ -196,7 +198,7 @@ struct DayNutritionView: View {
                           target: 1300, unit: "mg")
                 TargetRow(label: "Iron", value: facts.ironMg, target: 18, unit: "mg")
             } header: {
-                Text("Get Enough")
+                SectionHeader(icon: "arrow.up.heart.fill", title: "Get Enough")
             } footer: {
                 Text("FDA daily values. Database entries sometimes omit micronutrients, so these can read low — AI-logged meals carry the full panel.")
             }
@@ -207,12 +209,12 @@ struct DayNutritionView: View {
                     densityRow(.orange)
                     densityRow(.red)
                 } header: {
-                    Text("Calorie Density Mix")
+                    SectionHeader(icon: "circle.hexagongrid.fill", title: "Calorie Density Mix")
                 } footer: {
                     Text("Noom-style: aim for most of your calories from green (under 1 cal/g) foods, and keep red (over 2.4 cal/g) portions small.")
                 }
 
-                Section("By Meal") {
+                Section {
                     ForEach(Meal.allCases) { meal in
                         let foods = day.foods(for: meal)
                         if !foods.isEmpty {
@@ -223,6 +225,8 @@ struct DayNutritionView: View {
                     if !unassigned.isEmpty {
                         mealRow(label: "Other", icon: "fork.knife", foods: unassigned)
                     }
+                } header: {
+                    SectionHeader(icon: "fork.knife", title: "By Meal")
                 }
             }
         }

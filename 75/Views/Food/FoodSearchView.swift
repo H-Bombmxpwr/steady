@@ -63,7 +63,7 @@ struct FoodSearchView: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
                 .listRowBackground(Color.clear)
             } header: {
-                Text("Logging to")
+                SectionHeader(icon: "fork.knife", title: "Logging to")
             }
 
             if query.isEmpty {
@@ -114,7 +114,7 @@ struct FoodSearchView: View {
                         Label("Custom Food", systemImage: "square.and.pencil")
                     }
                 } header: {
-                    Text("Other ways to log")
+                    SectionHeader(icon: "tray.full.fill", title: "Other ways to log")
                 } footer: {
                     Text("""
                     Photos and meal descriptions go through AI; search covers ~3M crowd-sourced products (Open Food Facts). No internet? Custom Food takes manual numbers.

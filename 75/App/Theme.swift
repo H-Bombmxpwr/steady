@@ -111,6 +111,43 @@ extension UIColor {
     }
 }
 
+// MARK: - Section identity
+
+/// Small gradient icon chip — gives plain form rows and headers some
+/// character without touching layout or behavior.
+struct SectionIcon: View {
+    let systemImage: String
+    var size: CGFloat = 26
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: size * 0.45, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
+                    .fill(Theme.gradient)
+            )
+    }
+}
+
+/// Form section header with an icon chip and natural-case title.
+struct SectionHeader: View {
+    let icon: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            SectionIcon(systemImage: icon, size: 20)
+            Text(title)
+                .font(.footnote.bold())
+                .foregroundStyle(.primary.opacity(0.8))
+        }
+        .textCase(nil)
+        .padding(.bottom, 2)
+    }
+}
+
 // MARK: - Card
 
 struct Card<Content: View>: View {

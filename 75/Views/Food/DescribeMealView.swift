@@ -17,6 +17,7 @@ struct DescribeMealView: View {
     @State private var buildError: String?
     @State private var items: [AIFoodEstimator.MealItem] = []
     @State private var assumed = ""
+    @State private var editingItem: AIFoodEstimator.MealItem?
 
     private var totalCalories: Int { items.reduce(0) { $0 + $1.calories } }
     private var totalProtein: Int { items.reduce(0) { $0 + $1.proteinGrams } }
@@ -77,15 +78,28 @@ struct DescribeMealView: View {
                 if !items.isEmpty {
                     Section {
                         ForEach(items) { item in
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(FoodDensity(rawValue: item.density ?? "")?.color ?? .secondary)
-                                    .frame(width: 9, height: 9)
-                                Text(item.name).lineLimit(2)
-                                Spacer()
-                                Text("\(item.calories) cal · \(item.proteinGrams)g")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            Button { editingItem = item } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Circle()
+                                        .fill(FoodDensity(rawValue: item.density ?? "")?.color ?? .secondary)
+                                        .frame(width: 9, height: 9)
+                                        .padding(.top, 5)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.name).lineLimit(2).foregroundStyle(.primary)
+                                        if let a = item.assumed, !a.isEmpty {
+                                            Text(a)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text("\(item.calories) cal").foregroundStyle(.primary)
+                                        Text("\(item.proteinGrams) g protein")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                             }
                         }
                         .onDelete { idx in items.remove(atOffsets: idx) }
@@ -106,10 +120,18 @@ struct DescribeMealView: View {
                         Text("Your Meal")
                     } footer: {
                         Text(assumed.isEmpty
-                             ? "Swipe to remove anything that's wrong."
-                             : "AI assumed: \(assumed)\nSwipe to remove anything that's wrong.")
+                             ? "Tap an item to edit its numbers · swipe to remove it."
+                             : "AI assumed: \(assumed)\nTap an item to edit its numbers · swipe to remove it.")
                     }
                 }
+            }
+            .sheet(item: $editingItem) { item in
+                MealItemEditSheet(item: item) { edited in
+                    if let i = items.firstIndex(where: { $0.id == edited.id }) {
+                        items[i] = edited
+                    }
+                }
+                .themedRoot()
             }
             .themedForm()
             .keyboardDoneButton()
@@ -142,6 +164,99 @@ struct DescribeMealView: View {
             assumed = breakdown.assumed
         } catch {
             buildError = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Per-item correction
+
+/// Every number the AI guessed, editable — fix anything that looks off
+/// before logging. Density re-buckets itself from the edited values.
+private struct MealItemEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onSave: (AIFoodEstimator.MealItem) -> Void
+
+    @State private var item: AIFoodEstimator.MealItem
+    @State private var grams: Double
+
+    init(item: AIFoodEstimator.MealItem, onSave: @escaping (AIFoodEstimator.MealItem) -> Void) {
+        self.onSave = onSave
+        _item = State(initialValue: item)
+        _grams = State(initialValue: item.grams ?? 0)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name", text: $item.name)
+                    if let a = item.assumed, !a.isEmpty {
+                        Text("AI assumed: \(a)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Section("Portion & Macros") {
+                    numberRow("Portion (g)", value: $grams)
+                    intRow("Calories", value: $item.calories)
+                    intRow("Protein (g)", value: $item.proteinGrams)
+                    numberRow("Carbs (g)", value: $item.facts.carbsGrams)
+                    numberRow("Fat (g)", value: $item.facts.fatGrams)
+                }
+                Section("Detail") {
+                    numberRow("Saturated Fat (g)", value: $item.facts.saturatedFatGrams)
+                    numberRow("Trans Fat (g)", value: $item.facts.transFatGrams)
+                    numberRow("Cholesterol (mg)", value: $item.facts.cholesterolMg)
+                    numberRow("Sodium (mg)", value: $item.facts.sodiumMg)
+                    numberRow("Fiber (g)", value: $item.facts.fiberGrams)
+                    numberRow("Total Sugar (g)", value: $item.facts.sugarGrams)
+                    numberRow("Added Sugar (g)", value: $item.facts.addedSugarGrams)
+                    numberRow("Potassium (mg)", value: $item.facts.potassiumMg)
+                    numberRow("Calcium (mg)", value: $item.facts.calciumMg)
+                    numberRow("Iron (mg)", value: $item.facts.ironMg)
+                }
+            }
+            .themedForm()
+            .keyboardDoneButton()
+            .navigationTitle("Edit Item")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        item.grams = grams > 0 ? grams : nil
+                        item.refreshDensity()
+                        onSave(item)
+                        dismiss()
+                    }
+                    .disabled(item.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func numberRow(_ label: String, value: Binding<Double>) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("0", value: value, format: .number.precision(.fractionLength(0...1)))
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 90)
+        }
+    }
+
+    private func intRow(_ label: String, value: Binding<Int>) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("0", value: value, format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 90)
         }
     }
 }

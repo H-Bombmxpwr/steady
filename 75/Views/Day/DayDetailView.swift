@@ -14,8 +14,8 @@ struct DayDetailView: View {
     @State private var showCamera = false
     @State private var selectedItems: [PhotosPickerItem] = []
 
-    // Tapped food → full nutrition sheet
-    @State private var inspectedFood: FoodLog?
+    // Gemini end-of-day review
+    @State private var showDaySummary = false
 
     @FocusState private var fieldFocused: Bool
 
@@ -38,7 +38,7 @@ struct DayDetailView: View {
     var body: some View {
         Form {
             // ===== Live status vs today's targets
-            Section("Status") {
+            Section {
                 HStack {
                     statusDot(day.totalCalories > 0 && day.totalCalories <= targets.calories)
                     Text("Calories within budget")
@@ -71,10 +71,12 @@ struct DayDetailView: View {
                     Spacer()
                     Text("\(day.photos.count)x").foregroundStyle(.secondary)
                 }
+            } header: {
+                SectionHeader(icon: "checkmark.seal.fill", title: "Status")
             }
 
             // ===== Food — add at the top, meals grouped below
-            Section("Food") {
+            Section {
                 NavigationLink {
                     FoodSearchView(day: day)
                 } label: {
@@ -96,10 +98,37 @@ struct DayDetailView: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Theme.gradient)
                 )
+                // One row per meal — tap in to see and manage what you ate.
+                ForEach(mealGroups, id: \.meal) { group in
+                    NavigationLink {
+                        MealDetailView(day: day, meal: group.meal,
+                                       label: group.label, icon: group.icon)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: group.icon)
+                                .foregroundStyle(Theme.accent)
+                                .frame(width: 26)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(group.label)
+                                Text("\(group.foods.count) item\(group.foods.count == 1 ? "" : "s") · \(group.foods.reduce(0) { $0 + $1.proteinGrams }) g protein")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(group.foods.reduce(0) { $0 + $1.calories }) cal")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 NavigationLink {
                     DayNutritionView(day: day, targets: targets)
                 } label: {
                     Label("Nutrition Report", systemImage: "chart.bar.doc.horizontal")
+                }
+                if !day.foods.isEmpty {
+                    Button { showDaySummary = true } label: {
+                        Label("Summarize My Day", systemImage: "sparkles")
+                    }
                 }
                 HStack {
                     Text("Quick add")
@@ -117,42 +146,12 @@ struct DayDetailView: View {
                         .focused($fieldFocused)
                     Text("g protein").foregroundStyle(.secondary)
                 }
-            }
-
-            // ===== One section per meal that has food logged
-            ForEach(mealGroups, id: \.meal) { group in
-                Section {
-                    ForEach(group.foods) { f in
-                        Button { inspectedFood = f } label: {
-                            HStack(spacing: 8) {
-                                if let d = FoodDensity(rawValue: f.density ?? "") {
-                                    Circle().fill(d.color).frame(width: 9, height: 9)
-                                }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(f.name).lineLimit(1).foregroundStyle(.primary)
-                                    Text(foodSubtitle(f))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text("\(f.calories) cal").foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .onDelete { idx in
-                        idx.map { group.foods[$0] }.forEach { context.delete($0) }
-                    }
-                } header: {
-                    HStack {
-                        Label(group.label, systemImage: group.icon)
-                        Spacer()
-                        Text("\(group.foods.reduce(0) { $0 + $1.calories }) cal")
-                    }
-                }
+            } header: {
+                SectionHeader(icon: "fork.knife", title: "Food")
             }
 
             // ===== Hydration
-            Section("Hydration") {
+            Section {
                 let step = max(1, plan.waterStepOunces)
                 Stepper(value: $day.waterOunces, in: 0...10000, step: step) {
                     HStack {
@@ -162,10 +161,12 @@ struct DayDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+            } header: {
+                SectionHeader(icon: "drop.fill", title: "Hydration")
             }
 
             // ===== Weight
-            Section("Weight") {
+            Section {
                 TextField(
                     "Weight (lb)",
                     value: Binding(
@@ -176,6 +177,8 @@ struct DayDetailView: View {
                 )
                 .keyboardType(.decimalPad)
                 .focused($fieldFocused)
+            } header: {
+                SectionHeader(icon: "scalemass.fill", title: "Weight")
             }
 
             // ===== Alcohol
@@ -188,14 +191,14 @@ struct DayDetailView: View {
                     }
                 }
             } header: {
-                Text("Alcohol")
+                SectionHeader(icon: "wineglass.fill", title: "Alcohol")
             } footer: {
                 Text("1 standard drink = 12 oz beer, 5 oz wine, or 1.5 oz spirits (~98 cal, counted toward your budget).")
             }
 
             // ===== Supplements (only those due today)
             if plan.supplements.contains(where: { $0.isDue(on: date) }) {
-                Section("Supplements") {
+                Section {
                     ForEach(plan.supplements.filter { $0.isDue(on: date) }) { s in
                         Button {
                             toggleSupplement(s.name)
@@ -211,11 +214,13 @@ struct DayDetailView: View {
                             }
                         }
                     }
+                } header: {
+                    SectionHeader(icon: "pills.fill", title: "Supplements")
                 }
             }
 
             // ===== Workouts
-            Section("Workouts") {
+            Section {
                 if workoutScheduled && day.workouts.isEmpty {
                     let planned = plan.scheduledWorkouts(on: date)
                     ForEach(planned) { entry in
@@ -248,10 +253,12 @@ struct DayDetailView: View {
                 NavigationLink("Log Workout") {
                     WorkoutFormView(day: day, plan: plan)
                 }
+            } header: {
+                SectionHeader(icon: "figure.strengthtraining.traditional", title: "Workouts")
             }
 
             // ===== Photos (Face ID gated)
-            Section("Progress Photos") {
+            Section {
                 if !day.photos.isEmpty && !appLock.photosUnlocked {
                     PhotoLockGate(compact: true)
                 } else {
@@ -276,30 +283,41 @@ struct DayDetailView: View {
                     Button {
                         showCamera = true
                     } label: {
-                        Label("Camera", systemImage: "camera.fill")
-                            .font(.subheadline.bold())
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                        HStack(spacing: 6) {
+                            Image(systemName: "camera.fill")
+                            Text("Camera")
+                        }
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Theme.accent)
                     PhotosPicker(selection: $selectedItems,
                                  maxSelectionCount: 5,
                                  matching: .images) {
-                        Label("Library", systemImage: "photo.on.rectangle.angled")
-                            .font(.subheadline.bold())
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
+                        HStack(spacing: 6) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                            Text("Library")
+                        }
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
                     }
                     .buttonStyle(.bordered)
                 }
                 .listRowInsets(EdgeInsets(top: 6, leading: 4, bottom: 6, trailing: 4))
                 .listRowBackground(Color.clear)
+            } header: {
+                SectionHeader(icon: "camera.fill", title: "Progress Photos")
             }
         }
         .themedForm()
         .navigationTitle(Text(date, style: .date))
-        .sheet(item: $inspectedFood) { FoodNutritionSheet(food: $0) }
+        .sheet(isPresented: $showDaySummary) {
+            DaySummarySheet(day: day, targets: targets)
+                .themedRoot()
+        }
         .onChange(of: selectedItems) { _ in Task { await handlePicked() } }
         .sheet(isPresented: $showCamera) { CameraCaptureView { saveImage($0) } }
         .onDisappear {

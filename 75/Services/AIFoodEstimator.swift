@@ -43,12 +43,19 @@ enum AIFoodEstimator {
 
     struct MealItem: Identifiable {
         let id = UUID()
-        let name: String
-        let calories: Int
-        let proteinGrams: Int
-        let grams: Double?
-        let facts: NutritionFacts
-        let density: String?
+        var name: String
+        var calories: Int
+        var proteinGrams: Int
+        var grams: Double?
+        var facts: NutritionFacts
+        var density: String?
+        var assumed: String?       // portion assumption for THIS item
+
+        /// Recompute the density bucket after the user edits values.
+        mutating func refreshDensity() {
+            guard let grams, grams > 0, calories > 0 else { return }
+            density = FoodDensity(caloriesPer100g: Double(calories) / grams * 100)?.rawValue
+        }
     }
 
     struct MealBreakdown {
@@ -79,6 +86,7 @@ enum AIFoodEstimator {
     /// One food item's nutrition panel as Gemini returns it.
     private struct FoodPayload: Decodable {
         let name: String?
+        let assumed: String?
         let portion_grams: Double?
         let calories: Int?
         let protein_g: Double?
@@ -126,10 +134,17 @@ enum AIFoodEstimator {
         let prompt = """
         Break this meal description into separate food items and estimate the \
         full nutrition of each. \(nutritionGuidance)
+        List EVERY distinct component or ingredient as its own item — never \
+        merge two ingredients into one line. Oils, butter, cheeses, sauces, \
+        and dressings each get their own item (feta and cream cheese are two \
+        items; olive oil is never folded into the vegetables it's on). If the \
+        user names an ingredient, it must appear as its own item.
         Meal: "\(description)"
         Respond with only JSON:
-        {"items": [{"name": "<short item name>", \(nutritionSchema)}], \
-        "assumed": "<one short sentence: the portion sizes you assumed>"}
+        {"items": [{"name": "<short item name>", \
+        "assumed": "<short: the exact portion you assumed for this item, e.g. '2 tbsp, drizzled over the salad'>", \
+        \(nutritionSchema)}], \
+        "assumed": "<one short sentence: overall assumptions about the meal>"}
         """
         let payload: Payload = try await generate(prompt: prompt)
         let items = (payload.items ?? []).compactMap { p -> MealItem? in
@@ -138,10 +153,80 @@ enum AIFoodEstimator {
                             proteinGrams: Int((p.protein_g ?? 0).rounded()),
                             grams: p.portion_grams,
                             facts: p.facts,
-                            density: p.density)
+                            density: p.density,
+                            assumed: p.assumed)
         }
         guard !items.isEmpty else { throw EstimatorError.badResponse }
         return MealBreakdown(items: items, assumed: payload.assumed ?? "")
+    }
+
+    struct DayReview {
+        struct Suggestion: Identifiable {
+            let id = UUID()
+            let issue: String
+            let swap: String
+        }
+        let headline: String       // one-line verdict on the day
+        let wins: [String]
+        let suggestions: [Suggestion]
+    }
+
+    /// End-of-day coach: looks at everything eaten vs the targets and
+    /// suggests concrete substitutions for next time.
+    static func reviewDay(day: DayLog, targets: DailyTargets) async throws -> DayReview {
+        struct PayloadSuggestion: Decodable {
+            let issue: String?
+            let swap: String?
+        }
+        struct Payload: Decodable {
+            let headline: String?
+            let wins: [String]?
+            let suggestions: [PayloadSuggestion]?
+        }
+
+        let foodLines = day.foods
+            .sorted { ($0.meal?.rawValue ?? "z", $0.createdAt) < ($1.meal?.rawValue ?? "z", $1.createdAt) }
+            .map { f -> String in
+                let meal = f.meal?.label ?? "Unspecified"
+                var line = "- [\(meal)] \(f.name): \(f.calories) cal, \(f.proteinGrams) g protein"
+                let facts = f.facts
+                if facts.sodiumMg > 0 { line += ", \(Int(facts.sodiumMg)) mg sodium" }
+                if facts.saturatedFatGrams > 0 { line += ", \(Int(facts.saturatedFatGrams)) g sat fat" }
+                if facts.addedSugarGrams > 0 { line += ", \(Int(facts.addedSugarGrams)) g added sugar" }
+                if facts.fiberGrams > 0 { line += ", \(Int(facts.fiberGrams)) g fiber" }
+                return line
+            }
+            .joined(separator: "\n")
+
+        let totals = day.totalFacts
+        let prompt = """
+        You are a supportive nutrition coach reviewing one day of eating. \
+        Be specific and practical, never preachy. Suggestions must be food \
+        SUBSTITUTIONS into what was actually eaten (swap X for Y in that \
+        meal), not generic advice.
+        Targets: \(targets.calories) cal, \(targets.proteinGrams) g protein.
+        Eaten (total \(day.totalCalories) cal, \(day.totalProtein) g protein, \
+        \(Int(totals.sodiumMg)) mg sodium, \(Int(totals.saturatedFatGrams)) g sat fat, \
+        \(Int(totals.addedSugarGrams)) g added sugar, \(Int(totals.fiberGrams)) g fiber):
+        \(foodLines)
+        Respond with only JSON:
+        {"headline": "<one sentence verdict on the day>", \
+        "wins": ["<1-3 short things that went well>"], \
+        "suggestions": [{"issue": "<what to improve, tied to a specific food eaten>", \
+        "swap": "<the concrete substitution and roughly what it saves or adds>"}]}
+        Give 2-4 suggestions.
+        """
+        let payload: Payload = try await generate(prompt: prompt)
+        guard let headline = payload.headline, !headline.isEmpty else {
+            throw EstimatorError.badResponse
+        }
+        let suggestions = (payload.suggestions ?? []).compactMap { s -> DayReview.Suggestion? in
+            guard let issue = s.issue, let swap = s.swap else { return nil }
+            return DayReview.Suggestion(issue: issue, swap: swap)
+        }
+        return DayReview(headline: headline,
+                         wins: payload.wins ?? [],
+                         suggestions: suggestions)
     }
 
     private struct GeminiResponse: Decodable {

@@ -15,19 +15,29 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
 - **Weight trend**: EWMA-smoothed trend line, goal line, projected goal date.
 
 ### Logging
-- **Food** — five ways in: **search the database** (live Open Food Facts,
-  ~3M crowd-sourced products, US-market first, re-ranked by text relevance,
-  transient OFF outages retried + cached), **barcode scan**,
-  **photo of food** (Gemini vision reads the plate), **describe your meal**
-  (type or **dictate** plain text — "two eggs, toast with butter, and an OJ" —
-  and Gemini itemizes calories + protein per food), or manual custom entry.
-  Gemini also fills gaps everywhere: missing protein on OFF results is
+- **Food** — logged into **meals** (breakfast, morning snack, lunch, afternoon
+  snack, dinner, dessert; time-of-day default) with whole-day totals. The day
+  screen shows one row per meal — tap in for the foods, tap a food for its
+  full panel. Five ways in, **Gemini-first**: **describe your meal** is the
+  big gradient button (type or **dictate** plain text — Gemini itemizes every
+  component separately, never merging ingredients, with a per-item portion
+  assumption; every number is editable before logging), then **photo of food**
+  (Gemini vision), **barcode scan** (crosshair reticle, only reads inside the
+  frame), **database search** (live Open Food Facts, ~3M products, US-market
+  first, re-ranked by relevance, outages retried + cached), and manual custom
+  entry. Every logged food carries a **full nutrition panel** — carbs, fats
+  (sat/trans), cholesterol, sodium, fiber, sugars (incl. added), potassium,
+  calcium, iron — from Gemini or OFF. A **Nutrition Report** grades the day
+  Noom-style: macro split, FDA "keep under" limits (bars go red when blown),
+  "get enough" goals, calorie-density mix, per-meal breakdown; **Summarize My
+  Day** has Gemini review everything eaten and suggest concrete substitutions.
+  **Calorie-density colors** (green < 1 cal/g · orange 1–2.4 · red > 2.4) are
+  computed locally from kcal ÷ grams (not trusted from the model) and tag
+  foods everywhere. Gemini also fills gaps: missing protein on OFF results is
   auto-estimated, "Not listed?" estimates a whole food from the search text,
-  and every estimate echoes what it assumed. **Noom-style calorie-density
-  colors** (green < 1 cal/g · orange 1–2.4 · red > 2.4) tag foods in search,
-  portions, and the day log. Food names/photos go to AI; progress photos
-  never leave the device. Gemini key loads from a git-ignored `Secrets.plist`
-  (a key pasted in Settings → AI Assist overrides it).
+  and every estimate echoes what it assumed. Food names/photos go to AI;
+  progress photos never leave the device. Gemini key loads from a git-ignored
+  `Secrets.plist` (a key pasted in Settings → AI Assist overrides it).
 - **Workouts**: bundled **exercise database** (873 exercises with instructions,
   free-exercise-db), workout builder with per-exercise sets × reps × weight
   targets, **set-by-set logging** with progressive-overload history charts,
