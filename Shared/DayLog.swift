@@ -1,6 +1,103 @@
 import Foundation
 import SwiftData
 
+/// Which meal of the day a food was logged under. Day totals always span
+/// every meal; this only drives grouping and defaults.
+enum Meal: String, CaseIterable, Identifiable, Codable {
+    case breakfast
+    case morningSnack = "morning_snack"
+    case lunch
+    case afternoonSnack = "afternoon_snack"
+    case dinner
+    case dessert
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .breakfast: return "Breakfast"
+        case .morningSnack: return "Morning Snack"
+        case .lunch: return "Lunch"
+        case .afternoonSnack: return "Afternoon Snack"
+        case .dinner: return "Dinner"
+        case .dessert: return "Dessert"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .breakfast: return "sunrise.fill"
+        case .morningSnack: return "carrot.fill"
+        case .lunch: return "sun.max.fill"
+        case .afternoonSnack: return "leaf.fill"
+        case .dinner: return "moon.stars.fill"
+        case .dessert: return "birthday.cake.fill"
+        }
+    }
+
+    /// Sensible default for "log food right now".
+    static func suggested(at date: Date = Date()) -> Meal {
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let minutes = (comps.hour ?? 12) * 60 + (comps.minute ?? 0)
+        switch minutes {
+        case ..<(10 * 60): return .breakfast
+        case ..<(11 * 60 + 30): return .morningSnack
+        case ..<(14 * 60 + 30): return .lunch
+        case ..<(17 * 60): return .afternoonSnack
+        case ..<(20 * 60 + 30): return .dinner
+        default: return .dessert
+        }
+    }
+}
+
+/// Micronutrients + macro detail for one logged portion (grams / mg as
+/// named). Everything defaults to 0 so pre-existing logs migrate cleanly
+/// and manual entries just leave what they don't know.
+struct NutritionFacts: Codable, Equatable {
+    var carbsGrams: Double = 0
+    var fatGrams: Double = 0
+    var saturatedFatGrams: Double = 0
+    var transFatGrams: Double = 0
+    var cholesterolMg: Double = 0
+    var sodiumMg: Double = 0
+    var fiberGrams: Double = 0
+    var sugarGrams: Double = 0
+    var addedSugarGrams: Double = 0
+    var potassiumMg: Double = 0
+    var calciumMg: Double = 0
+    var ironMg: Double = 0
+
+    mutating func add(_ other: NutritionFacts) {
+        carbsGrams += other.carbsGrams
+        fatGrams += other.fatGrams
+        saturatedFatGrams += other.saturatedFatGrams
+        transFatGrams += other.transFatGrams
+        cholesterolMg += other.cholesterolMg
+        sodiumMg += other.sodiumMg
+        fiberGrams += other.fiberGrams
+        sugarGrams += other.sugarGrams
+        addedSugarGrams += other.addedSugarGrams
+        potassiumMg += other.potassiumMg
+        calciumMg += other.calciumMg
+        ironMg += other.ironMg
+    }
+
+    func scaled(by factor: Double) -> NutritionFacts {
+        NutritionFacts(carbsGrams: carbsGrams * factor,
+                       fatGrams: fatGrams * factor,
+                       saturatedFatGrams: saturatedFatGrams * factor,
+                       transFatGrams: transFatGrams * factor,
+                       cholesterolMg: cholesterolMg * factor,
+                       sodiumMg: sodiumMg * factor,
+                       fiberGrams: fiberGrams * factor,
+                       sugarGrams: sugarGrams * factor,
+                       addedSugarGrams: addedSugarGrams * factor,
+                       potassiumMg: potassiumMg * factor,
+                       calciumMg: calciumMg * factor,
+                       ironMg: ironMg * factor)
+    }
+}
+
 @Model
 final class DayLog {
     var date: Date
@@ -41,6 +138,15 @@ final class DayLog {
 
     var totalCalories: Int { caloriesEaten + foodCalories + alcoholCalories }
     var totalProtein: Int { proteinGrams + foodProtein }
+
+    /// Whole-day micronutrient totals across every meal's logged foods.
+    var totalFacts: NutritionFacts {
+        foods.reduce(into: NutritionFacts()) { $0.add($1.facts) }
+    }
+
+    func foods(for meal: Meal?) -> [FoodLog] {
+        foods.filter { $0.meal == meal }.sorted { $0.createdAt < $1.createdAt }
+    }
 }
 
 @Model
@@ -93,17 +199,71 @@ final class FoodLog {
     var grams: Double?                // portion size when known
     var source: String                // "off" | "barcode" | "custom" | "ai"
     var density: String? = nil        // calorie density: "green" | "orange" | "red"
+    var mealRaw: String = ""          // Meal.rawValue; "" on logs predating meals
     var createdAt: Date
 
+    // Micronutrients for this portion (all 0 when the source didn't know).
+    var carbsGrams: Double = 0
+    var fatGrams: Double = 0
+    var saturatedFatGrams: Double = 0
+    var transFatGrams: Double = 0
+    var cholesterolMg: Double = 0
+    var sodiumMg: Double = 0
+    var fiberGrams: Double = 0
+    var sugarGrams: Double = 0
+    var addedSugarGrams: Double = 0
+    var potassiumMg: Double = 0
+    var calciumMg: Double = 0
+    var ironMg: Double = 0
+
     init(name: String, calories: Int, proteinGrams: Int, grams: Double? = nil,
-         source: String = "custom", density: String? = nil) {
+         source: String = "custom", density: String? = nil,
+         meal: Meal? = nil, facts: NutritionFacts = NutritionFacts()) {
         self.name = name
         self.calories = calories
         self.proteinGrams = proteinGrams
         self.grams = grams
         self.source = source
         self.density = density
+        self.mealRaw = meal?.rawValue ?? ""
         self.createdAt = Date()
+        self.facts = facts
+    }
+
+    var meal: Meal? {
+        get { Meal(rawValue: mealRaw) }
+        set { mealRaw = newValue?.rawValue ?? "" }
+    }
+
+    var facts: NutritionFacts {
+        get {
+            NutritionFacts(carbsGrams: carbsGrams,
+                           fatGrams: fatGrams,
+                           saturatedFatGrams: saturatedFatGrams,
+                           transFatGrams: transFatGrams,
+                           cholesterolMg: cholesterolMg,
+                           sodiumMg: sodiumMg,
+                           fiberGrams: fiberGrams,
+                           sugarGrams: sugarGrams,
+                           addedSugarGrams: addedSugarGrams,
+                           potassiumMg: potassiumMg,
+                           calciumMg: calciumMg,
+                           ironMg: ironMg)
+        }
+        set {
+            carbsGrams = newValue.carbsGrams
+            fatGrams = newValue.fatGrams
+            saturatedFatGrams = newValue.saturatedFatGrams
+            transFatGrams = newValue.transFatGrams
+            cholesterolMg = newValue.cholesterolMg
+            sodiumMg = newValue.sodiumMg
+            fiberGrams = newValue.fiberGrams
+            sugarGrams = newValue.sugarGrams
+            addedSugarGrams = newValue.addedSugarGrams
+            potassiumMg = newValue.potassiumMg
+            calciumMg = newValue.calciumMg
+            ironMg = newValue.ironMg
+        }
     }
 }
 

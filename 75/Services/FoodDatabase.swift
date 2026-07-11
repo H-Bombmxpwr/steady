@@ -44,6 +44,20 @@ struct FoodItem: Codable, Identifiable, Hashable {
     let pd: String?        // household portion description (e.g. "1 cup")
     let pg: Double?        // gram weight of that portion
     var pu: Bool? = nil    // true when the source had no protein value
+    var micro: Micro? = nil
+
+    /// Extended nutrients per 100 g, when the source knows them.
+    struct Micro: Codable, Hashable {
+        var satFatG: Double = 0
+        var transFatG: Double = 0
+        var cholesterolMg: Double = 0
+        var sodiumMg: Double = 0
+        var fiberG: Double = 0
+        var sugarG: Double = 0
+        var potassiumMg: Double = 0
+        var calciumMg: Double = 0
+        var ironMg: Double = 0
+    }
 
     var id: String { n }
     var name: String { n }
@@ -52,16 +66,25 @@ struct FoodItem: Codable, Identifiable, Hashable {
 
     func calories(grams: Double) -> Int { Int((c * grams / 100).rounded()) }
     func protein(grams: Double) -> Int { Int((p * grams / 100).rounded()) }
+
+    func facts(grams: Double) -> NutritionFacts {
+        let m = micro ?? Micro()
+        return NutritionFacts(carbsGrams: cb, fatGrams: f,
+                              saturatedFatGrams: m.satFatG,
+                              transFatGrams: m.transFatG,
+                              cholesterolMg: m.cholesterolMg,
+                              sodiumMg: m.sodiumMg,
+                              fiberGrams: m.fiberG,
+                              sugarGrams: m.sugarG,
+                              addedSugarGrams: 0,   // OFF rarely splits added sugar out
+                              potassiumMg: m.potassiumMg,
+                              calciumMg: m.calciumMg,
+                              ironMg: m.ironMg)
+            .scaled(by: grams / 100)
+    }
 }
 
 // MARK: - Open Food Facts (barcode + text search)
-
-struct ScannedProduct {
-    let name: String
-    let caloriesPer100g: Double
-    let proteinPer100g: Double?
-    let servingSizeText: String?
-}
 
 enum OpenFoodFacts {
     enum OFFError: LocalizedError {
@@ -76,23 +99,63 @@ enum OpenFoodFacts {
         }
     }
 
+    /// Per-100g nutrient block shared by barcode lookup and text search.
+    /// OFF reports cholesterol/sodium/potassium/calcium/iron in grams.
+    private struct Nutriments: Codable {
+        let kcal: Double?
+        let protein: Double?
+        let fat: Double?
+        let carbs: Double?
+        let satFat: Double?
+        let transFat: Double?
+        let cholesterol: Double?
+        let sodium: Double?
+        let fiber: Double?
+        let sugars: Double?
+        let potassium: Double?
+        let calcium: Double?
+        let iron: Double?
+        enum CodingKeys: String, CodingKey {
+            case kcal = "energy-kcal_100g"
+            case protein = "proteins_100g"
+            case fat = "fat_100g"
+            case carbs = "carbohydrates_100g"
+            case satFat = "saturated-fat_100g"
+            case transFat = "trans-fat_100g"
+            case cholesterol = "cholesterol_100g"
+            case sodium = "sodium_100g"
+            case fiber = "fiber_100g"
+            case sugars = "sugars_100g"
+            case potassium = "potassium_100g"
+            case calcium = "calcium_100g"
+            case iron = "iron_100g"
+        }
+
+        var micro: FoodItem.Micro {
+            FoodItem.Micro(satFatG: satFat ?? 0,
+                           transFatG: transFat ?? 0,
+                           cholesterolMg: (cholesterol ?? 0) * 1000,
+                           sodiumMg: (sodium ?? 0) * 1000,
+                           fiberG: fiber ?? 0,
+                           sugarG: sugars ?? 0,
+                           potassiumMg: (potassium ?? 0) * 1000,
+                           calciumMg: (calcium ?? 0) * 1000,
+                           ironMg: (iron ?? 0) * 1000)
+        }
+    }
+
+    private static let nutrimentFields =
+        "product_name,brands,nutriments,serving_size"
+
     /// Fetch a product by barcode.
-    static func lookup(barcode: String) async throws -> ScannedProduct? {
-        let url = URL(string: "https://world.openfoodfacts.org/api/v2/product/\(barcode).json?fields=product_name,nutriments,serving_size")!
+    static func lookup(barcode: String) async throws -> FoodItem? {
+        let url = URL(string: "https://world.openfoodfacts.org/api/v2/product/\(barcode).json?fields=\(nutrimentFields)")!
         var request = URLRequest(url: url)
         request.setValue("75-fitness-ios - personal use", forHTTPHeaderField: "User-Agent")
         let (data, _) = try await URLSession.shared.data(for: request)
 
         struct Response: Codable {
             struct Product: Codable {
-                struct Nutriments: Codable {
-                    let energyKcal100g: Double?
-                    let proteins100g: Double?
-                    enum CodingKeys: String, CodingKey {
-                        case energyKcal100g = "energy-kcal_100g"
-                        case proteins100g = "proteins_100g"
-                    }
-                }
                 let productName: String?
                 let nutriments: Nutriments?
                 let servingSize: String?
@@ -109,11 +172,16 @@ enum OpenFoodFacts {
         let decoded = try JSONDecoder().decode(Response.self, from: data)
         guard decoded.status == 1,
               let product = decoded.product,
-              let kcal = product.nutriments?.energyKcal100g else { return nil }
-        return ScannedProduct(name: product.productName ?? "Scanned item",
-                              caloriesPer100g: kcal,
-                              proteinPer100g: product.nutriments?.proteins100g,
-                              servingSizeText: product.servingSize)
+              let nutriments = product.nutriments,
+              let kcal = nutriments.kcal else { return nil }
+        return FoodItem(n: product.productName ?? "Scanned item",
+                        c: kcal,
+                        p: nutriments.protein ?? 0,
+                        f: nutriments.fat ?? 0,
+                        cb: nutriments.carbs ?? 0,
+                        pd: product.servingSize, pg: nil,
+                        pu: nutriments.protein == nil,
+                        micro: nutriments.micro)
     }
 
     // Session cache + retry: OFF's search endpoint 503s intermittently, so
@@ -163,7 +231,7 @@ enum OpenFoodFacts {
             URLQueryItem(name: "json", value: "1"),
             URLQueryItem(name: "sort_by", value: "unique_scans_n"),
             URLQueryItem(name: "page_size", value: "\(limit)"),
-            URLQueryItem(name: "fields", value: "product_name,brands,nutriments,serving_size")
+            URLQueryItem(name: "fields", value: nutrimentFields)
         ]
         var request = URLRequest(url: comps.url!)
         request.timeoutInterval = 10
@@ -175,18 +243,6 @@ enum OpenFoodFacts {
 
         struct Response: Codable {
             struct Product: Codable {
-                struct Nutriments: Codable {
-                    let kcal: Double?
-                    let protein: Double?
-                    let fat: Double?
-                    let carbs: Double?
-                    enum CodingKeys: String, CodingKey {
-                        case kcal = "energy-kcal_100g"
-                        case protein = "proteins_100g"
-                        case fat = "fat_100g"
-                        case carbs = "carbohydrates_100g"
-                    }
-                }
                 let productName: String?
                 let brands: String?
                 let nutriments: Nutriments?
@@ -214,7 +270,8 @@ enum OpenFoodFacts {
                             f: p.nutriments?.fat ?? 0,
                             cb: p.nutriments?.carbs ?? 0,
                             pd: p.servingSize, pg: nil,
-                            pu: p.nutriments?.protein == nil)
+                            pu: p.nutriments?.protein == nil,
+                            micro: p.nutriments?.micro)
         }
 
         // Re-rank by how well the name matches the query; OFF's popularity

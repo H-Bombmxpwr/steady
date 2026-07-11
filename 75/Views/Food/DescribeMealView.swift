@@ -7,6 +7,7 @@ import AVFoundation
 /// with calories, protein, and a calorie-density color. Review, prune, log.
 struct DescribeMealView: View {
     @Environment(\.dismiss) private var dismiss
+    var mealLabel: String = "Today"
     let onLog: ([FoodLog]) -> Void
 
     @StateObject private var speech = SpeechTranscriber()
@@ -92,11 +93,13 @@ struct DescribeMealView: View {
                             onLog(items.map { FoodLog(name: $0.name,
                                                       calories: $0.calories,
                                                       proteinGrams: $0.proteinGrams,
+                                                      grams: $0.grams,
                                                       source: "ai",
-                                                      density: $0.density) })
+                                                      density: $0.density,
+                                                      facts: $0.facts) })
                             dismiss()
                         } label: {
-                            Text("Log \(items.count) Item\(items.count == 1 ? "" : "s") — \(totalCalories) cal · \(totalProtein)g protein")
+                            Text("Log \(items.count) Item\(items.count == 1 ? "" : "s") to \(mealLabel) — \(totalCalories) cal · \(totalProtein)g protein")
                                 .bold()
                         }
                     } header: {

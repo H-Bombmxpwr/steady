@@ -14,6 +14,9 @@ struct DayDetailView: View {
     @State private var showCamera = false
     @State private var selectedItems: [PhotosPickerItem] = []
 
+    // Tapped food → full nutrition sheet
+    @State private var inspectedFood: FoodLog?
+
     @FocusState private var fieldFocused: Bool
 
     init(plan: Plan, profile: UserProfile, date: Date) {
@@ -70,30 +73,33 @@ struct DayDetailView: View {
                 }
             }
 
-            // ===== Food
+            // ===== Food — add at the top, meals grouped below
             Section("Food") {
-                ForEach(day.foods) { f in
-                    HStack(spacing: 8) {
-                        if let d = FoodDensity(rawValue: f.density ?? "") {
-                            Circle().fill(d.color).frame(width: 9, height: 9)
-                        }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(f.name).lineLimit(1)
-                            Text(foodSubtitle(f))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text("\(f.calories) cal").foregroundStyle(.secondary)
-                    }
-                }
-                .onDelete { idx in
-                    idx.map { day.foods[$0] }.forEach { context.delete($0) }
-                }
                 NavigationLink {
                     FoodSearchView(day: day)
                 } label: {
-                    Label("Add Food", systemImage: "magnifyingglass")
+                    HStack(spacing: 12) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.title2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Add Food").font(.headline)
+                            Text("Logging \(Meal.suggested().label.lowercased()) right now")
+                                .font(.caption)
+                                .opacity(0.9)
+                        }
+                        Spacer()
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.vertical, 10)
+                }
+                .listRowBackground(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Theme.gradient)
+                )
+                NavigationLink {
+                    DayNutritionView(day: day, targets: targets)
+                } label: {
+                    Label("Nutrition Report", systemImage: "chart.bar.doc.horizontal")
                 }
                 HStack {
                     Text("Quick add")
@@ -110,6 +116,38 @@ struct DayDetailView: View {
                         .frame(width: 50)
                         .focused($fieldFocused)
                     Text("g protein").foregroundStyle(.secondary)
+                }
+            }
+
+            // ===== One section per meal that has food logged
+            ForEach(mealGroups, id: \.meal) { group in
+                Section {
+                    ForEach(group.foods) { f in
+                        Button { inspectedFood = f } label: {
+                            HStack(spacing: 8) {
+                                if let d = FoodDensity(rawValue: f.density ?? "") {
+                                    Circle().fill(d.color).frame(width: 9, height: 9)
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(f.name).lineLimit(1).foregroundStyle(.primary)
+                                    Text(foodSubtitle(f))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text("\(f.calories) cal").foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .onDelete { idx in
+                        idx.map { group.foods[$0] }.forEach { context.delete($0) }
+                    }
+                } header: {
+                    HStack {
+                        Label(group.label, systemImage: group.icon)
+                        Spacer()
+                        Text("\(group.foods.reduce(0) { $0 + $1.calories }) cal")
+                    }
                 }
             }
 
@@ -234,17 +272,34 @@ struct DayDetailView: View {
                         .padding(.vertical, 4)
                     }
                 }
-                HStack {
-                    Button("Take Photo") { showCamera = true }
-                    PhotosPicker("Pick from Library",
-                                 selection: $selectedItems,
+                HStack(spacing: 12) {
+                    Button {
+                        showCamera = true
+                    } label: {
+                        Label("Camera", systemImage: "camera.fill")
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.accent)
+                    PhotosPicker(selection: $selectedItems,
                                  maxSelectionCount: 5,
-                                 matching: .images)
+                                 matching: .images) {
+                        Label("Library", systemImage: "photo.on.rectangle.angled")
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.bordered)
                 }
+                .listRowInsets(EdgeInsets(top: 6, leading: 4, bottom: 6, trailing: 4))
+                .listRowBackground(Color.clear)
             }
         }
         .themedForm()
         .navigationTitle(Text(date, style: .date))
+        .sheet(item: $inspectedFood) { FoodNutritionSheet(food: $0) }
         .onChange(of: selectedItems) { _ in Task { await handlePicked() } }
         .sheet(isPresented: $showCamera) { CameraCaptureView { saveImage($0) } }
         .onDisappear {
@@ -258,6 +313,18 @@ struct DayDetailView: View {
                 Spacer()
                 Button("Done") { fieldFocused = false }
             }
+        }
+    }
+
+    /// Meals with at least one food, in day order; pre-meals-era logs land
+    /// in a trailing "Other" group.
+    private var mealGroups: [(meal: Meal?, label: String, icon: String, foods: [FoodLog])] {
+        var groups: [(Meal?, String, String, [FoodLog])] = Meal.allCases.map {
+            ($0, $0.label, $0.icon, day.foods(for: $0))
+        }
+        groups.append((nil, "Other", "fork.knife", day.foods(for: nil)))
+        return groups.filter { !$0.3.isEmpty }.map {
+            (meal: $0.0, label: $0.1, icon: $0.2, foods: $0.3)
         }
     }
 

@@ -1,13 +1,14 @@
 import SwiftUI
 import SwiftData
 
-/// Search Open Food Facts as you type (~3M crowd-sourced products), scan a
-/// barcode, or enter a custom food, then log a portion to the given day.
-/// Offline? Custom Food still works — just type the numbers in.
+/// Add food to a specific meal of the day. Gemini ("Describe Your Meal") is
+/// the headline path; database search, barcode, food photos, and manual
+/// entry back it up. Offline? Custom Food still works — just type the numbers.
 struct FoodSearchView: View {
     @Environment(\.dismiss) private var dismiss
     var day: DayLog
 
+    @State private var meal: Meal
     @State private var query = ""
     @State private var results: [FoodItem] = []
     @State private var searching = false
@@ -19,7 +20,7 @@ struct FoodSearchView: View {
     @State private var showDescribe = false
     @State private var searchActive = false
     @State private var customRequest: CustomFoodRequest?
-    @State private var scanned: ScannedProduct?
+    @State private var scanned: FoodItem?
     @State private var scanError: String?
     @State private var looking = false
 
@@ -27,33 +28,96 @@ struct FoodSearchView: View {
     @State private var showFoodCamera = false
     @State private var recognizing = false
 
+    init(day: DayLog, meal: Meal = .suggested()) {
+        self.day = day
+        _meal = State(initialValue: meal)
+    }
+
     var body: some View {
         List {
+            // ===== Which meal this goes into (always visible)
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Meal.allCases) { m in
+                            Button {
+                                meal = m
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: m.icon).font(.caption)
+                                    Text(m.label)
+                                        .font(.subheadline.weight(meal == m ? .semibold : .regular))
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(Capsule().fill(meal == m
+                                    ? AnyShapeStyle(Theme.gradient)
+                                    : AnyShapeStyle(Theme.surface2)))
+                                .foregroundStyle(meal == m ? .white : .primary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
+                .listRowBackground(Color.clear)
+            } header: {
+                Text("Logging to")
+            }
+
             if query.isEmpty {
+                // ===== Headline path: Gemini
                 Section {
-                    Button { searchActive = true } label: {
-                        Label("Search the Database", systemImage: "magnifyingglass")
+                    Button { showDescribe = true } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "sparkles")
+                                .font(.title2.bold())
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Describe Your Meal")
+                                    .font(.title3.bold())
+                                Text("Type or dictate what you ate — AI itemizes it with full nutrition")
+                                    .font(.caption)
+                                    .opacity(0.9)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.bold())
+                                .opacity(0.7)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.vertical, 14)
                     }
-                    Button { showScanner = true } label: {
-                        Label("Scan Barcode", systemImage: "barcode.viewfinder")
-                    }
+                    .listRowBackground(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Theme.gradient)
+                    )
+                }
+
+                // ===== Smaller fallbacks
+                Section {
                     Button { showFoodCamera = true } label: {
                         HStack {
                             Label("Photo of Food", systemImage: "camera.viewfinder")
                             if recognizing { Spacer(); ProgressView() }
                         }
                     }
-                    Button { showDescribe = true } label: {
-                        Label("Describe Your Meal", systemImage: "waveform")
+                    Button { showScanner = true } label: {
+                        Label("Scan Barcode", systemImage: "barcode.viewfinder")
+                    }
+                    Button { searchActive = true } label: {
+                        Label("Search the Database", systemImage: "magnifyingglass")
                     }
                     Button {
                         customRequest = CustomFoodRequest(name: "", autoEstimate: false)
                     } label: {
                         Label("Custom Food", systemImage: "square.and.pencil")
                     }
+                } header: {
+                    Text("Other ways to log")
                 } footer: {
                     Text("""
-                    Search covers ~3M crowd-sourced products (Open Food Facts); photos and meal descriptions go through AI. No internet? Custom Food takes manual numbers.
+                    Photos and meal descriptions go through AI; search covers ~3M crowd-sourced products (Open Food Facts). No internet? Custom Food takes manual numbers.
 
                     Food colors are calorie density, Noom-style: 🟢 green = under 1 cal per gram (eat freely) · 🟠 orange = 1–2.4 (moderate) · 🔴 red = over 2.4 (calorie-dense — small portions add up fast).
                     """)
@@ -112,8 +176,8 @@ struct FoodSearchView: View {
                     prompt: "Search foods (e.g. chicken breast)")
         .onChange(of: query) { _ in runSearch() }
         .sheet(item: $portionItem) { item in
-            PortionSheet(item: item, source: "off") { log in
-                day.foods.append(log)
+            PortionSheet(item: item, source: "off", mealLabel: meal.label) { log in
+                add(log)
                 dismiss()
             }
         }
@@ -137,35 +201,23 @@ struct FoodSearchView: View {
             }
             .themedRoot()
         }
-        .sheet(isPresented: Binding(get: { scanned != nil }, set: { if !$0 { scanned = nil } })) {
-            if let product = scanned {
-                PortionSheet(item: FoodItem(n: product.name,
-                                            c: product.caloriesPer100g,
-                                            p: product.proteinPer100g ?? 0,
-                                            f: 0, cb: 0,
-                                            pd: product.servingSizeText, pg: nil,
-                                            pu: product.proteinPer100g == nil),
-                             source: "barcode") { log in
-                    day.foods.append(log)
-                    scanned = nil
-                    dismiss()
-                }
+        .sheet(item: $scanned) { item in
+            PortionSheet(item: item, source: "barcode", mealLabel: meal.label) { log in
+                add(log)
+                scanned = nil
+                dismiss()
             }
         }
         .sheet(isPresented: $showDescribe) {
-            DescribeMealView { logs in
-                logs.forEach { day.foods.append($0) }
+            DescribeMealView(mealLabel: meal.label) { logs in
+                logs.forEach { add($0) }
                 dismiss()
             }
             .themedRoot()
         }
         .sheet(item: $customRequest) { req in
-            CustomFoodSheet(initialName: req.name,
-                            initialCalories: req.calories,
-                            initialProtein: req.protein,
-                            initialAssumed: req.assumed,
-                            autoEstimate: req.autoEstimate) { log in
-                day.foods.append(log)
+            CustomFoodSheet(request: req, mealLabel: meal.label) { log in
+                add(log)
                 dismiss()
             }
         }
@@ -176,11 +228,7 @@ struct FoodSearchView: View {
                     recognizing = true
                     do {
                         let est = try await AIFoodEstimator.estimate(photo: image)
-                        customRequest = CustomFoodRequest(name: est.name,
-                                                          calories: est.calories,
-                                                          protein: est.proteinGrams,
-                                                          assumed: est.assumed,
-                                                          autoEstimate: false)
+                        customRequest = CustomFoodRequest(estimate: est)
                     } catch {
                         scanError = error.localizedDescription
                     }
@@ -194,6 +242,11 @@ struct FoodSearchView: View {
         } message: {
             Text(scanError ?? "")
         }
+    }
+
+    private func add(_ log: FoodLog) {
+        log.meal = meal
+        day.foods.append(log)
     }
 
     private func subtitle(for item: FoodItem) -> String {
@@ -240,8 +293,8 @@ struct FoodSearchView: View {
         looking = true
         defer { looking = false }
         do {
-            if let product = try await OpenFoodFacts.lookup(barcode: code) {
-                scanned = product
+            if let item = try await OpenFoodFacts.lookup(barcode: code) {
+                scanned = item
             } else {
                 scanError = "That barcode isn't in Open Food Facts. Try Custom Food instead."
             }
@@ -258,8 +311,27 @@ private struct CustomFoodRequest: Identifiable {
     var name: String
     var calories = 0
     var protein = 0
+    var grams: Double?
+    var facts = NutritionFacts()
+    var density: String?
     var assumed = ""
     var autoEstimate = false
+
+    init(name: String, autoEstimate: Bool) {
+        self.name = name
+        self.autoEstimate = autoEstimate
+    }
+
+    /// Pre-filled from a photo recognition result.
+    init(estimate: AIFoodEstimator.Estimate) {
+        name = estimate.name
+        calories = estimate.calories
+        protein = estimate.proteinGrams
+        grams = estimate.grams
+        facts = estimate.facts
+        density = estimate.density
+        assumed = estimate.assumed
+    }
 }
 
 // MARK: - Portion picker
@@ -268,6 +340,7 @@ private struct PortionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let item: FoodItem
     var source: String = "off"
+    var mealLabel: String = "Today"
     let onAdd: (FoodLog) -> Void
 
     @State private var grams: Double = 100
@@ -278,9 +351,11 @@ private struct PortionSheet: View {
     @State private var aiAssumed = ""
     @State private var aiFetching = false
 
-    init(item: FoodItem, source: String = "off", onAdd: @escaping (FoodLog) -> Void) {
+    init(item: FoodItem, source: String = "off", mealLabel: String = "Today",
+         onAdd: @escaping (FoodLog) -> Void) {
         self.item = item
         self.source = source
+        self.mealLabel = mealLabel
         self.onAdd = onAdd
         _grams = State(initialValue: item.pg ?? 100)
     }
@@ -356,19 +431,21 @@ private struct PortionSheet: View {
                             Text("\(effectiveProtein) g").bold()
                         }
                     }
+                    NutritionFactsRows(facts: item.facts(grams: effectiveGrams), compact: true)
                     if !aiAssumed.isEmpty {
                         Text("AI assumed: \(aiAssumed)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
-                Button("Add to Today") {
+                Button("Add to \(mealLabel)") {
                     onAdd(FoodLog(name: item.name,
                                   calories: item.calories(grams: effectiveGrams),
                                   proteinGrams: effectiveProtein,
                                   grams: effectiveGrams,
                                   source: source,
-                                  density: item.densityBucket?.rawValue))
+                                  density: item.densityBucket?.rawValue,
+                                  facts: item.facts(grams: effectiveGrams)))
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
@@ -403,11 +480,17 @@ private struct CustomFoodSheet: View {
     @Environment(\.dismiss) private var dismiss
     let onAdd: (FoodLog) -> Void
     private let autoEstimate: Bool
+    private let mealLabel: String
 
     @State private var name: String
     @State private var calories = 0
     @State private var protein = 0
     @State private var proteinUnknown = false
+
+    // Carried along from AI estimates (manual entries leave these empty).
+    @State private var grams: Double?
+    @State private var facts = NutritionFacts()
+    @State private var density: String?
 
     @State private var estimating = false
     @State private var estimateError: String?
@@ -417,15 +500,18 @@ private struct CustomFoodSheet: View {
     /// `autoEstimate` runs the AI fill immediately — used when a search had
     /// no Open Food Facts match and the user asked AI to take over. Photo
     /// recognition passes pre-computed values in instead.
-    init(initialName: String = "", initialCalories: Int = 0, initialProtein: Int = 0,
-         initialAssumed: String = "", autoEstimate: Bool = false,
+    init(request: CustomFoodRequest, mealLabel: String = "Today",
          onAdd: @escaping (FoodLog) -> Void) {
         self.onAdd = onAdd
-        self.autoEstimate = autoEstimate && !initialName.isEmpty
-        _name = State(initialValue: initialName)
-        _calories = State(initialValue: initialCalories)
-        _protein = State(initialValue: initialProtein)
-        _assumedText = State(initialValue: initialAssumed)
+        self.mealLabel = mealLabel
+        self.autoEstimate = request.autoEstimate && !request.name.isEmpty
+        _name = State(initialValue: request.name)
+        _calories = State(initialValue: request.calories)
+        _protein = State(initialValue: request.protein)
+        _grams = State(initialValue: request.grams)
+        _facts = State(initialValue: request.facts)
+        _density = State(initialValue: request.density)
+        _assumedText = State(initialValue: request.assumed)
     }
 
     var body: some View {
@@ -452,10 +538,10 @@ private struct CustomFoodSheet: View {
                     }
                 } footer: {
                     Text(AIFoodEstimator.apiKey.isEmpty
-                         ? "Add a free Gemini API key in Settings → AI Assist to auto-estimate calories and protein from the name — no more googling protein counts."
+                         ? "Add a free Gemini API key in Settings → AI Assist to auto-estimate the full nutrition panel from the name — no more googling protein counts."
                          : estimated
                             ? "Estimated for one typical serving — if that's not what you meant, refine the name and estimate again."
-                            : "Estimates one typical serving via Gemini using your API key.")
+                            : "Estimates one typical serving (calories, protein, fats, sodium, and more) via Gemini using your API key.")
                 }
                 HStack {
                     Text("Calories")
@@ -476,11 +562,19 @@ private struct CustomFoodSheet: View {
                             .frame(width: 90)
                     }
                 }
-                Button("Add to Today") {
+                if facts != NutritionFacts() {
+                    Section("Full Nutrition (AI)") {
+                        NutritionFactsRows(facts: facts, compact: true)
+                    }
+                }
+                Button("Add to \(mealLabel)") {
                     onAdd(FoodLog(name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                                   calories: calories,
                                   proteinGrams: proteinUnknown ? 0 : protein,
-                                  source: "custom"))
+                                  grams: grams,
+                                  source: "custom",
+                                  density: density,
+                                  facts: facts))
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
@@ -512,6 +606,9 @@ private struct CustomFoodSheet: View {
             calories = result.calories
             protein = result.proteinGrams
             proteinUnknown = false
+            grams = result.grams
+            facts = result.facts
+            density = result.density
             estimated = true
             assumedText = result.assumed
         } catch {
