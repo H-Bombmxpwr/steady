@@ -140,4 +140,64 @@ enum OpenFoodFacts {
                               proteinPer100g: product.nutriments?.proteins100g ?? 0,
                               servingSizeText: product.servingSize)
     }
+
+    /// Crowd-sourced text search across ~3M products (like the MyFitnessPal
+    /// database, but open). On-demand only — the user taps "Search online".
+    static func search(_ query: String, limit: Int = 25) async throws -> [FoodItem] {
+        var comps = URLComponents(string: "https://world.openfoodfacts.org/cgi/search.pl")!
+        comps.queryItems = [
+            URLQueryItem(name: "search_terms", value: query),
+            URLQueryItem(name: "search_simple", value: "1"),
+            URLQueryItem(name: "action", value: "process"),
+            URLQueryItem(name: "json", value: "1"),
+            URLQueryItem(name: "page_size", value: "\(limit)"),
+            URLQueryItem(name: "fields", value: "product_name,brands,nutriments,serving_size")
+        ]
+        var request = URLRequest(url: comps.url!)
+        request.setValue("75-fitness-ios - personal use", forHTTPHeaderField: "User-Agent")
+        let (data, _) = try await URLSession.shared.data(for: request)
+
+        struct Response: Codable {
+            struct Product: Codable {
+                struct Nutriments: Codable {
+                    let kcal: Double?
+                    let protein: Double?
+                    let fat: Double?
+                    let carbs: Double?
+                    enum CodingKeys: String, CodingKey {
+                        case kcal = "energy-kcal_100g"
+                        case protein = "proteins_100g"
+                        case fat = "fat_100g"
+                        case carbs = "carbohydrates_100g"
+                    }
+                }
+                let productName: String?
+                let brands: String?
+                let nutriments: Nutriments?
+                let servingSize: String?
+                enum CodingKeys: String, CodingKey {
+                    case productName = "product_name"
+                    case brands
+                    case nutriments
+                    case servingSize = "serving_size"
+                }
+            }
+            let products: [Product]?
+        }
+
+        let decoded = try JSONDecoder().decode(Response.self, from: data)
+        return (decoded.products ?? []).compactMap { p in
+            guard let name = p.productName, !name.isEmpty,
+                  let kcal = p.nutriments?.kcal else { return nil }
+            let brand = p.brands?.split(separator: ",").first
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            let display = (brand != nil && !name.localizedCaseInsensitiveContains(brand!))
+                ? "\(name) — \(brand!)" : name
+            return FoodItem(n: display, c: kcal,
+                            p: p.nutriments?.protein ?? 0,
+                            f: p.nutriments?.fat ?? 0,
+                            cb: p.nutriments?.carbs ?? 0,
+                            pd: p.servingSize, pg: nil)
+        }
+    }
 }

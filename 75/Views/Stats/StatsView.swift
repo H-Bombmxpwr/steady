@@ -76,6 +76,7 @@ struct StatsView: View {
             .onChange(of: range) { _ in Task { await loadHealth() } }
             .sheet(isPresented: $showMeasurementSheet) {
                 MeasurementSheet(plan: plan)
+                    .themedRoot()
             }
         }
     }

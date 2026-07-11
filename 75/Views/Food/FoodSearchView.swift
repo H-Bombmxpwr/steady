@@ -10,6 +10,10 @@ struct FoodSearchView: View {
     @State private var query = ""
     @State private var results: [FoodItem] = []
     @State private var portionItem: FoodItem?
+    @State private var portionSource = "usda"
+    @State private var onlineResults: [FoodItem] = []
+    @State private var searchingOnline = false
+    @State private var searchedOnline = false
     @State private var showScanner = false
     @State private var showCustom = false
     @State private var scanned: ScannedProduct?
@@ -39,18 +43,47 @@ struct FoodSearchView: View {
                         Label("Custom Food", systemImage: "square.and.pencil")
                     }
                 }
-                Section(footer: Text("Search 7,800 USDA foods — works fully offline. Photo recognition runs on-device; nothing is uploaded.")) {
+                Section(footer: Text("Search 7,800 USDA foods offline, or tap “Search online” under the results for ~3M crowd-sourced products. Photo recognition runs on-device; nothing is uploaded.")) {
                     EmptyView()
                 }
             }
             ForEach(results) { item in
-                Button { portionItem = item } label: {
+                Button { portionSource = "usda"; portionItem = item } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.name).lineLimit(2).foregroundStyle(.primary)
                         Text(subtitle(for: item))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                }
+            }
+            if query.count >= 3 {
+                Section {
+                    if !searchedOnline {
+                        Button {
+                            Task { await searchOnline() }
+                        } label: {
+                            HStack {
+                                Label("Search Open Food Facts online", systemImage: "globe")
+                                if searchingOnline { Spacer(); ProgressView() }
+                            }
+                        }
+                        .disabled(searchingOnline)
+                    } else if onlineResults.isEmpty {
+                        Text("No online matches.").foregroundStyle(.secondary)
+                    }
+                    ForEach(onlineResults) { item in
+                        Button { portionSource = "off"; portionItem = item } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.name).lineLimit(2).foregroundStyle(.primary)
+                                Text(subtitle(for: item))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("Online search covers ~3M crowd-sourced products (brands, restaurants) — quality varies, so sanity-check the numbers.")
                 }
             }
         }
@@ -60,9 +93,11 @@ struct FoodSearchView: View {
                     prompt: "Search foods (e.g. chicken breast)")
         .onChange(of: query) { _ in
             results = query.count >= 2 ? FoodDatabase.shared.search(query) : []
+            onlineResults = []
+            searchedOnline = false
         }
         .sheet(item: $portionItem) { item in
-            PortionSheet(item: item) { log in
+            PortionSheet(item: item, source: portionSource) { log in
                 day.foods.append(log)
                 dismiss()
             }
@@ -85,6 +120,7 @@ struct FoodSearchView: View {
                     }
                 }
             }
+            .themedRoot()
         }
         .sheet(isPresented: Binding(get: { scanned != nil }, set: { if !$0 { scanned = nil } })) {
             if let product = scanned {
@@ -150,6 +186,7 @@ struct FoodSearchView: View {
                     }
                 }
             }
+            .themedRoot()
             .presentationDetents([.medium, .large])
         }
         .alert("Product not found", isPresented: Binding(get: { scanError != nil },
@@ -166,6 +203,17 @@ struct FoodSearchView: View {
             text += "  ·  \(pd) = \(Int(pg)) g"
         }
         return text
+    }
+
+    private func searchOnline() async {
+        searchingOnline = true
+        defer { searchingOnline = false }
+        do {
+            onlineResults = try await OpenFoodFacts.search(query)
+            searchedOnline = true
+        } catch {
+            scanError = "Couldn't reach Open Food Facts — check your connection."
+        }
     }
 
     private func lookup(_ code: String) async {
@@ -257,6 +305,7 @@ private struct PortionSheet: View {
                 .buttonStyle(.borderedProminent)
             }
             .themedForm()
+            .keyboardDoneButton()
             .navigationTitle("Portion")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -265,6 +314,7 @@ private struct PortionSheet: View {
                 }
             }
         }
+        .themedRoot()
         .presentationDetents([.medium, .large])
     }
 }
@@ -280,10 +330,34 @@ private struct CustomFoodSheet: View {
     @State private var protein = 0
     @State private var proteinUnknown = false
 
+    @State private var estimating = false
+    @State private var estimateError: String?
+    @State private var estimated = false
+
     var body: some View {
         NavigationStack {
             Form {
                 TextField("Name", text: $name)
+                Section {
+                    Button {
+                        Task { await estimate() }
+                    } label: {
+                        HStack {
+                            Label("Estimate with AI", systemImage: "sparkles")
+                            if estimating { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || estimating)
+                    if let err = estimateError {
+                        Text(err).font(.footnote).foregroundStyle(.red)
+                    }
+                } footer: {
+                    Text(AIFoodEstimator.apiKey.isEmpty
+                         ? "Add a free Gemini API key in Settings → AI Assist to auto-estimate calories and protein from the name — no more googling protein counts."
+                         : estimated
+                            ? "Estimated for one typical serving — adjust if your portion differs."
+                            : "Estimates one typical serving via Gemini using your API key.")
+                }
                 HStack {
                     Text("Calories")
                     Spacer()
@@ -314,6 +388,7 @@ private struct CustomFoodSheet: View {
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || calories <= 0)
             }
             .themedForm()
+            .keyboardDoneButton()
             .navigationTitle("Custom Food")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -322,6 +397,22 @@ private struct CustomFoodSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .themedRoot()
+        .presentationDetents([.medium, .large])
+    }
+
+    private func estimate() async {
+        estimating = true
+        estimateError = nil
+        defer { estimating = false }
+        do {
+            let result = try await AIFoodEstimator.estimate(food: name)
+            calories = result.calories
+            protein = result.proteinGrams
+            proteinUnknown = false
+            estimated = true
+        } catch {
+            estimateError = error.localizedDescription
+        }
     }
 }

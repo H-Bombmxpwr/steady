@@ -2,6 +2,8 @@
 import SwiftUI
 
 /// Log any workout — scheduled or not, as many per day as you like.
+/// Picking a preset pre-fills its exercises; edit reps/weight to match what
+/// you actually did, and the sets feed each exercise's progress history.
 struct WorkoutFormView: View {
     @Environment(\.dismiss) private var dismiss
     var day: DayLog
@@ -12,6 +14,21 @@ struct WorkoutFormView: View {
     @State private var minutes: Int = 45
     @State private var outdoor: Bool = false
     @State private var category: WorkoutCategory = .strength
+
+    @State private var entries: [ExerciseEntry] = []
+    @State private var showExercisePicker = false
+
+    struct SetEntry: Identifiable {
+        let id = UUID()
+        var reps: Int
+        var weight: Double?
+    }
+
+    struct ExerciseEntry: Identifiable {
+        let id = UUID()
+        var name: String
+        var sets: [SetEntry]
+    }
 
     var body: some View {
         Form {
@@ -27,6 +44,12 @@ struct WorkoutFormView: View {
                         minutes = p.defaultMinutes
                         outdoor = p.outdoor
                         category = p.category
+                        entries = p.orderedExercises.map { ex in
+                            ExerciseEntry(name: ex.name,
+                                          sets: (0..<max(1, ex.sets)).map { _ in
+                                              SetEntry(reps: ex.reps, weight: ex.weightLbs)
+                                          })
+                        }
                     }
                 }
             }
@@ -40,18 +63,87 @@ struct WorkoutFormView: View {
                 Stepper("Minutes: \(minutes)", value: $minutes, in: 5...300, step: 5)
                 Toggle("Outdoors", isOn: $outdoor)
             }
-            Button("Log Workout") {
-                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                let log = WorkoutLog(name: trimmed, minutes: minutes, outdoor: outdoor, category: category)
-                day.workouts.append(log)
-                let date = day.date
-                Task { await HealthKitService.shared.saveWorkout(log, on: date) }
-                dismiss()
+
+            ForEach($entries) { $entry in
+                Section {
+                    ForEach(Array($entry.sets.enumerated()), id: \.element.id) { index, $set in
+                        HStack {
+                            Text("Set \(index + 1)")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            TextField("reps", value: $set.reps, format: .number)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.trailing)
+                            Text("reps ×").font(.caption).foregroundStyle(.secondary)
+                            TextField("bw", value: $set.weight, format: .number)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                            Text("lb").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .onDelete { idx in entry.sets.remove(atOffsets: idx) }
+                    HStack {
+                        Button {
+                            let last = entry.sets.last
+                            entry.sets.append(SetEntry(reps: last?.reps ?? 10, weight: last?.weight))
+                        } label: {
+                            Label("Add Set", systemImage: "plus")
+                        }
+                        .buttonStyle(.borderless)
+                        Spacer()
+                        Button(role: .destructive) {
+                            entries.removeAll { $0.id == entry.id }
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                } header: {
+                    Text(entry.name)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Section {
+                Button {
+                    showExercisePicker = true
+                } label: {
+                    Label("Add Exercise", systemImage: "plus.circle.fill")
+                }
+            } footer: {
+                entries.isEmpty
+                    ? Text("Optional: add exercises to log sets, reps, and weight.")
+                    : Text("Swipe a set to delete it. Leave weight empty for bodyweight.")
+            }
+
+            Button("Log Workout") { logWorkout() }
+                .buttonStyle(.borderedProminent)
+                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .themedForm()
+        .keyboardDoneButton()
         .navigationTitle("Add Workout")
+        .sheet(isPresented: $showExercisePicker) {
+            ExercisePickerView { exercise in
+                entries.append(ExerciseEntry(
+                    name: exercise.name,
+                    sets: (0..<3).map { _ in SetEntry(reps: 10, weight: nil) }))
+            }
+            .themedRoot()
+        }
+    }
+
+    private func logWorkout() {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let log = WorkoutLog(name: trimmed, minutes: minutes, outdoor: outdoor, category: category)
+        for entry in entries {
+            for (index, set) in entry.sets.enumerated() where set.reps > 0 {
+                log.sets.append(SetLog(exerciseName: entry.name, setIndex: index,
+                                       reps: set.reps, weightLbs: set.weight))
+            }
+        }
+        day.workouts.append(log)
+        let date = day.date
+        Task { await HealthKitService.shared.saveWorkout(log, on: date) }
+        dismiss()
     }
 }

@@ -50,6 +50,7 @@ final class WorkoutLog {
     var outdoor: Bool
     var categoryRaw: String = WorkoutCategory.other.rawValue
     var createdAt: Date
+    @Relationship(deleteRule: .cascade) var sets: [SetLog] = []
 
     init(name: String, minutes: Int, outdoor: Bool = false, category: WorkoutCategory = .other) {
         self.name = name
@@ -57,11 +58,30 @@ final class WorkoutLog {
         self.outdoor = outdoor
         self.categoryRaw = category.rawValue
         self.createdAt = Date()
+        self.sets = []
     }
 
     var category: WorkoutCategory {
         get { WorkoutCategory(rawValue: categoryRaw) ?? .other }
         set { categoryRaw = newValue.rawValue }
+    }
+}
+
+/// One performed set — the strength log behind progressive-overload history.
+@Model
+final class SetLog {
+    var exerciseName: String
+    var setIndex: Int = 0
+    var reps: Int = 0
+    var weightLbs: Double?
+    var createdAt: Date = Date()
+
+    init(exerciseName: String, setIndex: Int = 0, reps: Int = 0, weightLbs: Double? = nil) {
+        self.exerciseName = exerciseName
+        self.setIndex = setIndex
+        self.reps = reps
+        self.weightLbs = weightLbs
+        self.createdAt = Date()
     }
 }
 

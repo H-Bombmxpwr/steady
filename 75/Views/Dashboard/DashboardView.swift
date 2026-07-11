@@ -35,11 +35,13 @@ struct MainTabView: View {
             NavigationStack {
                 FoodSearchView(day: ensureDay(plan: plan, date: Date()))
             }
+            .themedRoot()
         }
         .sheet(isPresented: $showWorkoutLog) {
             NavigationStack {
                 WorkoutFormView(day: ensureDay(plan: plan, date: Date()), plan: plan)
             }
+            .themedRoot()
         }
     }
 }
@@ -95,7 +97,7 @@ struct DashboardView: View {
                 }
             }
             .sheet(isPresented: $showSettings) {
-                SettingsView(plan: plan, profile: profile)
+                SettingsView(plan: plan, profile: profile)   // applies .themedRoot() itself
             }
         }
     }

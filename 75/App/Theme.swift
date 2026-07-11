@@ -1,4 +1,5 @@
 import SwiftUI
+import Observation
 
 // MARK: - User-selectable palette + appearance
 
@@ -33,19 +34,34 @@ enum ThemeMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// Observable theme state. Views that read `Theme.accent`/`Theme.gradient`
+/// during body evaluation register a dependency and re-render live when the
+/// user changes the palette or mode — no restart, sheets included.
+@Observable
+final class ThemeStore {
+    static let shared = ThemeStore()
+
+    var palette: ThemePalette {
+        didSet { UserDefaults.standard.set(palette.rawValue, forKey: Theme.paletteKey) }
+    }
+    var mode: ThemeMode {
+        didSet { UserDefaults.standard.set(mode.rawValue, forKey: Theme.modeKey) }
+    }
+
+    private init() {
+        palette = ThemePalette(rawValue: UserDefaults.standard.string(forKey: Theme.paletteKey) ?? "") ?? .emerald
+        mode = ThemeMode(rawValue: UserDefaults.standard.string(forKey: Theme.modeKey) ?? "") ?? .dark
+    }
+}
+
 /// Visual identity. Accent palette and light/dark mode are user-configurable
 /// (Settings → Appearance); surfaces adapt to the active color scheme.
 enum Theme {
     static let paletteKey = "theme.palette"
     static let modeKey = "theme.mode"
 
-    static var palette: ThemePalette {
-        ThemePalette(rawValue: UserDefaults.standard.string(forKey: paletteKey) ?? "") ?? .emerald
-    }
-
-    static var mode: ThemeMode {
-        ThemeMode(rawValue: UserDefaults.standard.string(forKey: modeKey) ?? "") ?? .dark
-    }
+    static var palette: ThemePalette { ThemeStore.shared.palette }
+    static var mode: ThemeMode { ThemeStore.shared.mode }
 
     static var accent: Color { palette.accents.0 }
     static var accent2: Color { palette.accents.1 }
@@ -196,15 +212,33 @@ extension View {
 }
 
 /// Applies tint, appearance mode, and rounded type; re-renders when the
-/// user changes theme settings.
+/// user changes theme settings. Sheets don't inherit `preferredColorScheme`
+/// from the presenting view, so apply this to every sheet root too.
 private struct ThemedRoot: ViewModifier {
-    @AppStorage(Theme.paletteKey) private var palette = ThemePalette.emerald.rawValue
-    @AppStorage(Theme.modeKey) private var mode = ThemeMode.dark.rawValue
+    private let store = ThemeStore.shared
 
     func body(content: Content) -> some View {
         content
-            .tint((ThemePalette(rawValue: palette) ?? .emerald).accents.0)
-            .preferredColorScheme((ThemeMode(rawValue: mode) ?? .dark).colorScheme)
+            .tint(store.palette.accents.0)
+            .preferredColorScheme(store.mode.colorScheme)
             .fontDesign(.rounded)
+    }
+}
+
+// MARK: - Keyboard helper
+
+extension View {
+    /// A "Done" button above the keyboard so number/text fields can always
+    /// be dismissed. Apply once per Form/List that has input fields.
+    func keyboardDoneButton() -> some View {
+        toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                    to: nil, from: nil, for: nil)
+                }
+            }
+        }
     }
 }

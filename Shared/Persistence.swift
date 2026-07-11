@@ -13,6 +13,8 @@ final class PersistenceController {
             FoodLog.self,
             PhotoEntry.self,
             WorkoutPreset.self,
+            PresetExercise.self,
+            SetLog.self,
             WorkoutScheduleEntry.self,
             Supplement.self,
             MeasurementLog.self

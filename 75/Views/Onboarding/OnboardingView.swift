@@ -28,6 +28,10 @@ struct OnboardingView: View {
     @State private var waterGoal = 96
     @State private var waterStep = 8
 
+    // Photo privacy — optional backup PIN for the Face ID photo lock
+    @State private var pin = ""
+    @State private var pinConfirm = ""
+
     @FocusState private var weightFocused: Bool
 
     private let paces: [Double] = [0.5, 1.0, 1.5, 2.0]
@@ -49,7 +53,8 @@ struct OnboardingView: View {
                 case 1: goalsStep
                 case 2: budgetStep
                 case 3: scheduleStep
-                default: hydrationStep
+                case 4: hydrationStep
+                default: privacyStep
                 }
             }
             .themedForm()
@@ -70,7 +75,7 @@ struct OnboardingView: View {
         .themedRoot()
     }
 
-    private let titles = ["About You", "Your Goal", "Your Budget", "Workout Days", "Hydration"]
+    private let titles = ["About You", "Your Goal", "Your Budget", "Workout Days", "Hydration", "Photo Privacy"]
 
     // MARK: Step 1 — profile
 
@@ -205,7 +210,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: Step 5 — hydration + create
+    // MARK: Step 5 — hydration
 
     private var hydrationStep: some View {
         Form {
@@ -214,13 +219,51 @@ struct OnboardingView: View {
                 Stepper("Log step: \(waterStep) oz", value: $waterStep, in: 1...128)
             }
             Section {
+                Button("Continue") { step = 5 }
+            }
+        }
+    }
+
+    // MARK: Step 6 — photo privacy PIN + create
+
+    private var pinValid: Bool {
+        (pin.isEmpty && pinConfirm.isEmpty)
+            || (pin.count >= 4 && pin == pinConfirm && pin.allSatisfy(\.isNumber))
+    }
+
+    private var privacyStep: some View {
+        Form {
+            Section {
+                SecureField("PIN (4+ digits)", text: $pin)
+                    .keyboardType(.numberPad)
+                    .focused($weightFocused)
+                SecureField("Confirm PIN", text: $pinConfirm)
+                    .keyboardType(.numberPad)
+                    .focused($weightFocused)
+            } header: {
+                Text("Backup PIN (optional)")
+            } footer: {
+                Text("Your progress photos stay on this device and are locked behind Face ID. Set a backup PIN for when Face ID fails — or if you'd rather unlock with a PIN. Leave blank to skip; you can add one later in Settings → Security.")
+            }
+            if !pinValid {
+                Section {
+                    Text(pin.count < 4 ? "PIN needs at least 4 digits."
+                                       : "PINs don't match.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.danger)
+                }
+            }
+            Section {
                 Button("Start Tracking") { createPlan() }
-                    .disabled(!goalsValid)
+                    .disabled(!goalsValid || !pinValid)
             }
         }
     }
 
     private func createPlan() {
+        if pin.count >= 4, pin == pinConfirm {
+            PinStore.set(pin)
+        }
         guard let c = currentWeight, let g = goalWeight else { return }
         let profile = UserProfile(birthDate: birthDate,
                                   heightInches: totalHeightInches,

@@ -103,6 +103,7 @@ final class WorkoutPreset {
     var outdoor: Bool
     var categoryRaw: String = WorkoutCategory.other.rawValue
     var notes: String?
+    @Relationship(deleteRule: .cascade) var exercises: [PresetExercise] = []
 
     init(name: String, defaultMinutes: Int = 45, outdoor: Bool = false,
          category: WorkoutCategory = .other, notes: String? = nil) {
@@ -111,11 +112,41 @@ final class WorkoutPreset {
         self.outdoor = outdoor
         self.categoryRaw = category.rawValue
         self.notes = notes
+        self.exercises = []
     }
 
     var category: WorkoutCategory {
         get { WorkoutCategory(rawValue: categoryRaw) ?? .other }
         set { categoryRaw = newValue.rawValue }
+    }
+
+    var orderedExercises: [PresetExercise] {
+        exercises.sorted { $0.orderIndex < $1.orderIndex }
+    }
+}
+
+/// One exercise inside a workout preset, with target sets × reps (× weight).
+/// Names match the bundled exercise database so history links up.
+@Model
+final class PresetExercise {
+    var name: String
+    var orderIndex: Int = 0
+    var sets: Int = 3
+    var reps: Int = 10
+    var weightLbs: Double?            // nil = bodyweight / cardio / not set yet
+
+    init(name: String, orderIndex: Int = 0, sets: Int = 3, reps: Int = 10, weightLbs: Double? = nil) {
+        self.name = name
+        self.orderIndex = orderIndex
+        self.sets = sets
+        self.reps = reps
+        self.weightLbs = weightLbs
+    }
+
+    var targetText: String {
+        var text = "\(sets)×\(reps)"
+        if let w = weightLbs, w > 0 { text += " @ \(w.formatted()) lb" }
+        return text
     }
 }
 

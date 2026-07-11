@@ -81,10 +81,12 @@ struct PhotosGalleryView: View {
             }
             .fullScreenCover(isPresented: $showViewer) {
                 PhotoDetailView(items: items, initialIndex: viewerIndex)
+                    .themedRoot()
             }
             .sheet(isPresented: $showCompare) {
                 if selectedForCompare.count == 2 {
                     CompareView(left: selectedForCompare[0], right: selectedForCompare[1])
+                        .themedRoot()
                 }
             }
         }

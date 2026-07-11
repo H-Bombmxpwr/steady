@@ -23,13 +23,22 @@ struct SettingsView: View {
     @AppStorage(NotificationManager.Keys.streakHour) private var streakHour = 20
     @AppStorage(NotificationManager.Keys.streakMinute) private var streakMinute = 30
 
-    // Appearance
-    @AppStorage(Theme.paletteKey) private var themePalette = ThemePalette.emerald.rawValue
-    @AppStorage(Theme.modeKey) private var themeMode = ThemeMode.dark.rawValue
+    // Appearance — bound to the observable store so the change applies live
+    @Bindable private var theme = ThemeStore.shared
 
     // Apple Health
     @AppStorage(HealthKitService.enabledKey) private var healthEnabled = false
     @State private var healthMessage: String?
+
+    // AI assist
+    @AppStorage(AIFoodEstimator.apiKeyKey) private var geminiKey = ""
+
+    // Backup PIN for the photo lock
+    @State private var pinIsSet = PinStore.isSet
+    @State private var pinCurrent = ""
+    @State private var pinNew = ""
+    @State private var pinNewConfirm = ""
+    @State private var pinMessage: String?
 
     // New supplement
     @State private var supplementName = ""
@@ -191,18 +200,30 @@ struct SettingsView: View {
                     Text("Garmin, Apple Watch, and smart scales that write to Apple Health flow in automatically — this is the Garmin link.")
                 }
 
+                // --- AI assist (optional Gemini key for food estimates)
+                Section {
+                    TextField("Gemini API key", text: $geminiKey)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .focused($fieldFocused)
+                } header: {
+                    Text("AI Assist")
+                } footer: {
+                    Text("Optional: paste a free Gemini API key from aistudio.google.com and Custom Food gets an “Estimate with AI” button for calories & protein (free tier ≈ 1,500 requests/day). Only the food name you type is sent to Google.")
+                }
+
                 // --- Appearance
                 Section("Appearance") {
-                    Picker("Accent", selection: $themePalette) {
+                    Picker("Accent", selection: $theme.palette) {
                         ForEach(ThemePalette.allCases) { p in
                             HStack {
                                 Circle().fill(p.accents.0).frame(width: 14, height: 14)
                                 Text(p.label)
-                            }.tag(p.rawValue)
+                            }.tag(p)
                         }
                     }
-                    Picker("Mode", selection: $themeMode) {
-                        ForEach(ThemeMode.allCases) { m in Text(m.label).tag(m.rawValue) }
+                    Picker("Mode", selection: $theme.mode) {
+                        ForEach(ThemeMode.allCases) { m in Text(m.label).tag(m) }
                     }
                     .pickerStyle(.segmented)
                 }
@@ -278,9 +299,42 @@ struct SettingsView: View {
                 }
 
                 // --- Security
-                Section("Security") {
+                Section {
                     Label("Face ID protects your progress photos", systemImage: "faceid")
                         .foregroundStyle(.secondary)
+                    if pinIsSet {
+                        SecureField("Current PIN", text: $pinCurrent)
+                            .keyboardType(.numberPad)
+                            .focused($fieldFocused)
+                        SecureField("New PIN — leave blank to remove", text: $pinNew)
+                            .keyboardType(.numberPad)
+                            .focused($fieldFocused)
+                        if !pinNew.isEmpty {
+                            SecureField("Confirm new PIN", text: $pinNewConfirm)
+                                .keyboardType(.numberPad)
+                                .focused($fieldFocused)
+                        }
+                        Button(pinNew.isEmpty ? "Remove Backup PIN" : "Change Backup PIN") {
+                            updatePin()
+                        }
+                        .disabled(pinCurrent.count < 4)
+                    } else {
+                        SecureField("New PIN (4+ digits)", text: $pinNew)
+                            .keyboardType(.numberPad)
+                            .focused($fieldFocused)
+                        SecureField("Confirm PIN", text: $pinNewConfirm)
+                            .keyboardType(.numberPad)
+                            .focused($fieldFocused)
+                        Button("Set Backup PIN") { setPin() }
+                            .disabled(pinNew.count < 4 || pinNew != pinNewConfirm)
+                    }
+                    if let msg = pinMessage {
+                        Text(msg).font(.footnote).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Security")
+                } footer: {
+                    Text("The backup PIN unlocks photos when Face ID fails, or if you'd rather not use Face ID.")
                 }
 
                 // --- Backup / Export (JSON)
@@ -323,10 +377,42 @@ struct SettingsView: View {
                 }
             }
         }
+        .themedRoot()
     }
 
     private func reschedule() {
         NotificationManager.rescheduleAll(plan: plan)
+    }
+
+    private func setPin() {
+        guard pinNew.count >= 4, pinNew == pinNewConfirm, pinNew.allSatisfy(\.isNumber) else {
+            pinMessage = "PIN needs 4+ digits and both fields must match."
+            return
+        }
+        PinStore.set(pinNew)
+        pinIsSet = true
+        pinNew = ""; pinNewConfirm = ""
+        pinMessage = "Backup PIN set."
+    }
+
+    private func updatePin() {
+        guard PinStore.verify(pinCurrent) else {
+            pinMessage = "Current PIN is incorrect."
+            pinCurrent = ""
+            return
+        }
+        if pinNew.isEmpty {
+            PinStore.clear()
+            pinIsSet = false
+            pinMessage = "Backup PIN removed."
+        } else if pinNew.count >= 4, pinNew == pinNewConfirm, pinNew.allSatisfy(\.isNumber) {
+            PinStore.set(pinNew)
+            pinMessage = "Backup PIN updated."
+        } else {
+            pinMessage = "New PIN needs 4+ digits and both fields must match."
+            return
+        }
+        pinCurrent = ""; pinNew = ""; pinNewConfirm = ""
     }
 
     /// Binding for one of the three comma-separated hydration times.

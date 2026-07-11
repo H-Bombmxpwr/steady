@@ -222,33 +222,62 @@ struct TodayWidgetView: View {
         .containerBackground(widgetBG, for: .widget)
     }
 
-    // Home screen medium — streak + ratios + action buttons
+    // Home screen medium — streak, stat columns, and one row of action buttons
     private var mediumView: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 7) {
+        VStack(spacing: 9) {
+            HStack {
                 StreakBadge(streak: s.streak)
-                RatioRow(icon: "fork.knife", label: "Cal",
-                         consumed: s.caloriesEaten, total: s.calorieBudget, overIsBad: true)
-                RatioRow(icon: "bolt.fill", label: "Protein",
-                         consumed: s.protein, total: s.proteinTarget)
-                RatioRow(icon: "drop.fill", label: "Water",
-                         consumed: s.waterOz, total: s.waterGoal)
+                Spacer()
+                if s.trendWeight > 0 {
+                    Text(String(format: "%.1f lb", s.trendWeight))
+                        .font(.system(.subheadline, design: .rounded).bold())
+                        .foregroundStyle(.secondary)
+                }
             }
-            VStack(spacing: 8) {
+
+            HStack(spacing: 0) {
+                statColumn("fork.knife", "Cal",
+                           consumed: s.caloriesEaten, total: s.calorieBudget, overIsBad: true)
+                statColumn("bolt.fill", "Protein",
+                           consumed: s.protein, total: s.proteinTarget)
+                statColumn("drop.fill", "Water",
+                           consumed: s.waterOz, total: s.waterGoal)
+            }
+
+            HStack(spacing: 8) {
                 Button(intent: LogWaterIntent()) {
-                    actionLabel("drop.fill", "+\(s.waterStep)oz", accent2)
+                    actionLabel("drop.fill", "+\(s.waterStep)oz", accent2, wide: true)
                 }
                 .buttonStyle(.plain)
                 Link(destination: URL(string: "seventyfive://log-food")!) {
-                    actionLabel("fork.knife", "Food", accent)
+                    actionLabel("fork.knife", "Food", accent, wide: true)
                 }
                 Link(destination: URL(string: "seventyfive://log-workout")!) {
-                    actionLabel("dumbbell.fill", "Workout", .orange)
+                    actionLabel("dumbbell.fill", "Workout", .orange, wide: true)
                 }
             }
-            .frame(width: 88)
         }
         .containerBackground(widgetBG, for: .widget)
+    }
+
+    /// icon + label with the consumed/total value right underneath.
+    private func statColumn(_ icon: String, _ label: String,
+                            consumed: Int, total: Int, overIsBad: Bool = false) -> some View {
+        let ok = overIsBad ? (consumed <= total && consumed > 0) : consumed >= total
+        return VStack(spacing: 2) {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                Text(label)
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            Text("\(consumed)/\(total)")
+                .font(.system(.subheadline, design: .rounded).bold())
+                .foregroundStyle(ok ? good : bad)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // Home screen large — everything + weight
@@ -302,16 +331,16 @@ struct TodayWidgetView: View {
     }
 
     private func actionLabel(_ icon: String, _ text: String, _ color: Color, wide: Bool = false) -> some View {
-        VStack(spacing: 3) {
+        HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(wide ? .body : .subheadline)
+                .font(.caption)
             Text(text)
                 .font(.system(.caption2, design: .rounded).bold())
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 9)
+        .padding(.vertical, wide ? 8 : 9)
         .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.1)))
         .foregroundStyle(color)
     }
