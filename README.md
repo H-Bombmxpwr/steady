@@ -65,9 +65,9 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   sleep, and external weigh-ins (Garmin/Watch/smart scales flow in via Health —
   that's the Garmin link).
 - **Widgets**: small/medium/large home screen + lock screen (circular, rectangular,
-  inline). Streak is front and center; medium/large have one-tap water logging
-  plus Food and Today shortcuts (Today deep-links into the current day's log).
-  Weight is deliberately never shown on widgets.
+  inline). Streak is front and center; medium/large have Food and Today
+  shortcuts plus one-tap water logging, in that order (Today deep-links into
+  the current day's log). Weight is deliberately never shown on widgets.
 - **Notifications**: morning weigh-in, hydration nudges (times configurable, with
   a log-water action), workout reminders (lead time configurable), smart
   streak-at-risk guard (fires only when the streak is actually in danger;
@@ -79,8 +79,12 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   Keychain) for when Face ID fails or isn't wanted; photos live in the
   app's Documents, invisible to the Photos app unless you save/share them.
 - **Photo timelapse**: builds an MP4 from your progress photos on-device.
-- **Themes**: five accent palettes + dark/light/system mode — applies live,
-  everywhere, no restart. Floating **glass tab bar** with swipe-between-tabs
+- **Themes & brand**: five accent palettes + dark/light/system mode — applies
+  live, everywhere, no restart. A "75" gradient monogram heads the dashboard;
+  every screen carries a subtle accent wash; cards have per-domain icon chips
+  and tints (water sky, food tangerine, weight violet, alcohol amber…).
+  Floating **glass tab bar** (on by default) with a gradient pill you can tap,
+  swipe pages under, or grab and slide across the tabs — pages follow live
   (Settings → Appearance toggles back to the classic bar).
 - **Backup export** as a single JSON (embedded photos). All data persists across
   rebuilds/redeploys (same bundle ID) in the App Group container.

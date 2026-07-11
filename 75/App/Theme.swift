@@ -186,15 +186,22 @@ struct SectionHeader: View {
 
 struct Card<Content: View>: View {
     var title: String? = nil
+    var icon: String? = nil
+    var tint: Color? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title {
-                Text(title.uppercased())
-                    .font(.caption.bold())
-                    .foregroundStyle(Theme.textDim)
-                    .kerning(1.2)
+                HStack(spacing: 7) {
+                    if let icon {
+                        SectionIcon(systemImage: icon, size: 20, tint: tint)
+                    }
+                    Text(title.uppercased())
+                        .font(.caption.bold())
+                        .foregroundStyle(Theme.textDim)
+                        .kerning(1.2)
+                }
             }
             content
         }
@@ -205,8 +212,9 @@ struct Card<Content: View>: View {
                 .fill(Theme.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(Theme.hairline)
+                        .strokeBorder(tint?.opacity(0.22) ?? Theme.hairline)
                 )
+                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         )
     }
 }
@@ -219,8 +227,18 @@ struct StatRing: View {
     let detail: String
     var overIsBad = false
     var size: CGFloat = 84
+    var tint: Color? = nil   // per-metric hue; theme gradient when nil
 
     private var over: Bool { overIsBad && value > 1.0 }
+
+    private var ringStyle: AnyShapeStyle {
+        if over { return AnyShapeStyle(Theme.danger) }
+        if let tint {
+            return AnyShapeStyle(LinearGradient(colors: [tint, tint.opacity(0.55)],
+                                                startPoint: .top, endPoint: .bottom))
+        }
+        return AnyShapeStyle(Theme.gradient)
+    }
 
     var body: some View {
         VStack(spacing: 6) {
@@ -229,7 +247,7 @@ struct StatRing: View {
                     .stroke(Theme.surface2, lineWidth: 9)
                 Circle()
                     .trim(from: 0, to: min(1, value))
-                    .stroke(over ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.gradient),
+                    .stroke(ringStyle,
                             style: StrokeStyle(lineWidth: 9, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text(detail)
@@ -270,11 +288,29 @@ struct GradientBar: View {
 // MARK: - Form styling helper
 
 extension View {
-    /// Shared styling for Form-based screens.
+    /// Shared styling for Form-based screens: base surface plus a breath of
+    /// brand accent at the top — the app's signature backdrop.
     func themedForm() -> some View {
         self
             .scrollContentBackground(.hidden)
-            .background(Theme.background)
+            .background(brandWash())
+    }
+
+    /// Scroll-screen version of the same backdrop.
+    func brandBackground() -> some View {
+        background(brandWash())
+    }
+
+    private func brandWash() -> some View {
+        ZStack {
+            Theme.background
+            LinearGradient(colors: [Theme.accent.opacity(0.13),
+                                    Theme.accent2.opacity(0.04),
+                                    .clear],
+                           startPoint: .top,
+                           endPoint: UnitPoint(x: 0.5, y: 0.45))
+        }
+        .ignoresSafeArea()
     }
 
     func themedRoot() -> some View {

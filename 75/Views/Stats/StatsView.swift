@@ -90,7 +90,7 @@ struct StatsView: View {
                 }
                 .padding()
             }
-            .background(Theme.background.ignoresSafeArea())
+            .brandBackground()
             .navigationTitle("Stats")
             .task { await loadHealth() }
             .onChange(of: range) { _ in Task { await loadHealth() } }
@@ -403,7 +403,7 @@ struct StatsView: View {
             if let v = m.thigh { out.append(Point(date: m.date, part: "Thigh", value: v)) }
             return out
         }
-        return Card(title: "Measurements") {
+        return Card(title: "Measurements", icon: "ruler.fill", tint: Theme.weightTint) {
             if points.isEmpty {
                 Text("Track waist, hips, chest, arm, and thigh — inches often move before the scale does.")
                     .font(.footnote).foregroundStyle(Theme.textDim)

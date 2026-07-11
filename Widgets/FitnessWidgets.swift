@@ -236,16 +236,16 @@ struct TodayWidgetView: View {
             }
 
             HStack(spacing: 8) {
-                Button(intent: LogWaterIntent()) {
-                    actionLabel("drop.fill", "+\(s.waterStep)oz", accent2, wide: true)
-                }
-                .buttonStyle(.plain)
                 Link(destination: URL(string: "seventyfive://log-food")!) {
                     actionLabel("fork.knife", "Food", accent, wide: true)
                 }
                 Link(destination: URL(string: "seventyfive://today")!) {
                     actionLabel("square.and.pencil", "Today", .orange, wide: true)
                 }
+                Button(intent: LogWaterIntent()) {
+                    actionLabel("drop.fill", "+\(s.waterStep)oz", accent2, wide: true)
+                }
+                .buttonStyle(.plain)
             }
         }
         .containerBackground(widgetBG, for: .widget)
@@ -298,16 +298,16 @@ struct TodayWidgetView: View {
             Spacer(minLength: 0)
 
             HStack(spacing: 10) {
-                Button(intent: LogWaterIntent()) {
-                    actionLabel("drop.fill", "+\(s.waterStep) oz", accent2, wide: true)
-                }
-                .buttonStyle(.plain)
                 Link(destination: URL(string: "seventyfive://log-food")!) {
                     actionLabel("fork.knife", "Log food", accent, wide: true)
                 }
                 Link(destination: URL(string: "seventyfive://today")!) {
                     actionLabel("square.and.pencil", "Today", .orange, wide: true)
                 }
+                Button(intent: LogWaterIntent()) {
+                    actionLabel("drop.fill", "+\(s.waterStep) oz", accent2, wide: true)
+                }
+                .buttonStyle(.plain)
             }
         }
         .containerBackground(widgetBG, for: .widget)

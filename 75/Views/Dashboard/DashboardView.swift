@@ -90,40 +90,71 @@ struct MainTabView: View {
 
 // MARK: - Floating glass tab bar
 
-/// Translucent floating capsule bar (the "liquid glass" look). Tabs are also
-/// swipeable left/right when this is active.
+/// Translucent floating capsule bar (the "liquid glass" look). One gradient
+/// pill marks the active tab; tap a tab, swipe the pages, or grab the pill
+/// and slide it across the bar — pages follow live.
 private struct GlassTabBar: View {
     let tabs: [(label: String, icon: String)]
     @Binding var selection: Int
 
+    /// Fractional pill position while a finger is sliding along the bar.
+    @State private var dragIndex: CGFloat?
+
+    private static let spring = Animation.spring(response: 0.34, dampingFraction: 0.82)
+    private let inset: CGFloat = 5
+
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(tabs.indices, id: \.self) { i in
-                Button {
-                    withAnimation(.snappy(duration: 0.25)) { selection = i }
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: tabs[i].icon)
-                            .font(.system(size: 17, weight: .semibold))
-                        Text(tabs[i].label)
-                            .font(.system(size: 9, weight: .semibold, design: .rounded))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+        GeometryReader { geo in
+            let tabWidth = (geo.size.width - inset * 2) / CGFloat(tabs.count)
+            let position = dragIndex ?? CGFloat(selection)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Theme.gradient)
+                    .frame(width: tabWidth, height: geo.size.height - inset * 2)
+                    .offset(x: inset + position * tabWidth)
+                    .shadow(color: Theme.accent.opacity(0.35), radius: 8, y: 2)
+
+                HStack(spacing: 0) {
+                    ForEach(tabs.indices, id: \.self) { i in
+                        Button {
+                            withAnimation(Self.spring) { selection = i }
+                        } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: tabs[i].icon)
+                                    .font(.system(size: 17, weight: .semibold))
+                                Text(tabs[i].label)
+                                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(selection == i ? .white : Color.secondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
-                    .foregroundStyle(selection == i ? Theme.accent : Color.secondary)
-                    .background {
-                        if selection == i {
-                            Capsule().fill(Theme.accent.opacity(0.16))
+                }
+                .padding(.horizontal, inset)
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { value in
+                        let f = (value.location.x - inset) / tabWidth - 0.5
+                        let clamped = min(max(f, 0), CGFloat(tabs.count - 1))
+                        dragIndex = clamped
+                        let nearest = Int(clamped.rounded())
+                        if nearest != selection {
+                            withAnimation(Self.spring) { selection = nearest }
                         }
                     }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
+                    .onEnded { _ in
+                        withAnimation(Self.spring) { dragIndex = nil }
+                    }
+            )
         }
-        .padding(5)
+        .frame(height: 56)
         .background {
             Capsule()
                 .fill(.ultraThinMaterial)
@@ -152,6 +183,28 @@ struct DashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    // Brand header — the "75" monogram is the app's wordmark.
+                    HStack(spacing: 12) {
+                        Text("75")
+                            .font(.system(size: 22, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.white)
+                            .frame(width: 46, height: 46)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Theme.gradient)
+                            )
+                            .shadow(color: Theme.accent.opacity(0.4), radius: 8, y: 3)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Day \(dayNumber)")
+                                .font(.system(.title2, design: .rounded).bold())
+                            Text(today.formatted(.dateTime.weekday(.wide).month().day()))
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.textDim)
+                        }
+                        Spacer()
+                    }
+                    .padding(.bottom, 2)
+
                     WeightCard(plan: plan)
 
                     TodayCard(day: todayLog, targets: targets, plan: plan)
@@ -166,18 +219,21 @@ struct DashboardView: View {
                     NavigationLink(value: today) {
                         Label("Open Today", systemImage: "square.and.pencil")
                             .font(.headline)
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
+                            .padding(.vertical, 14)
+                            .background(Capsule().fill(Theme.gradient))
+                            .shadow(color: Theme.accent.opacity(0.35), radius: 10, y: 3)
                     }
-                    .buttonStyle(.borderedProminent)
                 }
                 .padding()
             }
-            .background(Theme.background.ignoresSafeArea())
+            .brandBackground()
             .navigationDestination(for: Date.self) { d in
                 DayDetailView(plan: plan, profile: profile, date: d)
             }
-            .navigationTitle("Day \(dayNumber)")
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink(value: today) {
@@ -207,7 +263,7 @@ private struct WeightCard: View {
     let plan: Plan
 
     var body: some View {
-        Card(title: "Weight") {
+        Card(title: "Weight", icon: "scalemass.fill", tint: Theme.weightTint) {
             let trend = CalorieEngine.weightTrend(plan: plan)
             let headline = trend.last?.trend ?? plan.startingWeight
 
@@ -282,21 +338,24 @@ private struct TodayCard: View {
     let plan: Plan
 
     var body: some View {
-        Card(title: "Today") {
+        Card(title: "Today", icon: "sun.max.fill", tint: Theme.foodTint) {
             HStack {
                 Spacer()
                 StatRing(value: Double(day.totalCalories) / Double(max(1, targets.calories)),
                          label: "Calories",
                          detail: caloriesDetail,
-                         overIsBad: true)
+                         overIsBad: true,
+                         tint: Theme.foodTint)
                 Spacer()
                 StatRing(value: Double(day.totalProtein) / Double(max(1, targets.proteinGrams)),
                          label: "Protein",
-                         detail: "\(day.totalProtein)/\(targets.proteinGrams)g")
+                         detail: "\(day.totalProtein)/\(targets.proteinGrams)g",
+                         tint: Theme.workoutTint)
                 Spacer()
                 StatRing(value: Double(day.waterOunces) / Double(max(1, targets.waterOunces)),
                          label: "Water",
-                         detail: "\(day.waterOunces)/\(targets.waterOunces)oz")
+                         detail: "\(day.waterOunces)/\(targets.waterOunces)oz",
+                         tint: Theme.waterTint)
                 Spacer()
             }
 
@@ -372,7 +431,7 @@ private struct StreakCard: View {
     let stats: StreakStats
 
     var body: some View {
-        Card(title: "Streak") {
+        Card(title: "Streak", icon: "flame.fill", tint: Color(hex: 0xF97316)) {
             HStack(spacing: 10) {
                 Image(systemName: "flame.fill")
                     .font(.system(size: 30))
@@ -399,7 +458,7 @@ private struct ProjectionCard: View {
     let dayNumber: Int
 
     var body: some View {
-        Card(title: "Goal") {
+        Card(title: "Goal", icon: "target", tint: Theme.accent) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(format: "%.0f lb", plan.goalWeight))
                     .font(.system(size: 26, weight: .bold, design: .rounded))
@@ -426,7 +485,7 @@ private struct InsightCard: View {
     let insight: WeeklyInsight
 
     var body: some View {
-        Card(title: "This Week") {
+        Card(title: "This Week", icon: "calendar", tint: Theme.sleepTint) {
             HStack(spacing: 16) {
                 stat("\(insight.daysMet)/\(insight.daysApplicable)", "days on target")
                 if insight.avgCalories > 0 {
