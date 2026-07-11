@@ -210,7 +210,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI Assist")
                 } footer: {
-                    Text("Powers “Estimate with AI” in Custom Food (calories & protein from the name). A key is already bundled with the app — paste your own from aistudio.google.com to override it. Only the food name you type is sent to Google.")
+                    Text("Powers food estimates: calories & protein from a name, missing-protein fill-ins, and Photo of Food. A key is already bundled with the app — paste your own from aistudio.google.com to override it. Only food names and food photos are sent to Google; progress photos never leave the device.")
                 }
 
                 // --- Appearance

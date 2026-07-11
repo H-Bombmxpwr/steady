@@ -16,18 +16,14 @@ struct FoodSearchView: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var portionItem: FoodItem?
     @State private var showScanner = false
-    @State private var showCustom = false
-    @State private var customPrefill = ""
-    @State private var customAutoEstimate = false
+    @State private var customRequest: CustomFoodRequest?
     @State private var scanned: ScannedProduct?
     @State private var scanError: String?
     @State private var looking = false
 
-    // Photo-of-food
+    // Photo-of-food (Gemini vision)
     @State private var showFoodCamera = false
     @State private var recognizing = false
-    @State private var suggestions: [FoodPhotoRecognizer.Suggestion] = []
-    @State private var showSuggestions = false
 
     var body: some View {
         List {
@@ -43,14 +39,12 @@ struct FoodSearchView: View {
                         }
                     }
                     Button {
-                        customPrefill = ""
-                        customAutoEstimate = false
-                        showCustom = true
+                        customRequest = CustomFoodRequest(name: "", autoEstimate: false)
                     } label: {
                         Label("Custom Food", systemImage: "square.and.pencil")
                     }
                 }
-                Section(footer: Text("Type to search ~3M crowd-sourced products from Open Food Facts, ranked by relevance. Anything it doesn't have, AI can estimate. No internet? Use Custom Food and enter the numbers manually. Photos are classified on-device; nothing is uploaded.")) {
+                Section(footer: Text("Type to search ~3M crowd-sourced products from Open Food Facts, ranked by relevance. Anything it doesn't have, AI can estimate — including straight from a photo. No internet? Use Custom Food and enter the numbers manually.")) {
                     EmptyView()
                 }
             } else {
@@ -84,9 +78,7 @@ struct FoodSearchView: View {
                     }
                     if query.count >= 3 {
                         Button {
-                            customPrefill = query
-                            customAutoEstimate = true
-                            showCustom = true
+                            customRequest = CustomFoodRequest(name: query, autoEstimate: true)
                         } label: {
                             Label("Not listed? AI estimates “\(query)”", systemImage: "sparkles")
                                 .lineLimit(1)
@@ -143,9 +135,12 @@ struct FoodSearchView: View {
                 }
             }
         }
-        .sheet(isPresented: $showCustom) {
-            CustomFoodSheet(initialName: customPrefill,
-                            autoEstimate: customAutoEstimate) { log in
+        .sheet(item: $customRequest) { req in
+            CustomFoodSheet(initialName: req.name,
+                            initialCalories: req.calories,
+                            initialProtein: req.protein,
+                            initialAssumed: req.assumed,
+                            autoEstimate: req.autoEstimate) { log in
                 day.foods.append(log)
                 dismiss()
             }
@@ -155,47 +150,19 @@ struct FoodSearchView: View {
                 showFoodCamera = false
                 Task {
                     recognizing = true
-                    suggestions = await FoodPhotoRecognizer.recognize(image: image)
+                    do {
+                        let est = try await AIFoodEstimator.estimate(photo: image)
+                        customRequest = CustomFoodRequest(name: est.name,
+                                                          calories: est.calories,
+                                                          protein: est.proteinGrams,
+                                                          assumed: est.assumed,
+                                                          autoEstimate: false)
+                    } catch {
+                        scanError = error.localizedDescription
+                    }
                     recognizing = false
-                    if suggestions.isEmpty {
-                        scanError = "Couldn't recognize a food in that photo. Try search or Custom Food."
-                    } else {
-                        showSuggestions = true
-                    }
                 }
             }
-        }
-        .sheet(isPresented: $showSuggestions) {
-            NavigationStack {
-                List {
-                    ForEach(suggestions) { s in
-                        Section("\(s.label) — \(Int(s.confidence * 100))% match") {
-                            ForEach(s.matches) { item in
-                                Button {
-                                    showSuggestions = false
-                                    portionItem = item
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.name).lineLimit(2).foregroundStyle(.primary)
-                                        Text(subtitle(for: item))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Is it one of these?")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { showSuggestions = false }
-                    }
-                }
-            }
-            .themedRoot()
-            .presentationDetents([.medium, .large])
         }
         .alert("Product not found", isPresented: Binding(get: { scanError != nil },
                                                          set: { if !$0 { scanError = nil } })) {
@@ -228,7 +195,7 @@ struct FoodSearchView: View {
         let q = query
         searchTask = Task {
             if !immediately {
-                try? await Task.sleep(nanoseconds: 400_000_000)
+                try? await Task.sleep(nanoseconds: 550_000_000)
                 guard !Task.isCancelled else { return }
             }
             do {
@@ -258,6 +225,17 @@ struct FoodSearchView: View {
             scanError = "Couldn't reach Open Food Facts — check your connection, or use Custom Food."
         }
     }
+}
+
+/// Item-driven request for the custom-food sheet (item sheets always see
+/// fresh values; isPresented sheets can capture stale state).
+private struct CustomFoodRequest: Identifiable {
+    let id = UUID()
+    var name: String
+    var calories = 0
+    var protein = 0
+    var assumed = ""
+    var autoEstimate = false
 }
 
 // MARK: - Portion picker
@@ -404,12 +382,17 @@ private struct CustomFoodSheet: View {
     @State private var assumedText = ""
 
     /// `autoEstimate` runs the AI fill immediately — used when a search had
-    /// no Open Food Facts match and the user asked AI to take over.
-    init(initialName: String = "", autoEstimate: Bool = false,
+    /// no Open Food Facts match and the user asked AI to take over. Photo
+    /// recognition passes pre-computed values in instead.
+    init(initialName: String = "", initialCalories: Int = 0, initialProtein: Int = 0,
+         initialAssumed: String = "", autoEstimate: Bool = false,
          onAdd: @escaping (FoodLog) -> Void) {
         self.onAdd = onAdd
         self.autoEstimate = autoEstimate && !initialName.isEmpty
         _name = State(initialValue: initialName)
+        _calories = State(initialValue: initialCalories)
+        _protein = State(initialValue: initialProtein)
+        _assumedText = State(initialValue: initialAssumed)
     }
 
     var body: some View {

@@ -17,13 +17,14 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
 ### Logging
 - **Food**: live **Open Food Facts search** as you type (~3M crowd-sourced
   products, US-market first, re-ranked by text relevance since OFF orders by
-  popularity), barcode scan, **photo-of-food recognition** (classified
-  on-device — only the label text is searched online), portion picker.
-  **Gemini fills the gaps**: OFF results missing protein get it auto-estimated
-  on the portion screen, and anything OFF doesn't have at all gets full
-  calories + protein from AI ("Not listed?" row). Offline? Custom Food takes
-  manual numbers. Gemini key loads from a git-ignored `Secrets.plist`
-  (a key pasted in Settings → AI Assist overrides it).
+  popularity; transient OFF outages are retried and cached automatically),
+  barcode scan, portion picker. **Gemini fills the gaps**: OFF results missing
+  protein get it auto-estimated on the portion screen, anything OFF doesn't
+  have gets full calories + protein from AI ("Not listed?" row), and
+  **Photo of Food** sends the plate photo to Gemini vision for dish + macros
+  (food photos only — progress photos never leave the device). Offline?
+  Custom Food takes manual numbers. Gemini key loads from a git-ignored
+  `Secrets.plist` (a key pasted in Settings → AI Assist overrides it).
 - **Workouts**: bundled **exercise database** (873 exercises with instructions,
   free-exercise-db), workout builder with per-exercise sets × reps × weight
   targets, **set-by-set logging** with progressive-overload history charts,
@@ -81,7 +82,7 @@ Widgets/       WidgetKit extension (home + lock screen, interactive logging)
   Resources/   Exercises.json (free-exercise-db extract),
                Secrets.plist (API keys — git-ignored, create locally)
   Services/    Backup, FoodDatabase (Open Food Facts), ExerciseDatabase,
-               AIFoodEstimator (Gemini), FoodPhotoRecognizer, HealthKit,
+               AIFoodEstimator (Gemini text + vision), HealthKit,
                Notifications, CalendarSync, Timelapse
   Views/
     Onboarding/  Multi-step plan setup

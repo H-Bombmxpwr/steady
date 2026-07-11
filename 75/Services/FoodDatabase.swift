@@ -82,10 +82,43 @@ enum OpenFoodFacts {
                               servingSizeText: product.servingSize)
     }
 
+    // Session cache + retry: OFF's search endpoint 503s intermittently, so
+    // transient failures retry silently and repeat queries never refetch.
+    private static var cache: [String: [FoodItem]] = [:]
+    private static let cacheLock = NSLock()
+
     /// Crowd-sourced text search across ~3M products — the main food search.
+    /// Retries transient server errors (backoff) before surfacing anything.
+    static func search(_ query: String, limit: Int = 25) async throws -> [FoodItem] {
+        cacheLock.lock()
+        let cached = cache[query]
+        cacheLock.unlock()
+        if let cached { return cached }
+
+        var lastError: Error = OFFError.unreachable
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
+            }
+            try Task.checkCancellation()
+            do {
+                let items = try await performSearch(query, limit: limit)
+                cacheLock.lock()
+                cache[query] = items
+                cacheLock.unlock()
+                return items
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
     /// OFF orders by scan popularity, not text relevance, so results are
     /// re-ranked here (exact word > prefix > substring; popularity tiebreak).
-    static func search(_ query: String, limit: Int = 25) async throws -> [FoodItem] {
+    private static func performSearch(_ query: String, limit: Int) async throws -> [FoodItem] {
         // US subdomain: filters to US-market products with English names
         // (the world index surfaces mostly European entries).
         var comps = URLComponents(string: "https://us.openfoodfacts.org/cgi/search.pl")!
