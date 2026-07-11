@@ -35,9 +35,12 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   computed locally from kcal ÷ grams (not trusted from the model) and tag
   foods everywhere. Gemini also fills gaps: missing protein on OFF results is
   auto-estimated, "Not listed?" estimates a whole food from the search text,
-  and every estimate echoes what it assumed. Food names/photos go to AI;
-  progress photos never leave the device. Gemini key loads from a git-ignored
-  `Secrets.plist` (a key pasted in Settings → AI Assist overrides it).
+  and every estimate echoes what it assumed. Logged foods stay editable —
+  tap any food in a meal to fix its name, meal, portion, or any nutrient in
+  place. In-app copy stays AI-silent; Settings → **About Estimates** is the
+  one place that explains where Gemini is used (food names/photos go to
+  Google; progress photos never leave the device). The key loads from a
+  git-ignored `Secrets.plist` (a key pasted in Settings overrides it).
 - **Workouts**: bundled **exercise database** (873 exercises with instructions,
   free-exercise-db), workout builder with per-exercise sets × reps × weight
   targets, **set-by-set logging** with progressive-overload history charts,
@@ -49,9 +52,13 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   **body measurements** (waist/hips/chest/arm/thigh).
 
 ### Stats
-- Dedicated **Stats tab**: 7D / 30D / 90D / YTD / All / custom range.
-- Charts: weight + trend + goal, calories vs budget, protein, water, workout
-  minutes stacked by type, alcohol, steps (Health), sleep (Health), measurements.
+- Dedicated **Stats tab**, split into **Body** and **Food** sections, each with
+  7D / 30D / 90D / YTD / All / custom range.
+- **Body**: weight + trend + goal, water, workout minutes stacked by type,
+  steps (Health), sleep (Health), measurements.
+- **Food**: calories vs budget, protein, **calorie-density mix** (stacked
+  green/orange/red per day), fiber vs 28 g goal, sodium vs 2,300 mg limit,
+  alcohol; tiles for avg calories/protein/fiber/sodium.
 
 ### Integrations
 - **Apple Health two-way**: writes weight/water/nutrition/workouts, reads steps,

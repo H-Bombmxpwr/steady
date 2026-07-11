@@ -49,12 +49,14 @@ enum Nutrient {
     }
 }
 
-// MARK: - Single food detail
+// MARK: - Single food detail (editable)
 
-/// Nutrition-label style detail for one logged food (tap a row on the day).
+/// Nutrition label for one logged food — every value is editable in place,
+/// so estimates can be corrected after logging. Saves straight to the log;
+/// the density color re-buckets from the edited numbers.
 struct FoodNutritionSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let food: FoodLog
+    @Bindable var food: FoodLog
 
     var body: some View {
         NavigationStack {
@@ -64,57 +66,100 @@ struct FoodNutritionSheet: View {
                         if let d = FoodDensity(rawValue: food.density ?? "") {
                             Circle().fill(d.color).frame(width: 10, height: 10)
                         }
-                        Text(food.name).font(.headline)
+                        TextField("Name", text: $food.name)
+                            .font(.headline)
                     }
-                    if let meal = food.meal {
-                        HStack {
-                            Text("Meal")
-                            Spacer()
-                            Label(meal.label, systemImage: meal.icon)
-                                .foregroundStyle(.secondary)
+                    Picker("Meal", selection: Binding(
+                        get: { food.meal ?? .lunch },
+                        set: { food.meal = $0 }
+                    )) {
+                        ForEach(Meal.allCases) { m in
+                            Label(m.label, systemImage: m.icon).tag(m)
                         }
                     }
-                    if let g = food.grams {
-                        HStack {
-                            Text("Portion")
-                            Spacer()
-                            Text("\(Int(g)) g").foregroundStyle(.secondary)
-                        }
+                    HStack {
+                        Text("Portion (g)")
+                        Spacer()
+                        TextField("–", value: $food.grams, format: .number)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 90)
                     }
                 }
                 Section {
                     HStack {
                         Text("Calories")
                         Spacer()
-                        Text("\(food.calories) cal").bold()
+                        TextField("0", value: $food.calories, format: .number)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 90)
+                            .bold()
                     }
                     HStack {
-                        Text("Protein")
+                        Text("Protein (g)")
                         Spacer()
-                        Text("\(food.proteinGrams) g").bold()
+                        TextField("0", value: $food.proteinGrams, format: .number)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 90)
+                            .bold()
                     }
-                    NutritionFactsRows(facts: food.facts)
+                    editRow("Carbs (g)", $food.carbsGrams)
+                    editRow("Fat (g)", $food.fatGrams)
                 } header: {
-                    Text("Nutrition")
+                    Text("Nutrition — tap a value to fix it")
                 } footer: {
-                    if food.facts == NutritionFacts() {
-                        Text("No detailed nutrition was recorded for this item — foods logged via AI or the database carry the full panel.")
-                    } else if food.source == "ai" || food.source == "custom" {
-                        Text("AI-estimated values — treat as close, not exact.")
+                    if food.source == "ai" || food.source == "custom" {
+                        Text("Estimated values — adjust anything that looks off; changes save automatically.")
                     }
+                }
+                Section("Detail") {
+                    editRow("Saturated Fat (g)", $food.saturatedFatGrams)
+                    editRow("Trans Fat (g)", $food.transFatGrams)
+                    editRow("Cholesterol (mg)", $food.cholesterolMg)
+                    editRow("Sodium (mg)", $food.sodiumMg)
+                    editRow("Fiber (g)", $food.fiberGrams)
+                    editRow("Total Sugar (g)", $food.sugarGrams)
+                    editRow("Added Sugar (g)", $food.addedSugarGrams)
+                    editRow("Potassium (mg)", $food.potassiumMg)
+                    editRow("Calcium (mg)", $food.calciumMg)
+                    editRow("Iron (mg)", $food.ironMg)
                 }
             }
             .themedForm()
+            .keyboardDoneButton()
             .navigationTitle("Food Detail")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        rebucketDensity()
+                        dismiss()
+                    }
                 }
             }
+            .onDisappear { rebucketDensity() }
         }
         .themedRoot()
         .presentationDetents([.medium, .large])
+    }
+
+    private func rebucketDensity() {
+        guard let g = food.grams, g > 0, food.calories > 0 else { return }
+        food.density = FoodDensity(caloriesPer100g: Double(food.calories) / g * 100)?.rawValue
+    }
+
+    private func editRow(_ label: String, _ value: Binding<Double>) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("0", value: value, format: .number.precision(.fractionLength(0...1)))
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 90)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -200,7 +245,7 @@ struct DayNutritionView: View {
             } header: {
                 SectionHeader(icon: "arrow.up.heart.fill", title: "Get Enough")
             } footer: {
-                Text("FDA daily values. Database entries sometimes omit micronutrients, so these can read low — AI-logged meals carry the full panel.")
+                Text("FDA daily values. Database entries sometimes omit micronutrients, so these can read low — described or photographed meals carry the full panel.")
             }
 
             if !day.foods.isEmpty {

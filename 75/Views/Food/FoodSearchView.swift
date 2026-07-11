@@ -35,35 +35,46 @@ struct FoodSearchView: View {
 
     var body: some View {
         List {
-            // ===== Which meal this goes into (always visible)
+            // ===== Which meal this goes into (always visible, no scrolling)
             Section {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Meal.allCases) { m in
-                            Button {
-                                meal = m
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Image(systemName: m.icon).font(.caption)
-                                    Text(m.label)
-                                        .font(.subheadline.weight(meal == m ? .semibold : .regular))
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Capsule().fill(meal == m
-                                    ? AnyShapeStyle(Theme.gradient)
-                                    : AnyShapeStyle(Theme.surface2)))
-                                .foregroundStyle(meal == m ? .white : .primary)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3),
+                          spacing: 8) {
+                    ForEach(Meal.allCases) { m in
+                        Button {
+                            meal = m
+                        } label: {
+                            VStack(spacing: 5) {
+                                Image(systemName: m.icon)
+                                    .font(.subheadline)
+                                    .foregroundStyle(meal == m ? .white : m.color)
+                                Text(m.label)
+                                    .font(.caption.weight(meal == m ? .bold : .regular))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
                             }
-                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(meal == m
+                                        ? AnyShapeStyle(LinearGradient(
+                                            colors: [m.color, m.color.opacity(0.65)],
+                                            startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        : AnyShapeStyle(Theme.surface))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(meal == m ? Color.clear : Theme.hairline)
+                            )
+                            .foregroundStyle(meal == m ? .white : .primary)
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.vertical, 2)
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 .listRowBackground(Color.clear)
             } header: {
-                SectionHeader(icon: "fork.knife", title: "Logging to")
+                SectionHeader(icon: "fork.knife", title: "Logging to", tint: Theme.foodTint)
             }
 
             if query.isEmpty {
@@ -76,7 +87,7 @@ struct FoodSearchView: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Describe Your Meal")
                                     .font(.title3.bold())
-                                Text("Type or dictate what you ate — AI itemizes it with full nutrition")
+                                Text("Type or dictate what you ate — get every item with full nutrition")
                                     .font(.caption)
                                     .opacity(0.9)
                             }
@@ -117,7 +128,7 @@ struct FoodSearchView: View {
                     SectionHeader(icon: "tray.full.fill", title: "Other ways to log")
                 } footer: {
                     Text("""
-                    Photos and meal descriptions go through AI; search covers ~3M crowd-sourced products (Open Food Facts). No internet? Custom Food takes manual numbers.
+                    Photos and meal descriptions are estimated automatically; search covers ~3M crowd-sourced products (Open Food Facts). No internet? Custom Food takes manual numbers.
 
                     Food colors are calorie density, Noom-style: 🟢 green = under 1 cal per gram (eat freely) · 🟠 orange = 1–2.4 (moderate) · 🔴 red = over 2.4 (calorie-dense — small portions add up fast).
                     """)
@@ -160,12 +171,12 @@ struct FoodSearchView: View {
                         Button {
                             customRequest = CustomFoodRequest(name: query, autoEstimate: true)
                         } label: {
-                            Label("Not listed? AI estimates “\(query)”", systemImage: "sparkles")
+                            Label("Not listed? Estimate “\(query)”", systemImage: "sparkles")
                                 .lineLimit(1)
                         }
                     }
                 } footer: {
-                    Text("Crowd-sourced data — sanity-check anything that looks off. Missing protein is estimated by AI on the portion screen.")
+                    Text("Crowd-sourced data — sanity-check anything that looks off. Missing protein is filled in automatically on the portion screen.")
                 }
             }
         }
@@ -251,7 +262,7 @@ struct FoodSearchView: View {
 
     private func subtitle(for item: FoodItem) -> String {
         var text = "\(Int(item.c)) cal · "
-        text += item.proteinKnown ? "\(item.p.formatted()) g protein" : "protein: AI will estimate"
+        text += item.proteinKnown ? "\(item.p.formatted()) g protein" : "protein: auto-estimated"
         text += " per 100 g"
         if let pd = item.pd, let pg = item.pg {
             text += "  ·  \(pd) = \(Int(pg)) g"
@@ -422,7 +433,7 @@ private struct PortionSheet: View {
                             ProgressView()
                         } else {
                             if !item.proteinKnown && aiProteinPer100g != nil {
-                                Text("AI")
+                                Text("est.")
                                     .font(.caption2.bold())
                                     .padding(.horizontal, 5).padding(.vertical, 2)
                                     .background(Capsule().fill(Theme.accent.opacity(0.2)))
@@ -433,7 +444,7 @@ private struct PortionSheet: View {
                     }
                     NutritionFactsRows(facts: item.facts(grams: effectiveGrams), compact: true)
                     if !aiAssumed.isEmpty {
-                        Text("AI assumed: \(aiAssumed)")
+                        Text("Assumed: \(aiAssumed)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -523,7 +534,7 @@ private struct CustomFoodSheet: View {
                         Task { await estimate() }
                     } label: {
                         HStack {
-                            Label("Estimate with AI", systemImage: "sparkles")
+                            Label("Estimate Nutrition", systemImage: "sparkles")
                             if estimating { Spacer(); ProgressView() }
                         }
                     }
@@ -532,16 +543,16 @@ private struct CustomFoodSheet: View {
                         Text(err).font(.footnote).foregroundStyle(.red)
                     }
                     if !assumedText.isEmpty {
-                        Text("AI assumed: \(assumedText)")
+                        Text("Assumed: \(assumedText)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 } footer: {
                     Text(AIFoodEstimator.apiKey.isEmpty
-                         ? "Add a free Gemini API key in Settings → AI Assist to auto-estimate the full nutrition panel from the name — no more googling protein counts."
+                         ? "Add an API key in Settings → About Estimates to auto-fill the full nutrition panel from the name."
                          : estimated
                             ? "Estimated for one typical serving — if that's not what you meant, refine the name and estimate again."
-                            : "Estimates one typical serving (calories, protein, fats, sodium, and more) via Gemini using your API key.")
+                            : "Estimates one typical serving: calories, protein, fats, sodium, and more.")
                 }
                 HStack {
                     Text("Calories")
@@ -563,7 +574,7 @@ private struct CustomFoodSheet: View {
                     }
                 }
                 if facts != NutritionFacts() {
-                    Section("Full Nutrition (AI)") {
+                    Section("Full Nutrition") {
                         NutritionFactsRows(facts: facts, compact: true)
                     }
                 }

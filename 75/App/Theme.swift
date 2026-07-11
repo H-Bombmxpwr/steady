@@ -113,11 +113,40 @@ extension UIColor {
 
 // MARK: - Section identity
 
-/// Small gradient icon chip — gives plain form rows and headers some
-/// character without touching layout or behavior.
+/// Fixed per-domain hues so screens aren't wall-to-wall theme accent —
+/// water is always sky, alcohol always amber, and so on.
+extension Theme {
+    static let waterTint = Color(hex: 0x38BDF8)     // sky
+    static let foodTint = Color(hex: 0xFB923C)      // tangerine
+    static let weightTint = Color(hex: 0xA78BFA)    // violet
+    static let alcoholTint = Color(hex: 0xF59E0B)   // amber
+    static let supplementTint = Color(hex: 0x2DD4BF) // teal
+    static let workoutTint = Color(hex: 0xF43F5E)   // raspberry
+    static let photoTint = Color(hex: 0xEC4899)     // pink
+    static let sleepTint = Color(hex: 0x818CF8)     // periwinkle
+}
+
+/// Each meal gets its own hue for chips, rows, and charts.
+extension Meal {
+    var color: Color {
+        switch self {
+        case .breakfast: return Color(hex: 0xFBBF24)      // sunrise gold
+        case .morningSnack: return Color(hex: 0x34D399)   // mint
+        case .lunch: return Color(hex: 0xFB923C)          // midday orange
+        case .afternoonSnack: return Color(hex: 0x2DD4BF) // teal
+        case .dinner: return Color(hex: 0x818CF8)         // dusk indigo
+        case .dessert: return Color(hex: 0xEC4899)        // pink
+        }
+    }
+}
+
+/// Small icon chip — gives plain form rows and headers some character
+/// without touching layout or behavior. Tint it per domain; falls back
+/// to the theme gradient.
 struct SectionIcon: View {
     let systemImage: String
     var size: CGFloat = 26
+    var tint: Color? = nil
 
     var body: some View {
         Image(systemName: systemImage)
@@ -126,7 +155,11 @@ struct SectionIcon: View {
             .frame(width: size, height: size)
             .background(
                 RoundedRectangle(cornerRadius: size * 0.3, style: .continuous)
-                    .fill(Theme.gradient)
+                    .fill(tint.map {
+                        AnyShapeStyle(LinearGradient(colors: [$0, $0.opacity(0.65)],
+                                                     startPoint: .topLeading,
+                                                     endPoint: .bottomTrailing))
+                    } ?? AnyShapeStyle(Theme.gradient))
             )
     }
 }
@@ -135,10 +168,11 @@ struct SectionIcon: View {
 struct SectionHeader: View {
     let icon: String
     let title: String
+    var tint: Color? = nil
 
     var body: some View {
         HStack(spacing: 8) {
-            SectionIcon(systemImage: icon, size: 20)
+            SectionIcon(systemImage: icon, size: 20, tint: tint)
             Text(title)
                 .font(.footnote.bold())
                 .foregroundStyle(.primary.opacity(0.8))

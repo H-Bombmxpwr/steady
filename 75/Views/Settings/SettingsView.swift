@@ -201,16 +201,33 @@ struct SettingsView: View {
                     Text("Garmin, Apple Watch, and smart scales that write to Apple Health flow in automatically — this is the Garmin link.")
                 }
 
-                // --- AI assist (optional Gemini key for food estimates)
+                // --- Where AI is used (the one place the app talks about it)
                 Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Where AI is used").font(.subheadline.bold())
+                        Text("""
+                        Nutrition estimates in this app are powered by Google's Gemini model. It's behind:
+
+                        • Describe Your Meal — itemizing what you type or dictate
+                        • Photo of Food — reading a plate
+                        • Estimate Nutrition on custom foods and "Not listed?" search results
+                        • Filling in protein when a database entry is missing it
+                        • Summarize My Day — the end-of-day review and swaps
+
+                        Only food descriptions and food photos are sent to Google. Progress photos, weight, and everything else never leave the device. Estimates are good, not perfect — every number stays editable after logging.
+                        """)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
                     TextField("Gemini API key", text: $geminiKey)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .focused($fieldFocused)
                 } header: {
-                    Text("AI Assist")
+                    Text("About Estimates")
                 } footer: {
-                    Text("Powers food estimates: calories & protein from a name, missing-protein fill-ins, and Photo of Food. A key is already bundled with the app — paste your own from aistudio.google.com to override it. Only food names and food photos are sent to Google; progress photos never leave the device.")
+                    Text("A key is already bundled with the app — paste your own from aistudio.google.com to override it.")
                 }
 
                 // --- Appearance

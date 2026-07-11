@@ -121,7 +121,7 @@ struct DescribeMealView: View {
                     } footer: {
                         Text(assumed.isEmpty
                              ? "Tap an item to edit its numbers · swipe to remove it."
-                             : "AI assumed: \(assumed)\nTap an item to edit its numbers · swipe to remove it.")
+                             : "Assumed: \(assumed)\nTap an item to edit its numbers · swipe to remove it.")
                     }
                 }
             }
@@ -191,7 +191,7 @@ private struct MealItemEditSheet: View {
                 Section {
                     TextField("Name", text: $item.name)
                     if let a = item.assumed, !a.isEmpty {
-                        Text("AI assumed: \(a)")
+                        Text("Assumed: \(a)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }

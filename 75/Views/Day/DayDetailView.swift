@@ -105,9 +105,8 @@ struct DayDetailView: View {
                                        label: group.label, icon: group.icon)
                     } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: group.icon)
-                                .foregroundStyle(Theme.accent)
-                                .frame(width: 26)
+                            SectionIcon(systemImage: group.icon, size: 30,
+                                        tint: group.meal?.color ?? Theme.foodTint)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(group.label)
                                 Text("\(group.foods.count) item\(group.foods.count == 1 ? "" : "s") · \(group.foods.reduce(0) { $0 + $1.proteinGrams }) g protein")
@@ -133,13 +132,19 @@ struct DayDetailView: View {
                 HStack {
                     Text("Quick add")
                     Spacer()
-                    TextField("cal", value: $day.caloriesEaten, format: .number)
+                    TextField("cal", value: Binding<Int?>(
+                        get: { day.caloriesEaten == 0 ? nil : day.caloriesEaten },
+                        set: { day.caloriesEaten = $0 ?? 0 }
+                    ), format: .number)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 70)
                         .focused($fieldFocused)
                     Text("cal +").foregroundStyle(.secondary)
-                    TextField("g", value: $day.proteinGrams, format: .number)
+                    TextField("g", value: Binding<Int?>(
+                        get: { day.proteinGrams == 0 ? nil : day.proteinGrams },
+                        set: { day.proteinGrams = $0 ?? 0 }
+                    ), format: .number)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 50)
@@ -147,7 +152,7 @@ struct DayDetailView: View {
                     Text("g protein").foregroundStyle(.secondary)
                 }
             } header: {
-                SectionHeader(icon: "fork.knife", title: "Food")
+                SectionHeader(icon: "fork.knife", title: "Food", tint: Theme.foodTint)
             }
 
             // ===== Hydration
@@ -162,23 +167,24 @@ struct DayDetailView: View {
                     }
                 }
             } header: {
-                SectionHeader(icon: "drop.fill", title: "Hydration")
+                SectionHeader(icon: "drop.fill", title: "Hydration", tint: Theme.waterTint)
             }
 
             // ===== Weight
             Section {
+                // Optional binding: field starts empty (placeholder), not "0".
                 TextField(
                     "Weight (lb)",
-                    value: Binding(
-                        get: { day.weight ?? 0 },
-                        set: { newVal in day.weight = newVal == 0 ? nil : newVal }
+                    value: Binding<Double?>(
+                        get: { day.weight },
+                        set: { day.weight = $0 }
                     ),
                     format: .number
                 )
                 .keyboardType(.decimalPad)
                 .focused($fieldFocused)
             } header: {
-                SectionHeader(icon: "scalemass.fill", title: "Weight")
+                SectionHeader(icon: "scalemass.fill", title: "Weight", tint: Theme.weightTint)
             }
 
             // ===== Alcohol
@@ -191,7 +197,7 @@ struct DayDetailView: View {
                     }
                 }
             } header: {
-                SectionHeader(icon: "wineglass.fill", title: "Alcohol")
+                SectionHeader(icon: "wineglass.fill", title: "Alcohol", tint: Theme.alcoholTint)
             } footer: {
                 Text("1 standard drink = 12 oz beer, 5 oz wine, or 1.5 oz spirits (~98 cal, counted toward your budget).")
             }
@@ -215,7 +221,7 @@ struct DayDetailView: View {
                         }
                     }
                 } header: {
-                    SectionHeader(icon: "pills.fill", title: "Supplements")
+                    SectionHeader(icon: "pills.fill", title: "Supplements", tint: Theme.supplementTint)
                 }
             }
 
@@ -254,7 +260,7 @@ struct DayDetailView: View {
                     WorkoutFormView(day: day, plan: plan)
                 }
             } header: {
-                SectionHeader(icon: "figure.strengthtraining.traditional", title: "Workouts")
+                SectionHeader(icon: "figure.strengthtraining.traditional", title: "Workouts", tint: Theme.workoutTint)
             }
 
             // ===== Photos (Face ID gated)
@@ -309,7 +315,7 @@ struct DayDetailView: View {
                 .listRowInsets(EdgeInsets(top: 6, leading: 4, bottom: 6, trailing: 4))
                 .listRowBackground(Color.clear)
             } header: {
-                SectionHeader(icon: "camera.fill", title: "Progress Photos")
+                SectionHeader(icon: "camera.fill", title: "Progress Photos", tint: Theme.photoTint)
             }
         }
         .themedForm()

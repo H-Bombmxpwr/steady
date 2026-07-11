@@ -20,7 +20,7 @@ struct MealDetailView: View {
         Form {
             Section {
                 HStack {
-                    SectionIcon(systemImage: icon)
+                    SectionIcon(systemImage: icon, tint: meal?.color ?? Theme.foodTint)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(label).font(.headline)
                         Text("\(calories) cal · \(protein) g protein")
@@ -73,7 +73,7 @@ struct MealDetailView: View {
         if let g = f.grams { parts.append("\(Int(g)) g") }
         if f.proteinGrams > 0 { parts.append("\(f.proteinGrams) g protein") }
         if f.source == "barcode" { parts.append("scanned") }
-        if f.source == "ai" { parts.append("AI") }
+        if f.source == "ai" { parts.append("estimated") }
         return parts.joined(separator: " · ")
     }
 }
@@ -138,7 +138,7 @@ struct DaySummarySheet: View {
                         } header: {
                             Text("Try These Swaps")
                         } footer: {
-                            Text("AI suggestions based on today's log — take what's useful, skip what isn't.")
+                            Text("Based on today's log — take what's useful, skip what isn't.")
                         }
                     }
                 } else if let error {

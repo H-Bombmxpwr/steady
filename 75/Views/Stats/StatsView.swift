@@ -13,12 +13,21 @@ enum StatsRange: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum StatsTab: String, CaseIterable, Identifiable {
+    case body = "Body"
+    case food = "Food"
+    var id: String { rawValue }
+}
+
 /// Every tracked series, charted over a selectable time range.
+/// Two tabs: Body (weight, water, workouts, health) and Food (everything
+/// nutrition).
 struct StatsView: View {
     @Environment(\.modelContext) private var context
     var plan: Plan
     var profile: UserProfile
 
+    @State private var tab: StatsTab = .body
     @State private var range: StatsRange = .month
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -14, to: Date())!
     @State private var customEnd = Date()
@@ -54,19 +63,30 @@ struct StatsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    Picker("Section", selection: $tab) {
+                        ForEach(StatsTab.allCases) { t in Text(t.rawValue).tag(t) }
+                    }
+                    .pickerStyle(.segmented)
+
                     rangePicker
 
-                    summaryTiles
-
-                    weightChart
-                    caloriesChart
-                    proteinChart
-                    waterChart
-                    workoutChart
-                    alcoholChart
-                    if !steps.isEmpty { stepsChart }
-                    if !sleep.isEmpty { sleepChart }
-                    measurementsCard
+                    if tab == .body {
+                        bodyTiles
+                        weightChart
+                        waterChart
+                        workoutChart
+                        if !steps.isEmpty { stepsChart }
+                        if !sleep.isEmpty { sleepChart }
+                        measurementsCard
+                    } else {
+                        foodTiles
+                        caloriesChart
+                        proteinChart
+                        densityChart
+                        fiberChart
+                        sodiumChart
+                        alcoholChart
+                    }
                 }
                 .padding()
             }
@@ -111,35 +131,55 @@ struct StatsView: View {
 
     // MARK: - Summary tiles
 
-    private var summaryTiles: some View {
+    private var bodyTiles: some View {
         let days = daysInRange
-        let logged = days.filter { $0.totalCalories > 0 }
-        let avgCal = logged.isEmpty ? 0 : logged.reduce(0) { $0 + $1.totalCalories } / logged.count
         let totalMin = days.reduce(0) { $0 + $1.workoutMinutes }
         let totalWater = days.reduce(0) { $0 + $1.waterOunces }
-        let drinks = days.reduce(0.0) { $0 + $1.standardDrinks }
         let trend = CalorieEngine.weightTrend(plan: plan)
         let trendInRange = trend.filter { $0.date >= interval.start && $0.date <= interval.end }
         let weightDelta = (trendInRange.last?.trend ?? 0) - (trendInRange.first?.trend ?? 0)
 
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            tile(String(format: "%+.1f", trendInRange.count >= 2 ? weightDelta : 0), "lb trend")
-            tile("\(avgCal)", "avg cal")
-            tile(hm(totalMin), "exercise")
-            tile("\(totalWater / max(1, days.count))", "avg oz water")
-            tile(drinks.formatted(), "drinks")
-            tile("\(logged.count)/\(max(1, days.count))", "days logged")
+            tile(String(format: "%+.1f", trendInRange.count >= 2 ? weightDelta : 0), "lb trend",
+                 tint: Theme.weightTint)
+            tile(hm(totalMin), "exercise", tint: Theme.workoutTint)
+            tile("\(totalWater / max(1, days.count))", "avg oz water", tint: Theme.waterTint)
         }
     }
 
-    private func tile(_ value: String, _ label: String) -> some View {
+    private var foodTiles: some View {
+        let days = daysInRange
+        let logged = days.filter { $0.totalCalories > 0 }
+        let avgCal = logged.isEmpty ? 0 : logged.reduce(0) { $0 + $1.totalCalories } / logged.count
+        let avgProtein = logged.isEmpty ? 0 : logged.reduce(0) { $0 + $1.totalProtein } / logged.count
+        let facts = logged.map(\.totalFacts)
+        let avgFiber = facts.isEmpty ? 0 : facts.reduce(0.0) { $0 + $1.fiberGrams } / Double(facts.count)
+        let avgSodium = facts.isEmpty ? 0 : facts.reduce(0.0) { $0 + $1.sodiumMg } / Double(facts.count)
+        let drinks = days.reduce(0.0) { $0 + $1.standardDrinks }
+
+        return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            tile("\(avgCal)", "avg cal", tint: Theme.foodTint)
+            tile("\(avgProtein)", "avg g protein", tint: Theme.workoutTint)
+            tile("\(Int(avgFiber))", "avg g fiber", tint: .green)
+            tile("\(Int(avgSodium))", "avg mg sodium", tint: Theme.weightTint)
+            tile(drinks.formatted(), "drinks", tint: Theme.alcoholTint)
+            tile("\(logged.count)/\(max(1, days.count))", "days logged", tint: Theme.supplementTint)
+        }
+    }
+
+    private func tile(_ value: String, _ label: String, tint: Color = Theme.accent) -> some View {
         VStack(spacing: 2) {
             Text(value).font(.system(.headline, design: .rounded))
+                .foregroundStyle(tint)
             Text(label).font(.caption2).foregroundStyle(Theme.textDim)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.surface))
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(tint.opacity(0.25)))
+        )
     }
 
     private func hm(_ minutes: Int) -> String {
@@ -243,6 +283,67 @@ struct StatsView: View {
                     .cornerRadius(3)
             }
             .chartLegend(position: .bottom, spacing: 8)
+        }
+    }
+
+    /// Where the calories came from, Noom-style: stacked green/orange/red
+    /// per day (gray = foods without a density rating, e.g. quick adds).
+    private var densityChart: some View {
+        struct Slice: Identifiable {
+            let date: Date; let bucket: String; let calories: Int
+            var id: String { "\(date)-\(bucket)" }
+        }
+        let slices: [Slice] = daysInRange.flatMap { d -> [Slice] in
+            Dictionary(grouping: d.foods, by: { FoodDensity(rawValue: $0.density ?? "")?.rawValue ?? "unrated" })
+                .map { Slice(date: d.date, bucket: $0.key.capitalized,
+                             calories: $0.value.reduce(0) { $0 + $1.calories }) }
+        }.filter { $0.calories > 0 }
+        return ChartCard(title: "Calorie Density Mix", empty: slices.isEmpty,
+                         emptyText: "Log foods to see how much of your intake is green vs red.") {
+            Chart(slices) { s in
+                BarMark(x: .value("Date", s.date, unit: .day), y: .value("cal", s.calories))
+                    .foregroundStyle(by: .value("Bucket", s.bucket))
+                    .cornerRadius(3)
+            }
+            .chartForegroundStyleScale([
+                "Green": Color.green, "Orange": Color.orange,
+                "Red": Color.red, "Unrated": Color.gray.opacity(0.5)
+            ])
+            .chartLegend(position: .bottom, spacing: 8)
+        }
+    }
+
+    private var fiberChart: some View {
+        let data = daysInRange.map { (date: $0.date, grams: $0.totalFacts.fiberGrams) }
+            .filter { $0.grams > 0 }
+        return ChartCard(title: "Fiber (goal 28 g)", empty: data.isEmpty,
+                         emptyText: "Fiber shows up once foods carry detailed nutrition.") {
+            Chart(data, id: \.date) { d in
+                BarMark(x: .value("Date", d.date, unit: .day), y: .value("g", d.grams))
+                    .foregroundStyle(d.grams >= 28
+                                     ? AnyShapeStyle(Color.green) : AnyShapeStyle(Theme.surface2))
+                    .cornerRadius(3)
+            }
+            .chartYAxisLabel("g")
+        }
+    }
+
+    private var sodiumChart: some View {
+        let data = daysInRange.map { (date: $0.date, mg: $0.totalFacts.sodiumMg) }
+            .filter { $0.mg > 0 }
+        return ChartCard(title: "Sodium (limit 2,300 mg)", empty: data.isEmpty,
+                         emptyText: "Sodium shows up once foods carry detailed nutrition.") {
+            Chart {
+                ForEach(data, id: \.date) { d in
+                    BarMark(x: .value("Date", d.date, unit: .day), y: .value("mg", d.mg))
+                        .foregroundStyle(d.mg > 2300
+                                         ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(Theme.gradient))
+                        .cornerRadius(3)
+                }
+                RuleMark(y: .value("Limit", 2300))
+                    .foregroundStyle(Theme.warn.opacity(0.7))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            }
         }
     }
 
