@@ -15,12 +15,15 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
 - **Weight trend**: EWMA-smoothed trend line, goal line, projected goal date.
 
 ### Logging
-- **Food**: bundled USDA database (7,793 foods, offline search that ranks whole
-  foods above branded/restaurant entries), on-demand **Open Food Facts online
-  search** (~3M crowd-sourced products) and barcode scan, **photo-of-food
-  recognition** (on-device Vision, nothing uploaded), custom foods with optional
-  unknown protein and an optional **AI estimate** (bring your own free Gemini
-  key — fills calories/protein from the name), portion picker.
+- **Food**: live **Open Food Facts search** as you type (~3M crowd-sourced
+  products, US-market first, re-ranked by text relevance since OFF orders by
+  popularity), barcode scan, **photo-of-food recognition** (classified
+  on-device — only the label text is searched online), portion picker.
+  **Gemini fills the gaps**: OFF results missing protein get it auto-estimated
+  on the portion screen, and anything OFF doesn't have at all gets full
+  calories + protein from AI ("Not listed?" row). Offline? Custom Food takes
+  manual numbers. Gemini key loads from a git-ignored `Secrets.plist`
+  (a key pasted in Settings → AI Assist overrides it).
 - **Workouts**: bundled **exercise database** (873 exercises with instructions,
   free-exercise-db), workout builder with per-exercise sets × reps × weight
   targets, **set-by-set logging** with progressive-overload history charts,
@@ -73,10 +76,11 @@ Shared/        SwiftData models, CalorieEngine, Persistence — compiled into ap
 Widgets/       WidgetKit extension (home + lock screen, interactive logging)
 75/
   App/         App entry, photo lock (Face ID + PIN), privacy shield, Theme
-  Resources/   Foods.json (USDA extract), Exercises.json (free-exercise-db extract)
-  Services/    Backup, FoodDatabase, ExerciseDatabase, AIFoodEstimator,
-               FoodPhotoRecognizer, HealthKit, Notifications, CalendarSync,
-               Timelapse
+  Resources/   Exercises.json (free-exercise-db extract),
+               Secrets.plist (API keys — git-ignored, create locally)
+  Services/    Backup, FoodDatabase (Open Food Facts), ExerciseDatabase,
+               AIFoodEstimator (Gemini), FoodPhotoRecognizer, HealthKit,
+               Notifications, CalendarSync, Timelapse
   Views/
     Onboarding/  Multi-step plan setup
     Dashboard/   Rings, trend chart, streak, weekly insight (+ Settings sheet)
@@ -96,6 +100,9 @@ docs/agents/   Agent config (issue tracker, triage labels, domain docs)
 ## Getting Started
 
 1. Open `75.xcodeproj` in Xcode 16+.
-2. First device build: let Xcode register the App Group + HealthKit capabilities
+2. Create `75/Resources/Secrets.plist` (git-ignored) with a `GeminiAPIKey`
+   string entry — free key from aistudio.google.com. Without it, AI estimates
+   are unavailable until a key is pasted in Settings → AI Assist.
+3. First device build: let Xcode register the App Group + HealthKit capabilities
    (automatic signing).
-3. Run on device (free provisioning = 7-day installs; paid Dev Program ≈ 12 months).
+4. Run on device (free provisioning = 7-day installs; paid Dev Program ≈ 12 months).

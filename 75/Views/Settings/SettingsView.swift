@@ -209,7 +209,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI Assist")
                 } footer: {
-                    Text("Optional: paste a free Gemini API key from aistudio.google.com and Custom Food gets an “Estimate with AI” button for calories & protein (free tier ≈ 1,500 requests/day). Only the food name you type is sent to Google.")
+                    Text("Powers “Estimate with AI” in Custom Food (calories & protein from the name). A key is already bundled with the app — paste your own from aistudio.google.com to override it. Only the food name you type is sent to Google.")
                 }
 
                 // --- Appearance

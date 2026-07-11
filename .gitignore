@@ -48,3 +48,6 @@ fastlane/test_output
 *.swo
 .idea/
 .vscode/
+
+# Local API keys — bundled into the app at build time, never committed
+75/Resources/Secrets.plist

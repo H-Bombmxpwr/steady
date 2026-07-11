@@ -1,6 +1,7 @@
 import Foundation
 
-/// One food from the bundled USDA SR Legacy extract. Nutrients are per 100 g.
+/// One food, nutrients per 100 g. Sourced from Open Food Facts (text search
+/// or barcode scan); custom foods are entered manually.
 struct FoodItem: Codable, Identifiable, Hashable {
     let n: String          // name
     let c: Double          // kcal / 100 g
@@ -9,99 +10,27 @@ struct FoodItem: Codable, Identifiable, Hashable {
     let cb: Double         // carbs g / 100 g
     let pd: String?        // household portion description (e.g. "1 cup")
     let pg: Double?        // gram weight of that portion
+    var pu: Bool? = nil    // true when the source had no protein value
 
     var id: String { n }
     var name: String { n }
+    var proteinKnown: Bool { !(pu ?? false) }
 
     func calories(grams: Double) -> Int { Int((c * grams / 100).rounded()) }
     func protein(grams: Double) -> Int { Int((p * grams / 100).rounded()) }
 }
 
-/// Bundled offline food database (7,793 USDA SR Legacy foods, ~1 MB JSON).
-/// Loaded lazily off the main thread on first search.
-final class FoodDatabase {
-    static let shared = FoodDatabase()
-
-    private var _foods: [FoodItem]?
-    private let lock = NSLock()
-
-    var foods: [FoodItem] {
-        lock.lock(); defer { lock.unlock() }
-        if let f = _foods { return f }
-        let loaded = Self.load()
-        _foods = loaded
-        return loaded
-    }
-
-    private static func load() -> [FoodItem] {
-        guard let url = Bundle.main.url(forResource: "Foods", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([FoodItem].self, from: data) else {
-            return []
-        }
-        return items
-    }
-
-    /// All query tokens must appear in the name. Ranking favors whole foods:
-    /// exact word matches beat substring hits ("Apples, raw" over "Applesauce"),
-    /// branded/restaurant entries (ALL-CAPS names like "APPLEBEE'S") sink,
-    /// earlier matches and shorter names rise.
-    func search(_ query: String, limit: Int = 60) -> [FoodItem] {
-        let tokens = query.lowercased()
-            .split(separator: " ")
-            .map(String.init)
-            .filter { !$0.isEmpty }
-        guard !tokens.isEmpty else { return [] }
-
-        var scored: [(FoodItem, Int)] = []
-        for item in foods {
-            let name = item.n.lowercased()
-            guard tokens.allSatisfy({ name.contains($0) }) else { continue }
-
-            var score = 0
-
-            // Branded/restaurant entries: 3+ consecutive capitals in original name
-            if Self.looksBranded(item.n) { score += 100_000 }
-
-            // Exact word match (incl. simple plural) is the strongest signal
-            let words = name.split(whereSeparator: { !$0.isLetter }).map(String.init)
-            for token in tokens {
-                if words.contains(token) || words.contains(token + "s") || words.contains(token + "es") {
-                    score -= 20_000
-                } else if !words.contains(where: { $0.hasPrefix(token) }) {
-                    score += 5_000   // only a mid-word substring hit
-                }
-            }
-
-            let position = name.range(of: tokens[0])?.lowerBound.utf16Offset(in: name) ?? 999
-            score += position * 100 + name.count
-            scored.append((item, score))
-        }
-        return scored.sorted { $0.1 < $1.1 }.prefix(limit).map { $0.0 }
-    }
-
-    private static func looksBranded(_ name: String) -> Bool {
-        var run = 0
-        for ch in name {
-            if ch.isUppercase { run += 1; if run >= 3 { return true } }
-            else if ch.isLetter { run = 0 }
-        }
-        return false
-    }
-}
-
-// MARK: - Open Food Facts barcode lookup
+// MARK: - Open Food Facts (barcode + text search)
 
 struct ScannedProduct {
     let name: String
     let caloriesPer100g: Double
-    let proteinPer100g: Double
+    let proteinPer100g: Double?
     let servingSizeText: String?
 }
 
 enum OpenFoodFacts {
-    /// Fetch a product by barcode. Only used when the user scans — regular
-    /// search stays fully offline.
+    /// Fetch a product by barcode.
     static func lookup(barcode: String) async throws -> ScannedProduct? {
         let url = URL(string: "https://world.openfoodfacts.org/api/v2/product/\(barcode).json?fields=product_name,nutriments,serving_size")!
         var request = URLRequest(url: url)
@@ -137,19 +66,23 @@ enum OpenFoodFacts {
               let kcal = product.nutriments?.energyKcal100g else { return nil }
         return ScannedProduct(name: product.productName ?? "Scanned item",
                               caloriesPer100g: kcal,
-                              proteinPer100g: product.nutriments?.proteins100g ?? 0,
+                              proteinPer100g: product.nutriments?.proteins100g,
                               servingSizeText: product.servingSize)
     }
 
-    /// Crowd-sourced text search across ~3M products (like the MyFitnessPal
-    /// database, but open). On-demand only — the user taps "Search online".
+    /// Crowd-sourced text search across ~3M products — the main food search.
+    /// OFF orders by scan popularity, not text relevance, so results are
+    /// re-ranked here (exact word > prefix > substring; popularity tiebreak).
     static func search(_ query: String, limit: Int = 25) async throws -> [FoodItem] {
-        var comps = URLComponents(string: "https://world.openfoodfacts.org/cgi/search.pl")!
+        // US subdomain: filters to US-market products with English names
+        // (the world index surfaces mostly European entries).
+        var comps = URLComponents(string: "https://us.openfoodfacts.org/cgi/search.pl")!
         comps.queryItems = [
             URLQueryItem(name: "search_terms", value: query),
             URLQueryItem(name: "search_simple", value: "1"),
             URLQueryItem(name: "action", value: "process"),
             URLQueryItem(name: "json", value: "1"),
+            URLQueryItem(name: "sort_by", value: "unique_scans_n"),
             URLQueryItem(name: "page_size", value: "\(limit)"),
             URLQueryItem(name: "fields", value: "product_name,brands,nutriments,serving_size")
         ]
@@ -186,7 +119,7 @@ enum OpenFoodFacts {
         }
 
         let decoded = try JSONDecoder().decode(Response.self, from: data)
-        return (decoded.products ?? []).compactMap { p in
+        let items: [FoodItem] = (decoded.products ?? []).compactMap { p in
             guard let name = p.productName, !name.isEmpty,
                   let kcal = p.nutriments?.kcal else { return nil }
             let brand = p.brands?.split(separator: ",").first
@@ -197,7 +130,32 @@ enum OpenFoodFacts {
                             p: p.nutriments?.protein ?? 0,
                             f: p.nutriments?.fat ?? 0,
                             cb: p.nutriments?.carbs ?? 0,
-                            pd: p.servingSize, pg: nil)
+                            pd: p.servingSize, pg: nil,
+                            pu: p.nutriments?.protein == nil)
         }
+
+        // Re-rank by how well the name matches the query; OFF's popularity
+        // order breaks ties.
+        let tokens = query.lowercased()
+            .split(separator: " ")
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        let scored = items.enumerated().map { index, item in
+            var score = index * 10
+            let name = item.n.lowercased()
+            let words = name.split(whereSeparator: { !$0.isLetter }).map(String.init)
+            for token in tokens {
+                if words.contains(token) || words.contains(token + "s") || words.contains(token + "es") {
+                    score -= 10_000
+                } else if words.contains(where: { $0.hasPrefix(token) }) {
+                    score -= 4_000
+                } else if name.contains(token) {
+                    score -= 1_000
+                }
+            }
+            score += min(name.count, 120)
+            return (item, score)
+        }
+        return scored.sorted { $0.1 < $1.1 }.map(\.0)
     }
 }

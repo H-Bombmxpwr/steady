@@ -2,15 +2,15 @@ import Foundation
 import Vision
 import UIKit
 
-/// On-device photo-of-food recognition using Apple's built-in Vision
-/// classifier (no network, no upload). Food-related labels are matched
-/// against the bundled USDA database; the user confirms dish + portion.
+/// Photo-of-food recognition. Classification runs on-device with Apple's
+/// built-in Vision classifier — the photo never leaves the phone. Only the
+/// resulting label text is searched against Open Food Facts for candidates.
 enum FoodPhotoRecognizer {
 
     struct Suggestion: Identifiable {
         let label: String            // human-readable classifier label
         let confidence: Double
-        let matches: [FoodItem]      // USDA candidates for this label
+        let matches: [FoodItem]      // Open Food Facts candidates for this label
         var id: String { label }
     }
 
@@ -31,12 +31,12 @@ enum FoodPhotoRecognizer {
             .filter { $0.confidence > 0.15 }
             .prefix(40)
             .map { (label: $0.identifier.replacingOccurrences(of: "_", with: " "), conf: Double($0.confidence)) }
-            .filter { isFoodLabel($0.label) }
-            .prefix(5)
+            .filter { !nonFood.contains($0.label.lowercased()) }
+            .prefix(4)
 
         var suggestions: [Suggestion] = []
         for c in candidates {
-            let matches = FoodDatabase.shared.search(c.label, limit: 5)
+            let matches = (try? await OpenFoodFacts.search(c.label, limit: 5)) ?? []
             if !matches.isEmpty {
                 suggestions.append(Suggestion(label: c.label.capitalized,
                                               confidence: c.conf,
@@ -46,14 +46,10 @@ enum FoodPhotoRecognizer {
         return suggestions
     }
 
-    /// The generic classifier includes plenty of non-food classes; keep a label
-    /// only if the USDA database recognizes its head noun as an actual food.
-    private static func isFoodLabel(_ label: String) -> Bool {
-        let nonFood: Set<String> = ["person", "people", "plate", "table", "bowl", "cup",
-                                    "utensil", "fork", "knife", "spoon", "glass", "bottle",
-                                    "kitchen", "restaurant", "food", "meal", "dish"]
-        let l = label.lowercased()
-        guard !nonFood.contains(l) else { return false }
-        return !FoodDatabase.shared.search(l, limit: 1).isEmpty
-    }
+    /// Generic classes the classifier emits around food scenes that aren't
+    /// themselves foods. Labels with no Open Food Facts hits are dropped too.
+    private static let nonFood: Set<String> = ["person", "people", "plate", "table", "bowl",
+                                               "cup", "utensil", "fork", "knife", "spoon",
+                                               "glass", "bottle", "kitchen", "restaurant",
+                                               "food", "meal", "dish", "snack"]
 }

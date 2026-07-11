@@ -1,21 +1,23 @@
 import SwiftUI
 import SwiftData
 
-/// Search the bundled USDA database, scan a barcode, or enter a custom food,
-/// then log a portion to the given day.
+/// Search Open Food Facts as you type (~3M crowd-sourced products), scan a
+/// barcode, or enter a custom food, then log a portion to the given day.
+/// Offline? Custom Food still works — just type the numbers in.
 struct FoodSearchView: View {
     @Environment(\.dismiss) private var dismiss
     var day: DayLog
 
     @State private var query = ""
     @State private var results: [FoodItem] = []
+    @State private var searching = false
+    @State private var searchFailed = false
+    @State private var searchTask: Task<Void, Never>?
     @State private var portionItem: FoodItem?
-    @State private var portionSource = "usda"
-    @State private var onlineResults: [FoodItem] = []
-    @State private var searchingOnline = false
-    @State private var searchedOnline = false
     @State private var showScanner = false
     @State private var showCustom = false
+    @State private var customPrefill = ""
+    @State private var customAutoEstimate = false
     @State private var scanned: ScannedProduct?
     @State private var scanError: String?
     @State private var looking = false
@@ -39,41 +41,33 @@ struct FoodSearchView: View {
                             if recognizing { Spacer(); ProgressView() }
                         }
                     }
-                    Button { showCustom = true } label: {
+                    Button {
+                        customPrefill = ""
+                        customAutoEstimate = false
+                        showCustom = true
+                    } label: {
                         Label("Custom Food", systemImage: "square.and.pencil")
                     }
                 }
-                Section(footer: Text("Search 7,800 USDA foods offline, or tap “Search online” under the results for ~3M crowd-sourced products. Photo recognition runs on-device; nothing is uploaded.")) {
+                Section(footer: Text("Type to search ~3M crowd-sourced products from Open Food Facts, ranked by relevance. Anything it doesn't have, AI can estimate. No internet? Use Custom Food and enter the numbers manually. Photos are classified on-device; nothing is uploaded.")) {
                     EmptyView()
                 }
-            }
-            ForEach(results) { item in
-                Button { portionSource = "usda"; portionItem = item } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.name).lineLimit(2).foregroundStyle(.primary)
-                        Text(subtitle(for: item))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            if query.count >= 3 {
+            } else {
                 Section {
-                    if !searchedOnline {
-                        Button {
-                            Task { await searchOnline() }
-                        } label: {
-                            HStack {
-                                Label("Search Open Food Facts online", systemImage: "globe")
-                                if searchingOnline { Spacer(); ProgressView() }
-                            }
+                    if searching && results.isEmpty {
+                        HStack {
+                            Text("Searching…").foregroundStyle(.secondary)
+                            Spacer()
+                            ProgressView()
                         }
-                        .disabled(searchingOnline)
-                    } else if onlineResults.isEmpty {
-                        Text("No online matches.").foregroundStyle(.secondary)
+                    } else if searchFailed {
+                        Text("Couldn't reach Open Food Facts — check your connection or use Custom Food.")
+                            .foregroundStyle(.secondary)
+                    } else if results.isEmpty && !searching && query.count >= 3 {
+                        Text("No matches.").foregroundStyle(.secondary)
                     }
-                    ForEach(onlineResults) { item in
-                        Button { portionSource = "off"; portionItem = item } label: {
+                    ForEach(results) { item in
+                        Button { portionItem = item } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.name).lineLimit(2).foregroundStyle(.primary)
                                 Text(subtitle(for: item))
@@ -82,8 +76,18 @@ struct FoodSearchView: View {
                             }
                         }
                     }
+                    if query.count >= 3 {
+                        Button {
+                            customPrefill = query
+                            customAutoEstimate = true
+                            showCustom = true
+                        } label: {
+                            Label("Not listed? AI estimates “\(query)”", systemImage: "sparkles")
+                                .lineLimit(1)
+                        }
+                    }
                 } footer: {
-                    Text("Online search covers ~3M crowd-sourced products (brands, restaurants) — quality varies, so sanity-check the numbers.")
+                    Text("Crowd-sourced data — sanity-check anything that looks off. Missing protein is estimated by AI on the portion screen.")
                 }
             }
         }
@@ -91,13 +95,9 @@ struct FoodSearchView: View {
         .navigationTitle("Add Food")
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "Search foods (e.g. chicken breast)")
-        .onChange(of: query) { _ in
-            results = query.count >= 2 ? FoodDatabase.shared.search(query) : []
-            onlineResults = []
-            searchedOnline = false
-        }
+        .onChange(of: query) { _ in runSearch() }
         .sheet(item: $portionItem) { item in
-            PortionSheet(item: item, source: portionSource) { log in
+            PortionSheet(item: item, source: "off") { log in
                 day.foods.append(log)
                 dismiss()
             }
@@ -126,9 +126,10 @@ struct FoodSearchView: View {
             if let product = scanned {
                 PortionSheet(item: FoodItem(n: product.name,
                                             c: product.caloriesPer100g,
-                                            p: product.proteinPer100g,
+                                            p: product.proteinPer100g ?? 0,
                                             f: 0, cb: 0,
-                                            pd: product.servingSizeText, pg: nil),
+                                            pd: product.servingSizeText, pg: nil,
+                                            pu: product.proteinPer100g == nil),
                              source: "barcode") { log in
                     day.foods.append(log)
                     scanned = nil
@@ -137,7 +138,8 @@ struct FoodSearchView: View {
             }
         }
         .sheet(isPresented: $showCustom) {
-            CustomFoodSheet { log in
+            CustomFoodSheet(initialName: customPrefill,
+                            autoEstimate: customAutoEstimate) { log in
                 day.foods.append(log)
                 dismiss()
             }
@@ -198,21 +200,39 @@ struct FoodSearchView: View {
     }
 
     private func subtitle(for item: FoodItem) -> String {
-        var text = "\(Int(item.c)) cal · \(item.p.formatted()) g protein per 100 g"
+        var text = "\(Int(item.c)) cal · "
+        text += item.proteinKnown ? "\(item.p.formatted()) g protein" : "protein: AI will estimate"
+        text += " per 100 g"
         if let pd = item.pd, let pg = item.pg {
             text += "  ·  \(pd) = \(Int(pg)) g"
         }
         return text
     }
 
-    private func searchOnline() async {
-        searchingOnline = true
-        defer { searchingOnline = false }
-        do {
-            onlineResults = try await OpenFoodFacts.search(query)
-            searchedOnline = true
-        } catch {
-            scanError = "Couldn't reach Open Food Facts — check your connection."
+    /// Debounced live search — waits for a typing pause, then queries OFF.
+    private func runSearch() {
+        searchTask?.cancel()
+        searchFailed = false
+        guard query.count >= 3 else {
+            results = []
+            searching = false
+            return
+        }
+        searching = true
+        let q = query
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            do {
+                let items = try await OpenFoodFacts.search(q)
+                guard !Task.isCancelled else { return }
+                results = items
+            } catch {
+                guard !Task.isCancelled else { return }
+                results = []
+                searchFailed = true
+            }
+            searching = false
         }
     }
 
@@ -236,13 +256,17 @@ struct FoodSearchView: View {
 private struct PortionSheet: View {
     @Environment(\.dismiss) private var dismiss
     let item: FoodItem
-    var source: String = "usda"
+    var source: String = "off"
     let onAdd: (FoodLog) -> Void
 
     @State private var grams: Double = 100
     @State private var servings: Double = 1
 
-    init(item: FoodItem, source: String = "usda", onAdd: @escaping (FoodLog) -> Void) {
+    // When the source has no protein value, Gemini fills it in automatically.
+    @State private var aiProteinPer100g: Double?
+    @State private var aiFetching = false
+
+    init(item: FoodItem, source: String = "off", onAdd: @escaping (FoodLog) -> Void) {
         self.item = item
         self.source = source
         self.onAdd = onAdd
@@ -252,6 +276,14 @@ private struct PortionSheet: View {
     private var effectiveGrams: Double {
         if let pg = item.pg { return pg * servings }
         return grams
+    }
+
+    private var effectiveProtein: Int {
+        if item.proteinKnown { return item.protein(grams: effectiveGrams) }
+        if let per100 = aiProteinPer100g {
+            return Int((per100 * effectiveGrams / 100).rounded())
+        }
+        return 0
     }
 
     var body: some View {
@@ -291,13 +323,24 @@ private struct PortionSheet: View {
                     HStack {
                         Text("Protein")
                         Spacer()
-                        Text("\(item.protein(grams: effectiveGrams)) g").bold()
+                        if aiFetching {
+                            ProgressView()
+                        } else {
+                            if !item.proteinKnown && aiProteinPer100g != nil {
+                                Text("AI")
+                                    .font(.caption2.bold())
+                                    .padding(.horizontal, 5).padding(.vertical, 2)
+                                    .background(Capsule().fill(Theme.accent.opacity(0.2)))
+                                    .foregroundStyle(Theme.accent)
+                            }
+                            Text("\(effectiveProtein) g").bold()
+                        }
                     }
                 }
                 Button("Add to Today") {
                     onAdd(FoodLog(name: item.name,
                                   calories: item.calories(grams: effectiveGrams),
-                                  proteinGrams: item.protein(grams: effectiveGrams),
+                                  proteinGrams: effectiveProtein,
                                   grams: effectiveGrams,
                                   source: source))
                     dismiss()
@@ -313,6 +356,12 @@ private struct PortionSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .task {
+                guard !item.proteinKnown, !AIFoodEstimator.apiKey.isEmpty else { return }
+                aiFetching = true
+                aiProteinPer100g = try? await AIFoodEstimator.proteinPer100g(food: item.name)
+                aiFetching = false
+            }
         }
         .themedRoot()
         .presentationDetents([.medium, .large])
@@ -324,8 +373,9 @@ private struct PortionSheet: View {
 private struct CustomFoodSheet: View {
     @Environment(\.dismiss) private var dismiss
     let onAdd: (FoodLog) -> Void
+    private let autoEstimate: Bool
 
-    @State private var name = ""
+    @State private var name: String
     @State private var calories = 0
     @State private var protein = 0
     @State private var proteinUnknown = false
@@ -333,6 +383,15 @@ private struct CustomFoodSheet: View {
     @State private var estimating = false
     @State private var estimateError: String?
     @State private var estimated = false
+
+    /// `autoEstimate` runs the AI fill immediately — used when a search had
+    /// no Open Food Facts match and the user asked AI to take over.
+    init(initialName: String = "", autoEstimate: Bool = false,
+         onAdd: @escaping (FoodLog) -> Void) {
+        self.onAdd = onAdd
+        self.autoEstimate = autoEstimate && !initialName.isEmpty
+        _name = State(initialValue: initialName)
+    }
 
     var body: some View {
         NavigationStack {
@@ -395,6 +454,9 @@ private struct CustomFoodSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+            .task {
+                if autoEstimate { await estimate() }
             }
         }
         .themedRoot()
