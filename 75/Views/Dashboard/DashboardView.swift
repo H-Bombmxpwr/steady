@@ -10,6 +10,10 @@ struct MainTabView: View {
     /// Floating glass tab bar with swipe-between-tabs; off = classic iOS bar.
     @AppStorage("ui.glassBar") private var glassBar = true
     @State private var tab = 0
+    /// While the pill is being dragged, the bar owns `tab` — the paged
+    /// TabView's async stale write-backs are ignored (they bounced the
+    /// pill off tabs 1 and 3).
+    @State private var barDragging = false
 
     // Widget deep links (seventyfive://log-food, log-workout, today)
     @State private var showFoodLog = false
@@ -38,7 +42,10 @@ struct MainTabView: View {
     var body: some View {
         Group {
             if glassBar {
-                TabView(selection: $tab) {
+                TabView(selection: Binding(
+                    get: { tab },
+                    set: { if !barDragging { tab = $0 } }
+                )) {
                     ForEach(0..<5) { i in
                         screen(i).tag(i)
                     }
@@ -46,7 +53,7 @@ struct MainTabView: View {
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .background(Theme.background.ignoresSafeArea())
                 .safeAreaInset(edge: .bottom) {
-                    GlassTabBar(tabs: Self.tabs, selection: $tab)
+                    GlassTabBar(tabs: Self.tabs, selection: $tab, dragging: $barDragging)
                 }
             } else {
                 TabView(selection: $tab) {
@@ -96,6 +103,7 @@ struct MainTabView: View {
 private struct GlassTabBar: View {
     let tabs: [(label: String, icon: String)]
     @Binding var selection: Int
+    @Binding var dragging: Bool
 
     /// Fractional pill position while a finger is sliding along the bar.
     @State private var dragIndex: CGFloat?
@@ -110,6 +118,8 @@ private struct GlassTabBar: View {
             let tabWidth = max(1, (geo.size.width - inset * 2) / CGFloat(tabs.count))
             let pillHeight = max(1, geo.size.height - inset * 2)
             let position = dragIndex ?? CGFloat(selection)
+            // While dragging, the highlight follows the pill, not the page.
+            let highlighted = dragIndex.map { Int($0.rounded()) } ?? selection
 
             ZStack(alignment: .leading) {
                 Capsule()
@@ -137,7 +147,7 @@ private struct GlassTabBar: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 7)
-                            .foregroundStyle(selection == i ? .white : Color.secondary)
+                            .foregroundStyle(highlighted == i ? .white : Color.secondary)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -149,6 +159,7 @@ private struct GlassTabBar: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)
                     .onChanged { value in
+                        dragging = true
                         let f = (value.location.x - inset) / tabWidth - 0.5
                         let clamped = min(max(f, 0), CGFloat(tabs.count - 1))
                         // The pill tracks the finger directly — no implicit
@@ -157,17 +168,26 @@ private struct GlassTabBar: View {
                         follow.disablesAnimations = true
                         withTransaction(follow) { dragIndex = clamped }
 
-                        // Page switches snap without animation mid-drag;
-                        // springing the whole TabView on every crossing is
-                        // what made dragging feel crunchy.
+                        // The page follows the pill live. Safe now: while
+                        // `dragging` is true the TabView's stale async
+                        // write-backs are ignored upstream.
                         let nearest = Int(clamped.rounded())
                         if nearest != selection {
                             withTransaction(follow) { selection = nearest }
                             UISelectionFeedbackGenerator().selectionChanged()
                         }
                     }
-                    .onEnded { _ in
+                    .onEnded { value in
+                        let f = (value.location.x - inset) / tabWidth - 0.5
+                        let nearest = Int(min(max(f, 0), CGFloat(tabs.count - 1)).rounded())
+                        selection = nearest
+                        // Pill just seats into the slot it's already on.
                         withAnimation(Self.spring) { dragIndex = nil }
+                        // Keep ignoring pager write-backs until any in-flight
+                        // transition finishes, so the landing tab sticks.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            dragging = false
+                        }
                     }
             )
         }
