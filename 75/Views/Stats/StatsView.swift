@@ -3,6 +3,7 @@ import SwiftData
 import Charts
 
 enum StatsRange: String, CaseIterable, Identifiable {
+    case day = "Today"
     case week = "7D"
     case month = "30D"
     case quarter = "90D"
@@ -44,6 +45,7 @@ struct StatsView: View {
         let cal = Calendar.current
         let end = cal.startOfDay(for: Date())
         switch range {
+        case .day:     return (end, end)
         case .week:    return (cal.date(byAdding: .day, value: -6, to: end)!, end)
         case .month:   return (cal.date(byAdding: .day, value: -29, to: end)!, end)
         case .quarter: return (cal.date(byAdding: .day, value: -89, to: end)!, end)

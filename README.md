@@ -66,7 +66,7 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
 
 ### Stats
 - Dedicated **Stats tab**, split into **Body** and **Food** sections, each with
-  7D / 30D / 90D / YTD / All / custom range.
+  Today / 7D / 30D / 90D / YTD / All / custom range.
 - **Body**: weight + trend + goal, water, workout minutes stacked by type,
   steps (Health), sleep (Health), measurements.
 - **Food**: calories vs budget, protein, **calorie-density mix** (stacked
