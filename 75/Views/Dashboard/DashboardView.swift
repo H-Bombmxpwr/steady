@@ -105,15 +105,22 @@ private struct GlassTabBar: View {
 
     var body: some View {
         GeometryReader { geo in
-            let tabWidth = (geo.size.width - inset * 2) / CGFloat(tabs.count)
+            // Clamp: zero-width layout passes otherwise produce negative
+            // frames ("Invalid frame dimension" console spam).
+            let tabWidth = max(1, (geo.size.width - inset * 2) / CGFloat(tabs.count))
+            let pillHeight = max(1, geo.size.height - inset * 2)
             let position = dragIndex ?? CGFloat(selection)
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Theme.gradient)
-                    .frame(width: tabWidth, height: geo.size.height - inset * 2)
+                    .frame(width: tabWidth, height: pillHeight)
                     .offset(x: inset + position * tabWidth)
-                    .shadow(color: Theme.accent.opacity(0.35), radius: 8, y: 2)
+                    .scaleEffect(dragIndex == nil ? 1 : 1.07)
+                    .shadow(color: Theme.accent.opacity(dragIndex == nil ? 0.35 : 0.5),
+                            radius: dragIndex == nil ? 8 : 12, y: 2)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.8),
+                               value: dragIndex == nil)
 
                 HStack(spacing: 0) {
                     ForEach(tabs.indices, id: \.self) { i in
@@ -138,15 +145,25 @@ private struct GlassTabBar: View {
                 }
                 .padding(.horizontal, inset)
             }
+            .contentShape(Rectangle())
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)
                     .onChanged { value in
                         let f = (value.location.x - inset) / tabWidth - 0.5
                         let clamped = min(max(f, 0), CGFloat(tabs.count - 1))
-                        dragIndex = clamped
+                        // The pill tracks the finger directly — no implicit
+                        // animation to lag behind it.
+                        var follow = Transaction()
+                        follow.disablesAnimations = true
+                        withTransaction(follow) { dragIndex = clamped }
+
+                        // Page switches snap without animation mid-drag;
+                        // springing the whole TabView on every crossing is
+                        // what made dragging feel crunchy.
                         let nearest = Int(clamped.rounded())
                         if nearest != selection {
-                            withAnimation(Self.spring) { selection = nearest }
+                            withTransaction(follow) { selection = nearest }
+                            UISelectionFeedbackGenerator().selectionChanged()
                         }
                     }
                     .onEnded { _ in

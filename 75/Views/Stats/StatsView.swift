@@ -154,10 +154,14 @@ struct StatsView: View {
         let totalWater = days.reduce(0) { $0 + $1.waterOunces }
         let trend = CalorieEngine.weightTrend(plan: plan)
         let trendInRange = trend.filter { $0.date >= interval.start && $0.date <= interval.end }
-        let weightDelta = (trendInRange.last?.trend ?? 0) - (trendInRange.first?.trend ?? 0)
+        // Explicitly Double: a bare `0` in the format vararg resolves as Int
+        // and trips "%+.1f does not match %lld" at runtime.
+        let weightDelta: Double = trendInRange.count >= 2
+            ? (trendInRange.last?.trend ?? 0) - (trendInRange.first?.trend ?? 0)
+            : 0
 
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-            tile(String(format: "%+.1f", trendInRange.count >= 2 ? weightDelta : 0), "lb trend",
+            tile(String(format: "%+.1f", weightDelta), "lb trend",
                  tint: Theme.weightTint)
             tile(hm(totalMin), "exercise", tint: Theme.workoutTint)
             tile("\(totalWater / max(1, days.count))", "avg oz water", tint: Theme.waterTint)
