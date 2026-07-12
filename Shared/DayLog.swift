@@ -139,6 +139,13 @@ final class DayLog {
     var totalCalories: Int { caloriesEaten + foodCalories + alcoholCalories }
     var totalProtein: Int { proteinGrams + foodProtein }
 
+    /// Anything at all logged this day — what keeps a relaxed streak alive.
+    var hasActivity: Bool {
+        weight != nil || waterOunces > 0 || totalCalories > 0 || !foods.isEmpty
+            || !workouts.isEmpty || !photos.isEmpty || !takenSupplements.isEmpty
+            || standardDrinks > 0 || !(notes ?? "").isEmpty
+    }
+
     /// Whole-day micronutrient totals across every meal's logged foods.
     var totalFacts: NutritionFacts {
         foods.reduce(into: NutritionFacts()) { $0.add($1.facts) }

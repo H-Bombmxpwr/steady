@@ -54,8 +54,7 @@ struct SeventyFiveHardApp: App {
         let today = Calendar.current.startOfDay(for: Date())
         let day = plan.days.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
         let met = day.map {
-            CalorieEngine.dayMet(day: $0, targets: targets,
-                                 workoutScheduled: plan.isWorkoutScheduled(on: today))
+            CalorieEngine.dayCounts(day: $0, plan: plan, targets: targets)
         } ?? false
         let streak = CalorieEngine.streakStats(plan: plan, targets: targets).current
         NotificationManager.updateStreakGuard(todayMet: met, streak: streak)

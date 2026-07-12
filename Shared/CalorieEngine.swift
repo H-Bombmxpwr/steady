@@ -108,9 +108,18 @@ enum CalorieEngine {
         return Double(c.filter { $0 }.count) / Double(max(1, c.count))
     }
 
-    /// A day "counts" for the streak when ≥ 75% of its applicable goals are met.
+    /// ≥ 75% of the day's applicable goals met — the "on target" measure.
     static func dayMet(day: DayLog, targets: DailyTargets, workoutScheduled: Bool) -> Bool {
         completionFraction(day: day, targets: targets, workoutScheduled: workoutScheduled) >= 0.75
+    }
+
+    /// Whether a day keeps the streak alive, honoring the plan's streak
+    /// style: strict = goals met; relaxed (default) = anything logged.
+    static func dayCounts(day: DayLog, plan: Plan, targets: DailyTargets) -> Bool {
+        plan.strictStreak
+            ? dayMet(day: day, targets: targets,
+                     workoutScheduled: plan.isWorkoutScheduled(on: day.date))
+            : day.hasActivity
     }
 
     // MARK: - Weight trend (exponentially weighted moving average)
@@ -146,7 +155,7 @@ enum CalorieEngine {
 
         func met(_ date: Date) -> Bool {
             guard let day = byDate[date] else { return false }
-            return dayMet(day: day, targets: targets, workoutScheduled: plan.isWorkoutScheduled(on: date))
+            return dayCounts(day: day, plan: plan, targets: targets)
         }
 
         // Current streak: walk back from today; today only breaks the streak

@@ -12,6 +12,9 @@ final class Plan {
     var waterStepOunces: Int
     var proteinTargetGrams: Int
     var calorieBudgetOverride: Int?   // nil = use computed budget
+    /// Strict = the streak needs the day's goals met (75% of checks);
+    /// relaxed (default) = showing up and logging anything keeps it alive.
+    var strictStreak: Bool = false
 
     @Relationship(deleteRule: .cascade) var days: [DayLog]
     @Relationship(deleteRule: .cascade) var presets: [WorkoutPreset]

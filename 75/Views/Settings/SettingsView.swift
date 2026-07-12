@@ -76,6 +76,10 @@ struct SettingsView: View {
                             Text(String(format: "%.1f lb / week", p)).tag(p)
                         }
                     }
+                    Picker("Streak counts when", selection: $plan.strictStreak) {
+                        Text("I log anything").tag(false)
+                        Text("I hit my goals").tag(true)
+                    }
                 }
 
                 // --- Daily targets

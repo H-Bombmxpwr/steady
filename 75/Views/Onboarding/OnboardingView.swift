@@ -6,6 +6,9 @@ struct OnboardingView: View {
     @Environment(\.modelContext) private var context
     @State private var step = 0
 
+    // Streak style — relaxed (any logging) is the default
+    @State private var strictStreak = false
+
     // Blood work (optional, opt-in)
     @AppStorage("labs.enabled") private var labsEnabled = false
     @State private var ldlText = ""
@@ -144,6 +147,17 @@ struct OnboardingView: View {
                 }
                 .pickerStyle(.inline)
                 .labelsHidden()
+            }
+            Section {
+                Picker("Streak counts when", selection: $strictStreak) {
+                    Text("I log anything").tag(false)
+                    Text("I hit my goals").tag(true)
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Streak Style")
+            } footer: {
+                Text("Relaxed keeps the flame alive any day you log something — food, water, weight, a workout, a photo. Strict requires meeting the day's goals. Changeable anytime in Settings.")
             }
             Section {
                 Button("Continue") { step = 2 }
@@ -322,6 +336,7 @@ struct OnboardingView: View {
                         waterGoalOunces: waterGoal,
                         waterStepOunces: waterStep,
                         proteinTargetGrams: CalorieEngine.proteinTargetGrams(goalWeightLbs: g))
+        plan.strictStreak = strictStreak
 
         let comps = Calendar.current.dateComponents([.hour, .minute], from: workoutTime)
         let name = workoutName.trimmingCharacters(in: .whitespacesAndNewlines)

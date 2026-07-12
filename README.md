@@ -57,6 +57,13 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   (~98 cal each, counted), **supplements** (daily or weekly, with reminders),
   **body measurements** (waist/hips/chest/arm/thigh).
 
+### Streak
+- The dashboard flame counts **any day you log something** by default (food,
+  water, weight, a workout, a photo…). Prefer accountability? Switch to a
+  **strict streak** (requires meeting the day's goals) at onboarding or in
+  Settings → Goal. The widget streak and streak-at-risk reminder follow the
+  same style.
+
 ### Stats
 - Dedicated **Stats tab**, split into **Body** and **Food** sections, each with
   7D / 30D / 90D / YTD / All / custom range.
