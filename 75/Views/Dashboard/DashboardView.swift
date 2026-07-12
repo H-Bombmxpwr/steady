@@ -216,6 +216,9 @@ struct DashboardView: View {
     @State private var showConfetti = false
     @AppStorage("milestones.celebrated") private var celebratedRaw = ""
 
+    // Fasting timer card (opt-in, Settings → Fasting)
+    @AppStorage(Fasting.enabledKey) private var fastingEnabled = false
+
     private var dayNumber: Int { max(0, plan.startDate.days(to: today)) + 1 }
     private var todayLog: DayLog { ensureDay(plan: plan, date: today) }
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
@@ -249,6 +252,10 @@ struct DashboardView: View {
                     WeightCard(plan: plan)
 
                     TodayCard(day: todayLog, targets: targets, plan: plan)
+
+                    if fastingEnabled {
+                        FastingCard(plan: plan)
+                    }
 
                     HStack(spacing: 14) {
                         StreakCard(stats: CalorieEngine.streakStats(plan: plan, targets: targets))
@@ -300,6 +307,14 @@ struct DashboardView: View {
                 if showConfetti { ConfettiView() }
             }
             .onAppear { celebrateNewMilestones() }
+            // Watch/Garmin sessions land in Health on their own schedule —
+            // pull them in whenever the dashboard comes up so today's
+            // workout credit (and the streak) is never waiting on Stats.
+            .task {
+                if await HealthKitService.shared.importExternalWorkouts(into: plan) > 0 {
+                    try? context.save()
+                }
+            }
         }
     }
 

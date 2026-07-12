@@ -12,6 +12,13 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   "prefer not to say" (uses the male/female midpoint in the BMR math).
 - **Adaptive budget**: recomputes from your latest weight; goals (weight, pace,
   protein, water) are editable anytime in Settings without breaking history.
+- **Adaptive TDEE** (on by default, Settings → Daily Targets): once there are
+  14+ food-logged days and weigh-ins spanning 14+ days in the last four weeks,
+  the engine compares what you actually ate against how the weight trend
+  actually moved (3,500 kcal/lb) and learns your real burn rate — blended with
+  the formula (trust grows with logging consistency, formula keeps a 20%
+  anchor, observed value clamped to sane bounds). Settings shows the learned
+  number vs the formula so the budget never changes silently.
 - **Weight trend**: EWMA-smoothed trend line, goal line, projected goal date.
 
 ### Logging
@@ -53,9 +60,18 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   starter templates (StrongLifts 5×5, Push/Pull/Legs, Couch-to-5K); as many
   workouts per day as you want, scheduled or not; categorized; weekly schedule
   built from your presets with **EventKit calendar sync** (local, no server).
+- **What Should I Eat?** (day view → Food): Gemini suggests three realistic
+  options that fit what's *left* of today's calories and steer at the protein
+  gap (lab-aware when Blood Work is on, skips what you already ate); each idea
+  carries a full nutrition panel and logs with one tap as a normal editable
+  food.
 - **Water** (bottle-size step), **weight**, **alcohol in standard drinks**
   (~98 cal each, counted), **supplements** (daily or weekly, with reminders),
   **body measurements** (waist/hips/chest/arm/thigh).
+- **Fasting window** (opt-in, Settings → Fasting): no extra logging — the last
+  logged food starts the clock, the first food of the day ends it. Dashboard
+  card with live elapsed time, target (12–23 h, default 16:8), and when the
+  goal lands; eating-window history charts under Stats → Food.
 
 ### Streak
 - The dashboard flame counts **any day you log something** by default (food,
@@ -71,9 +87,19 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   steps (Health), sleep (Health), measurements.
 - **Food**: calories vs budget, protein, **calorie-density mix** (stacked
   green/orange/red per day), fiber vs 28 g goal, sodium vs 2,300 mg limit,
-  alcohol; tiles for avg calories/protein/fiber/sodium. A **Week in Review**
-  button has the coach find repeating patterns across the last 7 days
-  (lab-aware when Blood Work is on).
+  alcohol, eating window (when fasting is on); tiles for avg
+  calories/protein/fiber/sodium. A **Week in Review** button has the coach
+  find repeating patterns across the last 7 days (lab-aware when Blood Work
+  is on).
+- **Patterns** (Body tab): on-device correlation mining over the last 90
+  days — drinks vs the next morning's scale, short sleep vs appetite, salty
+  days vs water weight, workout-day eating, weekends vs weekdays. Each
+  pattern only appears with 4+ days on both sides of the comparison and a
+  meaningful gap; nothing leaves the device.
+- **Month in Review** (Body tab): a Wrapped-style poster for any month —
+  trend change, days showed up, best streak, workouts, water, most-logged
+  food, average calories, photos, drinks — private by default, shareable as
+  an image.
 
 ### Blood work (opt-in)
 - Log a few numbers from a recent lab panel (LDL, HDL, triglycerides, fasting
@@ -94,6 +120,12 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
 - **Apple Health two-way**: writes weight/water/nutrition/workouts, reads steps,
   sleep, and external weigh-ins (Garmin/Watch/smart scales flow in via Health —
   that's the Garmin link).
+- **Workout import**: workouts recorded on an Apple Watch or in Garmin
+  Connect (or Strava, etc. — anything that writes to Health) import into the
+  day log automatically whenever the dashboard or Stats loads, mapped to the
+  app's categories with source in the name ("Running · Garmin Connect").
+  Each Health workout imports exactly once (UUID remembered) and counts
+  toward workout minutes and the streak.
 - **Widgets**: small/medium/large home screen + lock screen (circular, rectangular,
   inline). Streak is front and center; medium/large have Food and Today
   shortcuts plus one-tap water logging, in that order (Today deep-links into
@@ -143,7 +175,8 @@ Widgets/       WidgetKit extension (home + lock screen, interactive logging)
                Secrets.plist (API keys — git-ignored, create locally)
   Services/    Backup, FoodDatabase (Open Food Facts), ExerciseDatabase,
                AIFoodEstimator (Gemini text + vision), HealthKit,
-               Notifications, CalendarSync, Timelapse
+               InsightsEngine (on-device pattern mining), Notifications,
+               CalendarSync, Timelapse
   Views/
     Onboarding/  Multi-step plan setup
     Dashboard/   Rings, trend chart, streak, weekly insight (+ Settings sheet)

@@ -32,6 +32,16 @@ struct WeeklyInsight {
     let suggestion: String
 }
 
+/// What the adaptive engine learned from recent logs — shown in Settings so
+/// the budget never changes silently.
+struct AdaptiveTDEE {
+    let observed: Double      // TDEE implied by intake vs weight change
+    let formula: Double       // Mifflin-St Jeor × activity, for comparison
+    let blended: Double       // what the budget actually uses
+    let loggedDays: Int       // food-logged days that fed the estimate
+    let spanDays: Int         // days between first and last weigh-in used
+}
+
 /// Energy-balance math: Mifflin-St Jeor BMR, activity-scaled TDEE, and a
 /// deficit-based daily calorie budget with safety floors.
 enum CalorieEngine {
@@ -71,14 +81,60 @@ enum CalorieEngine {
         Int((goalWeightLbs * 0.8).rounded())
     }
 
+    // MARK: - Adaptive TDEE
+
+    /// Learn the real burn rate from the user's own data: over the last 28
+    /// full days, average logged intake minus the calories the weight trend
+    /// says were stored/lost (3500 kcal/lb) is the TDEE that actually
+    /// happened. Needs 14+ food-logged days and weigh-ins spanning 14+ days,
+    /// otherwise returns nil and the formula stands alone.
+    static func adaptiveTDEE(profile: UserProfile, plan: Plan) -> AdaptiveTDEE? {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        guard let windowStart = cal.date(byAdding: .day, value: -28, to: today) else { return nil }
+
+        // Today is partial — a half-logged day would drag the average down.
+        let logged = plan.days.filter {
+            $0.date >= windowStart && $0.date < today && $0.totalCalories > 0
+        }
+        guard logged.count >= 14 else { return nil }
+
+        let trendInWindow = weightTrend(plan: plan).filter { $0.date >= windowStart && $0.date <= today }
+        guard let first = trendInWindow.first, let last = trendInWindow.last else { return nil }
+        let spanDays = first.date.days(to: last.date)
+        guard spanDays >= 14 else { return nil }
+
+        let avgIntake = Double(logged.reduce(0) { $0 + $1.totalCalories }) / Double(logged.count)
+        let lbsPerDay = (last.trend - first.trend) / Double(spanDays)
+        let formula = tdee(sex: profile.sex,
+                           weightLbs: plan.currentWeight,
+                           heightInches: profile.heightInches,
+                           ageYears: profile.ageYears,
+                           activity: profile.activityLevel)
+        // Clamp: unlogged snacks or a scale jump can imply absurd burn rates.
+        let observed = min(max(avgIntake - lbsPerDay * 3500.0, formula * 0.6), formula * 1.5)
+
+        // The formula keeps at least a 20% anchor; trust in the observed
+        // number grows with how much of the window was actually logged.
+        let weight = min(0.8, Double(logged.count) / 28.0)
+        let blended = formula * (1 - weight) + observed * weight
+        return AdaptiveTDEE(observed: observed, formula: formula, blended: blended,
+                            loggedDays: logged.count, spanDays: spanDays)
+    }
+
     /// Today's targets. TDEE tracks the current (latest logged) weight so the
-    /// budget adjusts as weight comes down; a manual override wins if set.
+    /// budget adjusts as weight comes down; when adaptive budgeting is on and
+    /// there's enough history, the learned TDEE replaces the formula. A
+    /// manual override wins over both.
     static func targets(profile: UserProfile, plan: Plan) -> DailyTargets {
-        let t = tdee(sex: profile.sex,
+        var t = tdee(sex: profile.sex,
                      weightLbs: plan.currentWeight,
                      heightInches: profile.heightInches,
                      ageYears: profile.ageYears,
                      activity: profile.activityLevel)
+        if plan.adaptiveBudget, let adaptive = adaptiveTDEE(profile: profile, plan: plan) {
+            t = adaptive.blended
+        }
         let calories = plan.calorieBudgetOverride
             ?? dailyBudget(tdee: t, paceLbsPerWeek: plan.paceLbsPerWeek, sex: profile.sex)
         return DailyTargets(calories: calories,

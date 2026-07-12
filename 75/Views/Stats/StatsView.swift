@@ -39,7 +39,9 @@ struct StatsView: View {
 
     @State private var showMeasurementSheet = false
     @State private var showWeekReport = false
+    @State private var showMonthWrap = false
     @AppStorage("labs.enabled") private var labsEnabled = false
+    @AppStorage(Fasting.enabledKey) private var fastingEnabled = false
 
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
 
@@ -75,7 +77,9 @@ struct StatsView: View {
                     rangePicker
 
                     if tab == .body {
+                        monthWrapButton
                         bodyTiles
+                        patternsCard
                         weightChart
                         waterChart
                         workoutChart
@@ -90,6 +94,7 @@ struct StatsView: View {
                         densityChart
                         fiberChart
                         sodiumChart
+                        if fastingEnabled { eatingWindowChart }
                         alcoholChart
                         if plan.labs.contains(where: { !$0.isEmpty }) { labsChart }
                     }
@@ -115,6 +120,10 @@ struct StatsView: View {
                 MeasurementSheet(plan: plan)
                     .themedRoot()
             }
+            .sheet(isPresented: $showMonthWrap) {
+                MonthlyWrapView(plan: plan, profile: profile)
+                    .themedRoot()
+            }
         }
     }
 
@@ -123,6 +132,7 @@ struct StatsView: View {
         steps = await HealthKitService.shared.dailySteps(days: days)
         sleep = await HealthKitService.shared.nightlySleepHours(days: days)
         _ = await HealthKitService.shared.importExternalWeights(into: plan)
+        _ = await HealthKitService.shared.importExternalWorkouts(into: plan)
         try? context.save()
     }
 
@@ -166,6 +176,28 @@ struct StatsView: View {
             tile(hm(totalMin), "exercise", tint: Theme.workoutTint)
             tile("\(totalWater / max(1, days.count))", "avg oz water", tint: Theme.waterTint)
         }
+    }
+
+    private var monthWrapButton: some View {
+        Button { showMonthWrap = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "party.popper.fill")
+                    .font(.title3.bold())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Month in Review").font(.headline)
+                    Text("Your month as one shareable card — pounds, streaks, workouts, wins")
+                        .font(.caption)
+                        .opacity(0.9)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.footnote.bold()).opacity(0.7)
+            }
+            .foregroundStyle(.white)
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.gradient))
+            .shadow(color: Theme.accent.opacity(0.3), radius: 8, y: 3)
+        }
+        .buttonStyle(.plain)
     }
 
     private var weekReportButton: some View {
@@ -227,6 +259,34 @@ struct StatsView: View {
 
     private func hm(_ minutes: Int) -> String {
         minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+    }
+
+    // MARK: - Patterns (local correlation mining, last 90 days)
+
+    private var patternsCard: some View {
+        let patterns = InsightsEngine.patterns(plan: plan, sleep: sleep)
+        return Card(title: "Patterns", icon: "sparkle.magnifyingglass", tint: Theme.sleepTint) {
+            if patterns.isEmpty {
+                Text("Your data hasn't shown a repeating pattern yet — alcohol vs the scale, sleep vs appetite, weekends vs weekdays all get checked as history builds.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textDim)
+            } else {
+                ForEach(patterns) { p in
+                    HStack(alignment: .top, spacing: 10) {
+                        SectionIcon(systemImage: p.icon, size: 26, tint: p.tint)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(p.title).font(.subheadline.weight(.semibold))
+                            Text(p.detail).font(.caption).foregroundStyle(Theme.textDim)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 2)
+                }
+                Text("Found in your last 90 days — computed on-device.")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textDim)
+            }
+        }
     }
 
     // MARK: - Charts
@@ -415,6 +475,28 @@ struct StatsView: View {
             }
             .chartYScale(domain: .automatic(includesZero: false))
             .chartLegend(position: .bottom, spacing: 8)
+        }
+    }
+
+    /// How long the eating window ran each day (first food → last food).
+    /// Shorter bars = longer fasts; the rule marks the target window.
+    private var eatingWindowChart: some View {
+        let data = Fasting.eatingWindows(days: daysInRange)
+        let targetWindow = max(1, 24 - Fasting.targetHours)
+        return ChartCard(title: "Eating Window (target \(targetWindow) h)", empty: data.isEmpty,
+                         emptyText: "Log meals and each day's first-to-last-food window shows up here.") {
+            Chart {
+                ForEach(data, id: \.date) { d in
+                    BarMark(x: .value("Date", d.date, unit: .day), y: .value("h", d.hours))
+                        .foregroundStyle(d.hours <= Double(targetWindow)
+                                         ? AnyShapeStyle(Theme.gradient) : AnyShapeStyle(Theme.warn))
+                        .cornerRadius(3)
+                }
+                RuleMark(y: .value("Target", targetWindow))
+                    .foregroundStyle(Theme.warn.opacity(0.7))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            }
+            .chartYAxisLabel("hours")
         }
     }
 

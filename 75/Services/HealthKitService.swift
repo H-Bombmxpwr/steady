@@ -25,7 +25,8 @@ final class HealthKitService {
         guard HKHealthStore.isHealthDataAvailable() else { return false }
         let toWrite: Set<HKSampleType> = [weightType, waterType, energyType, proteinType,
                                           HKObjectType.workoutType()]
-        let toRead: Set<HKObjectType> = [weightType, stepsType, sleepType]
+        let toRead: Set<HKObjectType> = [weightType, stepsType, sleepType,
+                                         HKObjectType.workoutType()]
         do {
             try await store.requestAuthorization(toShare: toWrite, read: toRead)
             return true
@@ -211,5 +212,116 @@ final class HealthKitService {
             }
         }
         return imported
+    }
+
+    // MARK: - Workout import (Apple Watch / Garmin via Health)
+
+    /// Workouts recorded by other apps and devices — Apple Watch, Garmin
+    /// Connect, Strava all land in Health and flow in here.
+    private func externalWorkouts(days: Int) async -> [HKWorkout] {
+        guard isEnabled, HKHealthStore.isHealthDataAvailable() else { return [] }
+        let cal = Calendar.current
+        let end = Date()
+        let start = cal.date(byAdding: .day, value: -days, to: cal.startOfDay(for: end))!
+        let datePredicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let notMine = NSCompoundPredicate(notPredicateWithSubpredicate:
+            HKQuery.predicateForObjects(from: HKSource.default()))
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [datePredicate, notMine])
+        return await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: predicate,
+                                  limit: HKObjectQueryNoLimit,
+                                  sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, results, _ in
+                cont.resume(returning: (results as? [HKWorkout]) ?? [])
+            }
+            store.execute(q)
+        }
+    }
+
+    /// Import external workouts as WorkoutLogs so watch runs and Garmin
+    /// rides count toward workout minutes and the streak without retyping.
+    /// Each Health workout imports once (UUID remembered on the log).
+    func importExternalWorkouts(into plan: Plan) async -> Int {
+        let workouts = await externalWorkouts(days: 90)
+        guard !workouts.isEmpty else { return 0 }
+        var known = Set(plan.days.flatMap { $0.workouts.compactMap(\.healthKitID) })
+        var imported = 0
+        for w in workouts {
+            let id = w.uuid.uuidString
+            guard !known.contains(id), w.startDate >= plan.startDate else { continue }
+            let minutes = Int((w.duration / 60).rounded())
+            guard minutes >= 1 else { continue }
+
+            let log = WorkoutLog(name: Self.workoutName(w),
+                                 minutes: minutes,
+                                 outdoor: (w.metadata?[HKMetadataKeyIndoorWorkout] as? Bool) == false,
+                                 category: Self.category(for: w.workoutActivityType))
+            log.healthKitID = id
+            log.createdAt = w.startDate
+            ensureDay(plan: plan, date: w.startDate).workouts.append(log)
+            known.insert(id)
+            imported += 1
+        }
+        if imported > 0 { try? plan.modelContext?.save() }
+        return imported
+    }
+
+    /// "Running · Garmin Connect" — activity plus where it came from.
+    private static func workoutName(_ w: HKWorkout) -> String {
+        let source = w.sourceRevision.source.name
+        let activity = activityLabel(w.workoutActivityType)
+        return source.isEmpty ? activity : "\(activity) · \(source)"
+    }
+
+    private static func category(for type: HKWorkoutActivityType) -> WorkoutCategory {
+        switch type {
+        case .running, .walking, .cycling, .hiking, .swimming, .elliptical,
+             .rowing, .stairClimbing, .stairs, .highIntensityIntervalTraining,
+             .jumpRope, .crossCountrySkiing, .mixedCardio:
+            return .cardio
+        case .traditionalStrengthTraining, .functionalStrengthTraining, .coreTraining:
+            return .strength
+        case .yoga, .flexibility, .pilates, .cooldown, .taiChi, .mindAndBody:
+            return .mobility
+        case .basketball, .soccer, .tennis, .golf, .baseball, .softball,
+             .volleyball, .pickleball, .racquetball, .badminton, .hockey,
+             .lacrosse, .rugby, .americanFootball, .tableTennis, .squash,
+             .martialArts, .boxing, .kickboxing, .climbing, .surfingSports,
+             .paddleSports, .snowboarding, .downhillSkiing, .skatingSports:
+            return .sports
+        default:
+            return .other
+        }
+    }
+
+    private static func activityLabel(_ type: HKWorkoutActivityType) -> String {
+        switch type {
+        case .running: return "Running"
+        case .walking: return "Walking"
+        case .cycling: return "Cycling"
+        case .hiking: return "Hiking"
+        case .swimming: return "Swimming"
+        case .elliptical: return "Elliptical"
+        case .rowing: return "Rowing"
+        case .stairClimbing, .stairs: return "Stairs"
+        case .highIntensityIntervalTraining: return "HIIT"
+        case .jumpRope: return "Jump Rope"
+        case .mixedCardio: return "Cardio"
+        case .traditionalStrengthTraining, .functionalStrengthTraining: return "Strength"
+        case .coreTraining: return "Core"
+        case .yoga: return "Yoga"
+        case .flexibility, .cooldown: return "Stretching"
+        case .pilates: return "Pilates"
+        case .basketball: return "Basketball"
+        case .soccer: return "Soccer"
+        case .tennis: return "Tennis"
+        case .golf: return "Golf"
+        case .pickleball: return "Pickleball"
+        case .martialArts: return "Martial Arts"
+        case .boxing: return "Boxing"
+        case .climbing: return "Climbing"
+        case .snowboarding: return "Snowboarding"
+        case .downhillSkiing: return "Skiing"
+        default: return "Workout"
+        }
     }
 }

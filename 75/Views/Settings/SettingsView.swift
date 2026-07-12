@@ -44,6 +44,10 @@ struct SettingsView: View {
     @AppStorage("labs.enabled") private var labsEnabled = false
     @State private var showLabEntry = false
 
+    // Fasting window
+    @AppStorage(Fasting.enabledKey) private var fastingEnabled = false
+    @AppStorage(Fasting.targetHoursKey) private var fastingTarget = 16
+
     // Backup PIN for the photo lock
     @State private var pinIsSet = PinStore.isSet
     @State private var pinCurrent = ""
@@ -89,12 +93,28 @@ struct SettingsView: View {
                 }
 
                 // --- Daily targets
-                Section("Daily Targets") {
+                Section {
                     let targets = CalorieEngine.targets(profile: profile, plan: plan)
                     HStack {
                         Text("Calorie budget")
                         Spacer()
                         Text("\(targets.calories) cal").foregroundStyle(.secondary)
+                    }
+                    Toggle("Adaptive budget", isOn: $plan.adaptiveBudget)
+                    if plan.adaptiveBudget {
+                        if let adaptive = CalorieEngine.adaptiveTDEE(profile: profile, plan: plan) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Learned burn rate: \(Int(adaptive.blended.rounded())) cal/day")
+                                Text("From \(adaptive.loggedDays) logged days and \(adaptive.spanDays) days of weigh-ins (formula says \(Int(adaptive.formula.rounded())))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                        } else {
+                            Text("Learning… needs about two weeks of food logs and weigh-ins, then the budget tunes itself to your real burn rate.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Toggle("Override budget", isOn: Binding(
                         get: { plan.calorieBudgetOverride != nil },
@@ -130,6 +150,10 @@ struct SettingsView: View {
                             Text("\(plan.waterStepOunces) oz").foregroundStyle(.secondary)
                         }
                     }
+                } header: {
+                    Text("Daily Targets")
+                } footer: {
+                    Text("Adaptive budget compares what you logged eating against how your weight trend actually moved, and quietly corrects the textbook formula — the longer you log, the more it trusts your own data.")
                 }
 
                 // --- Supplements
@@ -205,6 +229,15 @@ struct SettingsView: View {
                         } label: {
                             Label("Import Weigh-ins Now", systemImage: "arrow.down.heart")
                         }
+                        Button {
+                            Task {
+                                let n = await HealthKitService.shared.importExternalWorkouts(into: plan)
+                                try? context.save()
+                                healthMessage = "Imported \(n) workout\(n == 1 ? "" : "s") from Health."
+                            }
+                        } label: {
+                            Label("Import Workouts Now", systemImage: "figure.run.circle")
+                        }
                     }
                     if let msg = healthMessage {
                         Text(msg).font(.footnote).foregroundStyle(.secondary)
@@ -212,7 +245,20 @@ struct SettingsView: View {
                 } header: {
                     Text("Apple Health")
                 } footer: {
-                    Text("Garmin, Apple Watch, and smart scales that write to Apple Health flow in automatically — this is the Garmin link.")
+                    Text("Garmin, Apple Watch, and smart scales that write to Apple Health flow in automatically — this is the Garmin link. Workouts recorded on a watch or in Garmin Connect import into the day log (each one only once) and count toward minutes and the streak.")
+                }
+
+                // --- Fasting (opt-in eating-window tracking)
+                Section {
+                    Toggle("Fasting timer", isOn: $fastingEnabled)
+                    if fastingEnabled {
+                        Stepper("Target fast: \(fastingTarget) h",
+                                value: $fastingTarget, in: 12...23)
+                    }
+                } header: {
+                    Text("Fasting")
+                } footer: {
+                    Text("No extra logging — your last logged food starts the clock, the first food of the day ends it. A fasting card appears on the dashboard and eating windows chart under Stats → Food. 16 h ≈ the classic 16:8.")
                 }
 
                 // --- Blood work (opt-in lab-aware coaching)
@@ -255,6 +301,7 @@ struct SettingsView: View {
                         • Photo of Food — reading a plate
                         • Estimate Nutrition on custom foods and "Not listed?" search results
                         • Filling in protein when a database entry is missing it
+                        • What Should I Eat? — meal ideas that fit your remaining budget
                         • Summarize My Day — the end-of-day review and swaps
 
                         Only food descriptions and food photos are sent to Google. Progress photos, weight, and everything else never leave the device. Estimates are good, not perfect — every number stays editable after logging.

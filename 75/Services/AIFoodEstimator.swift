@@ -352,6 +352,78 @@ enum AIFoodEstimator {
                          suggestions: suggestions)
     }
 
+    /// One "what should I eat" idea — carries a full nutrition panel so
+    /// tapping Log writes a normal FoodLog with no second round-trip.
+    struct MealSuggestion: Identifiable {
+        let id = UUID()
+        let name: String
+        let why: String            // one line: why it fits right now
+        let calories: Int
+        let proteinGrams: Int
+        let grams: Double?
+        let facts: NutritionFacts
+        let density: String?
+        let assumed: String?
+    }
+
+    /// Suggest meals that fit what's LEFT of today's budget — the protein
+    /// gap steers the picks, labs (opt-in) steer the ingredients.
+    static func suggestMeals(meal: String, remainingCalories: Int, remainingProtein: Int,
+                             eatenToday: [String], labs: LabSnapshot? = nil) async throws -> [MealSuggestion] {
+        struct PayloadSuggestion: Decodable {
+            let name: String?
+            let why: String?
+            let assumed: String?
+            let food: FoodPayload?
+        }
+        struct Payload: Decodable {
+            let suggestions: [PayloadSuggestion]?
+        }
+        let labSection: String
+        if let labs {
+            labSection = """
+
+            The user chose to share recent lab numbers (values only): \
+            \(labs.promptLine). Favor suggestions that would help those \
+            markers (less saturated fat and added sugar, more fiber) without \
+            saying anything that sounds like medical advice.
+            """
+        } else {
+            labSection = ""
+        }
+        let eatenLine = eatenToday.isEmpty
+            ? "Nothing has been logged yet today."
+            : "Already eaten today: \(eatenToday.joined(separator: ", ")). Don't repeat these."
+        let prompt = """
+        Suggest 3 realistic \(meal) options someone could actually make at \
+        home or grab easily tonight. They have \(remainingCalories) calories \
+        and \(remainingProtein) g protein left in today's budget — every \
+        option must fit inside the remaining calories, and at least two \
+        should make a real dent in the protein gap. \(eatenLine)\(labSection)
+        \(nutritionGuidance)
+        Respond with only JSON:
+        {"suggestions": [{"name": "<short dish name>", \
+        "why": "<one short sentence: why this fits right now>", \
+        "assumed": "<short: the exact portion assumed>", \
+        "food": {\(nutritionSchema)}}]}
+        """
+        let payload: Payload = try await generate(prompt: prompt)
+        let suggestions = (payload.suggestions ?? []).compactMap { s -> MealSuggestion? in
+            guard let name = s.name, !name.isEmpty,
+                  let food = s.food, let calories = food.calories else { return nil }
+            return MealSuggestion(name: name,
+                                  why: s.why ?? "",
+                                  calories: calories,
+                                  proteinGrams: Int((food.protein_g ?? 0).rounded()),
+                                  grams: food.portion_grams,
+                                  facts: food.facts,
+                                  density: food.density,
+                                  assumed: s.assumed)
+        }
+        guard !suggestions.isEmpty else { throw EstimatorError.badResponse }
+        return suggestions
+    }
+
     private struct GeminiResponse: Decodable {
         struct Candidate: Decodable {
             struct Content: Decodable {

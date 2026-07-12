@@ -191,6 +191,9 @@ final class WorkoutLog {
     var outdoor: Bool
     var categoryRaw: String = WorkoutCategory.other.rawValue
     var createdAt: Date
+    /// HealthKit workout UUID when this log was imported from Health
+    /// (Apple Watch, Garmin…) — the dedupe key so re-imports are no-ops.
+    var healthKitID: String? = nil
     @Relationship(deleteRule: .cascade) var sets: [SetLog] = []
 
     init(name: String, minutes: Int, outdoor: Bool = false, category: WorkoutCategory = .other) {

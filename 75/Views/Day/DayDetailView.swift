@@ -17,6 +17,9 @@ struct DayDetailView: View {
     // Gemini end-of-day review
     @State private var showDaySummary = false
 
+    // "What should I eat?" — meal ideas that fit the remaining budget
+    @State private var showMealIdeas = false
+
     // Lab-aware coaching (opt-in; Settings → Blood Work)
     @AppStorage("labs.enabled") private var labsEnabled = false
 
@@ -131,6 +134,9 @@ struct DayDetailView: View {
                                      goals: .adjusted(for: labsEnabled ? plan.latestLabs : nil))
                 } label: {
                     Label("Nutrition Report", systemImage: "chart.bar.doc.horizontal")
+                }
+                Button { showMealIdeas = true } label: {
+                    Label("What Should I Eat?", systemImage: "wand.and.stars")
                 }
                 if !day.foods.isEmpty {
                     Button { showDaySummary = true } label: {
@@ -328,6 +334,11 @@ struct DayDetailView: View {
         }
         .themedForm()
         .navigationTitle(Text(date, style: .date))
+        .sheet(isPresented: $showMealIdeas) {
+            MealIdeasView(day: day, targets: targets,
+                          labs: labsEnabled ? AIFoodEstimator.LabSnapshot(labs: plan.latestLabs) : nil)
+                .themedRoot()
+        }
         .sheet(isPresented: $showDaySummary) {
             let labs = labsEnabled ? AIFoodEstimator.LabSnapshot(labs: plan.latestLabs) : nil
             CoachReviewSheet(title: "Day Summary") { [day, targets] in

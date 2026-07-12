@@ -15,6 +15,10 @@ final class Plan {
     /// Strict = the streak needs the day's goals met (75% of checks);
     /// relaxed (default) = showing up and logging anything keeps it alive.
     var strictStreak: Bool = false
+    /// Adaptive budget: once there's enough logged history, the TDEE is
+    /// learned from actual intake vs the weight trend instead of relying on
+    /// the Mifflin-St Jeor formula alone (Settings → Daily Targets).
+    var adaptiveBudget: Bool = true
 
     @Relationship(deleteRule: .cascade) var days: [DayLog]
     @Relationship(deleteRule: .cascade) var presets: [WorkoutPreset]
