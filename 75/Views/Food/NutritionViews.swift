@@ -56,6 +56,7 @@ enum Nutrient {
 /// the density color re-buckets from the edited numbers.
 struct FoodNutritionSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     @Bindable var food: FoodLog
 
     var body: some View {
@@ -139,7 +140,10 @@ struct FoodNutritionSheet: View {
                     }
                 }
             }
-            .onDisappear { rebucketDensity() }
+            .onDisappear {
+                rebucketDensity()
+                try? context.save()
+            }
         }
         .themedRoot()
         .presentationDetents([.medium, .large])

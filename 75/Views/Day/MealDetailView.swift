@@ -2,15 +2,16 @@ import SwiftUI
 import SwiftData
 
 /// Everything eaten in one meal — tap a food for its full nutrition,
-/// swipe to remove it, or add more to this same meal.
+/// swipe to remove it, add more, or delete the whole meal from the toolbar.
 struct MealDetailView: View {
-    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     var day: DayLog
     let meal: Meal?
     let label: String
     let icon: String
 
     @State private var inspectedFood: FoodLog?
+    @State private var confirmDeleteMeal = false
 
     private var foods: [FoodLog] { day.foods(for: meal) }
     private var calories: Int { foods.reduce(0) { $0 + $1.calories } }
@@ -48,7 +49,7 @@ struct MealDetailView: View {
                     }
                 }
                 .onDelete { idx in
-                    idx.map { foods[$0] }.forEach { context.delete($0) }
+                    idx.map { foods[$0] }.forEach { day.removeFood($0) }
                 }
                 if let meal {
                     NavigationLink {
@@ -61,10 +62,38 @@ struct MealDetailView: View {
             } footer: {
                 Text("Tap a food for its full nutrition · swipe to remove it.")
             }
+            Section {
+                Button(role: .destructive) {
+                    confirmDeleteMeal = true
+                } label: {
+                    Label("Delete \(label)", systemImage: "trash")
+                        .frame(maxWidth: .infinity)
+                }
+            }
         }
         .themedForm()
         .navigationTitle(label)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    confirmDeleteMeal = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .tint(Theme.danger)
+            }
+        }
+        .confirmationDialog("Delete \(label)?", isPresented: $confirmDeleteMeal,
+                            titleVisibility: .visible) {
+            Button("Delete \(foods.count) item\(foods.count == 1 ? "" : "s")",
+                   role: .destructive) {
+                day.removeMeal(meal)
+                dismiss()
+            }
+        } message: {
+            Text("Removes everything logged under \(label) for this day.")
+        }
         .sheet(item: $inspectedFood) { FoodNutritionSheet(food: $0) }
     }
 

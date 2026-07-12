@@ -30,7 +30,7 @@ struct DescribeMealView: View {
                         .frame(minHeight: 100)
                         .overlay(alignment: .topLeading) {
                             if text.isEmpty {
-                                Text("What did you eat?")
+                                Text("What did you eat? Name the restaurant if you ate out.")
                                     .foregroundStyle(.tertiary)
                                     .padding(.top, 8)
                                     .allowsHitTesting(false)
@@ -57,7 +57,7 @@ struct DescribeMealView: View {
                         Text(msg).font(.caption).foregroundStyle(.red)
                     }
                 } footer: {
-                    Text("e.g. “two scrambled eggs, sourdough toast with butter, and a glass of orange juice”")
+                    Text("e.g. “two scrambled eggs, sourdough toast with butter, and an orange juice” — or “Chipotle chicken bowl with white rice, black beans, and guac”. Named restaurants and brands are looked up against their published nutrition.")
                 }
 
                 Section {

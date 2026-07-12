@@ -147,6 +147,34 @@ final class DayLog {
     func foods(for meal: Meal?) -> [FoodLog] {
         foods.filter { $0.meal == meal }.sorted { $0.createdAt < $1.createdAt }
     }
+
+    // MARK: Food mutations — the only way food should be added or removed.
+    // Each one updates the relationship array (so views refresh immediately)
+    // AND saves right away (so nothing depends on an onDisappear that may
+    // never run). Deleting only via `context.delete` leaves the tombstoned
+    // object in `foods` until some later save — that was the "delete never
+    // works until I relaunch" bug.
+
+    func addFood(_ log: FoodLog, meal: Meal?) {
+        if let meal { log.meal = meal }
+        foods.append(log)
+        try? modelContext?.save()
+    }
+
+    func removeFood(_ log: FoodLog) {
+        foods.removeAll { $0.persistentModelID == log.persistentModelID }
+        log.modelContext?.delete(log)
+        try? modelContext?.save()
+    }
+
+    /// Deletes everything logged under one meal (nil = the "Other" group).
+    func removeMeal(_ meal: Meal?) {
+        let doomed = foods(for: meal)
+        let doomedIDs = Set(doomed.map(\.persistentModelID))
+        foods.removeAll { doomedIDs.contains($0.persistentModelID) }
+        doomed.forEach { $0.modelContext?.delete($0) }
+        try? modelContext?.save()
+    }
 }
 
 @Model

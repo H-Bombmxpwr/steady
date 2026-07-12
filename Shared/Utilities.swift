@@ -11,6 +11,9 @@ func ensureDay(plan: Plan, date: Date) -> DayLog {
     if let d = plan.days.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) { return d }
     let d = DayLog(date: date)
     plan.days.append(d)
+    // Save immediately so a widget or second context can't create a
+    // duplicate day for the same date while this one is unsaved.
+    try? plan.modelContext?.save()
     return d
 }
 

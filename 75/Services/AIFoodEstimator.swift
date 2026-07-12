@@ -80,7 +80,11 @@ enum AIFoodEstimator {
     private static let nutritionGuidance = """
     Act like a careful nutrition coach: be realistic about restaurant and \
     home portion sizes (err large, people underestimate), include cooking \
-    fats and condiments, and base values on USDA-style nutrition data.
+    fats and condiments, and base values on USDA-style nutrition data. \
+    When a restaurant, chain, or packaged brand is named — or the dish is \
+    clearly from one — search for and use that restaurant's or brand's \
+    published nutrition numbers instead of generic estimates, and say so \
+    in "assumed".
     """
 
     /// One food item's nutrition panel as Gemini returns it.
@@ -146,7 +150,7 @@ enum AIFoodEstimator {
         \(nutritionSchema)}], \
         "assumed": "<one short sentence: overall assumptions about the meal>"}
         """
-        let payload: Payload = try await generate(prompt: prompt)
+        let payload: Payload = try await generate(prompt: prompt, grounded: true)
         let items = (payload.items ?? []).compactMap { p -> MealItem? in
             guard let name = p.name, !name.isEmpty, let calories = p.calories else { return nil }
             return MealItem(name: name, calories: calories,
@@ -313,7 +317,7 @@ enum AIFoodEstimator {
         {"food": {"name": "<short food name>", \(nutritionSchema)}, \
         "assumed": "<one short sentence: exactly what food and serving size you assumed>"}
         """
-        let payload: Payload = try await generate(prompt: prompt)
+        let payload: Payload = try await generate(prompt: prompt, grounded: true)
         guard let p = payload.food, let calories = p.calories else {
             throw EstimatorError.badResponse
         }
@@ -368,7 +372,7 @@ enum AIFoodEstimator {
             ["inline_data": ["mime_type": "image/jpeg",
                              "data": jpeg.base64EncodedString()]]
         ]
-        let payload: Payload = try await generate(parts: parts)
+        let payload: Payload = try await generate(parts: parts, grounded: true)
         guard let p = payload.food, let name = p.name, !name.isEmpty,
               let calories = p.calories else {
             throw EstimatorError.badResponse
@@ -391,26 +395,45 @@ enum AIFoodEstimator {
         return resized.jpegData(compressionQuality: 0.6)
     }
 
-    /// One JSON-mode Gemini call; decodes the model's JSON reply into `T`.
-    private static func generate<T: Decodable>(prompt: String) async throws -> T {
-        try await generate(parts: [["text": prompt]])
+    /// One Gemini call decoding the model's JSON reply into `T`. `grounded`
+    /// runs it with Google Search so nutrition comes from real sources
+    /// (restaurant pages, USDA) instead of memory; if the grounded attempt
+    /// fails (search quota, transport), it falls back to the plain call so
+    /// logging never breaks.
+    private static func generate<T: Decodable>(prompt: String, grounded: Bool = false) async throws -> T {
+        try await generate(parts: [["text": prompt]], grounded: grounded)
     }
 
-    private static func generate<T: Decodable>(parts: [[String: Any]]) async throws -> T {
+    private static func generate<T: Decodable>(parts: [[String: Any]], grounded: Bool = false) async throws -> T {
+        if grounded {
+            if let payload: T = try? await performGenerate(parts: parts, grounded: true) {
+                return payload
+            }
+        }
+        return try await performGenerate(parts: parts, grounded: false)
+    }
+
+    private static func performGenerate<T: Decodable>(parts: [[String: Any]], grounded: Bool) async throws -> T {
         let key = apiKey
         guard !key.isEmpty else { throw EstimatorError.noKey }
 
         var request = URLRequest(url: URL(string:
             "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!)
-        request.timeoutInterval = 20
+        request.timeoutInterval = grounded ? 35 : 20
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
 
-        let body: [String: Any] = [
-            "contents": [["parts": parts]],
-            "generationConfig": ["responseMimeType": "application/json", "temperature": 0]
-        ]
+        // Search grounding can't be combined with JSON response mode, so
+        // grounded calls ask for raw text and the JSON is extracted below.
+        var body: [String: Any] = ["contents": [["parts": parts]]]
+        if grounded {
+            body["tools"] = [["google_search": [String: String]()]]
+            body["generationConfig"] = ["temperature": 0]
+        } else {
+            body["generationConfig"] = ["responseMimeType": "application/json",
+                                        "temperature": 0]
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -419,10 +442,20 @@ enum AIFoodEstimator {
         }
 
         let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
-        guard let text = decoded.candidates?.first?.content?.parts?.first?.text,
-              let payload = try? JSONDecoder().decode(T.self, from: Data(text.utf8)) else {
+        let text = (decoded.candidates?.first?.content?.parts ?? [])
+            .compactMap(\.text)
+            .joined()
+        guard let payload = try? JSONDecoder().decode(T.self, from: Data(extractJSON(text).utf8)) else {
             throw EstimatorError.badResponse
         }
         return payload
+    }
+
+    /// Grounded replies come back as prose-wrapped or fenced JSON — take the
+    /// outermost braces.
+    private static func extractJSON(_ text: String) -> String {
+        guard let start = text.firstIndex(of: "{"),
+              let end = text.lastIndex(of: "}"), start < end else { return text }
+        return String(text[start...end])
     }
 }

@@ -101,7 +101,8 @@ struct DayDetailView: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Theme.gradient)
                 )
-                // One row per meal — tap in to see and manage what you ate.
+                // One row per meal — tap in to see and manage what you ate;
+                // swipe to delete the whole meal.
                 ForEach(mealGroups, id: \.meal) { group in
                     NavigationLink {
                         MealDetailView(day: day, meal: group.meal,
@@ -121,6 +122,9 @@ struct DayDetailView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                }
+                .onDelete { idx in
+                    idx.map { mealGroups[$0].meal }.forEach { day.removeMeal($0) }
                 }
                 NavigationLink {
                     DayNutritionView(day: day, targets: targets,

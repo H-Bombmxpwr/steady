@@ -256,8 +256,7 @@ struct FoodSearchView: View {
     }
 
     private func add(_ log: FoodLog) {
-        log.meal = meal
-        day.foods.append(log)
+        day.addFood(log, meal: meal)
     }
 
     private func subtitle(for item: FoodItem) -> String {

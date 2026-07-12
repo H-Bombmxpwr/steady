@@ -35,7 +35,13 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   computed locally from kcal ÷ grams (not trusted from the model) and tag
   foods everywhere. Gemini also fills gaps: missing protein on OFF results is
   auto-estimated, "Not listed?" estimates a whole food from the search text,
-  and every estimate echoes what it assumed. Logged foods stay editable —
+  and every estimate echoes what it assumed. Estimates run **grounded with
+  Google Search**: named restaurants, chains, and brands are looked up against
+  their published nutrition (say "Chipotle chicken bowl…" and it checks
+  Chipotle's numbers), falling back to a plain estimate if search is
+  unavailable. Meals delete cleanly: swipe a meal row, or use the Delete Meal
+  button inside the meal; every add/remove saves immediately.
+  Logged foods stay editable —
   tap any food in a meal to fix its name, meal, portion, or any nutrient in
   place. In-app copy stays AI-silent; Settings → **About Estimates** is the
   one place that explains where Gemini is used (food names/photos go to
