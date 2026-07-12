@@ -38,6 +38,8 @@ struct StatsView: View {
     @State private var sleep: [Date: Double] = [:]
 
     @State private var showMeasurementSheet = false
+    @State private var showWeekReport = false
+    @AppStorage("labs.enabled") private var labsEnabled = false
 
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
 
@@ -81,6 +83,7 @@ struct StatsView: View {
                         if !sleep.isEmpty { sleepChart }
                         measurementsCard
                     } else {
+                        weekReportButton
                         foodTiles
                         caloriesChart
                         proteinChart
@@ -97,6 +100,17 @@ struct StatsView: View {
             .navigationTitle("Stats")
             .task { await loadHealth() }
             .onChange(of: range) { _ in Task { await loadHealth() } }
+            .sheet(isPresented: $showWeekReport) {
+                let cal = Calendar.current
+                let today = cal.startOfDay(for: Date())
+                let weekAgo = cal.date(byAdding: .day, value: -6, to: today)!
+                let days = plan.days.filter { $0.date >= weekAgo && $0.date <= today }
+                let labs = labsEnabled ? AIFoodEstimator.LabSnapshot(labs: plan.latestLabs) : nil
+                CoachReviewSheet(title: "Week in Review") { [targets] in
+                    try await AIFoodEstimator.reviewWeek(days: days, targets: targets, labs: labs)
+                }
+                .themedRoot()
+            }
             .sheet(isPresented: $showMeasurementSheet) {
                 MeasurementSheet(plan: plan)
                     .themedRoot()
@@ -148,6 +162,28 @@ struct StatsView: View {
             tile(hm(totalMin), "exercise", tint: Theme.workoutTint)
             tile("\(totalWater / max(1, days.count))", "avg oz water", tint: Theme.waterTint)
         }
+    }
+
+    private var weekReportButton: some View {
+        Button { showWeekReport = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.title3.bold())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Week in Review").font(.headline)
+                    Text("Patterns from the last 7 days, and the swaps that matter most")
+                        .font(.caption)
+                        .opacity(0.9)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.footnote.bold()).opacity(0.7)
+            }
+            .foregroundStyle(.white)
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.gradient))
+            .shadow(color: Theme.accent.opacity(0.3), radius: 8, y: 3)
+        }
+        .buttonStyle(.plain)
     }
 
     private var foodTiles: some View {

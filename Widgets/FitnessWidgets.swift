@@ -343,9 +343,81 @@ struct TodayWidget: Widget {
     }
 }
 
+/// Lock Screen / Dynamic Island live view of today's remaining budget.
+struct FitnessLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: FitnessActivityAttributes.self) { context in
+            // Lock Screen banner
+            HStack(spacing: 14) {
+                StreakBadge(streak: context.state.streak)
+                Spacer()
+                liveStat("fork.knife",
+                         context.state.caloriesLeft >= 0
+                            ? "\(context.state.caloriesLeft) left"
+                            : "\(-context.state.caloriesLeft) over",
+                         context.state.caloriesLeft >= 0 ? good : bad)
+                liveStat("bolt.fill",
+                         "\(context.state.proteinGrams)/\(context.state.proteinTarget)g",
+                         context.state.proteinGrams >= context.state.proteinTarget ? good : .secondary)
+                liveStat("drop.fill",
+                         "\(context.state.waterOz)/\(context.state.waterGoal)oz",
+                         context.state.waterOz >= context.state.waterGoal ? good : .secondary)
+            }
+            .padding(14)
+            .activityBackgroundTint(widgetBG)
+            .activitySystemActionForegroundColor(accent)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    StreakBadge(streak: context.state.streak)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text(context.state.caloriesLeft >= 0
+                         ? "\(context.state.caloriesLeft) cal left"
+                         : "\(-context.state.caloriesLeft) cal over")
+                        .font(.system(.subheadline, design: .rounded).bold())
+                        .foregroundStyle(context.state.caloriesLeft >= 0 ? good : bad)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    HStack(spacing: 10) {
+                        RatioRow(icon: "bolt.fill", label: "Protein",
+                                 consumed: context.state.proteinGrams,
+                                 total: context.state.proteinTarget)
+                        RatioRow(icon: "drop.fill", label: "Water",
+                                 consumed: context.state.waterOz,
+                                 total: context.state.waterGoal)
+                    }
+                }
+            } compactLeading: {
+                Image(systemName: "flame.fill")
+                    .foregroundStyle(.orange)
+            } compactTrailing: {
+                Text("\(abs(context.state.caloriesLeft))")
+                    .font(.system(.caption, design: .rounded).bold())
+                    .foregroundStyle(context.state.caloriesLeft >= 0 ? good : bad)
+            } minimal: {
+                Image(systemName: "flame.fill")
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+}
+
+private func liveStat(_ icon: String, _ text: String, _ color: Color) -> some View {
+    VStack(spacing: 3) {
+        Image(systemName: icon)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        Text(text)
+            .font(.system(.caption, design: .rounded).bold())
+            .foregroundStyle(color)
+    }
+}
+
 @main
 struct FitnessWidgetsBundle: WidgetBundle {
     var body: some Widget {
         TodayWidget()
+        FitnessLiveActivity()
     }
 }

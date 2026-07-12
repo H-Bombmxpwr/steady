@@ -175,6 +175,10 @@ struct DashboardView: View {
     @State private var today = Calendar.current.startOfDay(for: Date())
     @State private var showSettings = false
 
+    // One-shot celebration when a new milestone lands
+    @State private var showConfetti = false
+    @AppStorage("milestones.celebrated") private var celebratedRaw = ""
+
     private var dayNumber: Int { max(0, plan.startDate.days(to: today)) + 1 }
     private var todayLog: DayLog { ensureDay(plan: plan, date: today) }
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
@@ -213,6 +217,8 @@ struct DashboardView: View {
                         StreakCard(stats: CalorieEngine.streakStats(plan: plan, targets: targets))
                         ProjectionCard(plan: plan, dayNumber: dayNumber)
                     }
+
+                    MilestonesCard(milestones: Milestone.all(plan: plan, targets: targets))
 
                     InsightCard(insight: CalorieEngine.weeklyInsight(plan: plan, targets: targets))
 
@@ -253,7 +259,31 @@ struct DashboardView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView(plan: plan, profile: profile)   // applies .themedRoot() itself
             }
+            .overlay {
+                if showConfetti { ConfettiView() }
+            }
+            .onAppear { celebrateNewMilestones() }
         }
+    }
+
+    /// Fire confetti once per newly earned milestone (ids remembered in
+    /// UserDefaults so a badge only ever celebrates once).
+    private func celebrateNewMilestones() {
+        let earned = Set(Milestone.all(plan: plan, targets: targets)
+            .filter(\.earned).map(\.id))
+        var celebrated = Set(celebratedRaw.split(separator: ",").map(String.init))
+        let fresh = earned.subtracting(celebrated)
+        // First launch after the feature ships: mark history as celebrated
+        // quietly instead of dumping confetti for months-old wins.
+        guard !celebrated.isEmpty || celebratedRaw != "" || fresh.count <= 2 else {
+            celebratedRaw = earned.joined(separator: ",")
+            return
+        }
+        guard !fresh.isEmpty else { return }
+        celebrated.formUnion(earned)
+        celebratedRaw = celebrated.joined(separator: ",")
+        showConfetti = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { showConfetti = false }
     }
 }
 

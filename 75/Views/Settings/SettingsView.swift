@@ -34,6 +34,12 @@ struct SettingsView: View {
     // AI assist
     @AppStorage(AIFoodEstimator.apiKeyKey) private var geminiKey = ""
 
+    // Live Activity (Lock Screen / Dynamic Island)
+    @AppStorage(LiveActivityManager.enabledKey) private var liveActivity = false
+
+    // Alternate app icon (palette name)
+    @AppStorage("ui.appIcon") private var appIconChoice = ThemePalette.emerald.rawValue
+
     // Lab-aware coaching
     @AppStorage("labs.enabled") private var labsEnabled = false
     @State private var showLabEntry = false
@@ -281,11 +287,41 @@ struct SettingsView: View {
                         ForEach(ThemeMode.allCases) { m in Text(m.label).tag(m) }
                     }
                     .pickerStyle(.segmented)
+                    HStack {
+                        Text("App icon")
+                        Spacer()
+                        ForEach(ThemePalette.allCases) { p in
+                            Button {
+                                // Emerald is the primary icon — pass nil.
+                                UIApplication.shared.setAlternateIconName(
+                                    p == .emerald ? nil : "Icon-\(p.label)")
+                                appIconChoice = p.rawValue
+                            } label: {
+                                Circle()
+                                    .fill(LinearGradient(colors: [p.accents.0, p.accents.1],
+                                                         startPoint: .topLeading,
+                                                         endPoint: .bottomTrailing))
+                                    .frame(width: 26, height: 26)
+                                    .overlay(Circle().strokeBorder(
+                                        appIconChoice == p.rawValue ? Color.primary : .clear,
+                                        lineWidth: 2))
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
                     Toggle("Glass tab bar", isOn: $glassBar)
+                    Toggle("Live Activity", isOn: $liveActivity)
+                        .onChange(of: liveActivity) { on in
+                            if on {
+                                LiveActivityManager.sync(plan: plan, profile: profile)
+                            } else {
+                                LiveActivityManager.endAll()
+                            }
+                        }
                 } header: {
                     Text("Appearance")
                 } footer: {
-                    Text("Glass tab bar floats over the content and lets you swipe left/right between tabs. Turn it off for the classic iOS tab bar.")
+                    Text("App icon dots switch to an icon matching that palette. Glass tab bar floats over the content and lets you swipe left/right between tabs. Live Activity keeps today's remaining calories, protein, and water on the Lock Screen and Dynamic Island — it refreshes whenever the app runs.")
                 }
 
                 // --- Notifications

@@ -235,6 +235,7 @@ final class FoodLog {
     var source: String                // "off" | "barcode" | "custom" | "ai"
     var density: String? = nil        // calorie density: "green" | "orange" | "red"
     var mealRaw: String = ""          // Meal.rawValue; "" on logs predating meals
+    var favorite: Bool = false        // pinned to Quick Log in Add Food
     var createdAt: Date
 
     // Micronutrients for this portion (all 0 when the source didn't know).

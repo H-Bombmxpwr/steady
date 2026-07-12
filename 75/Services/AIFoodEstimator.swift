@@ -281,6 +281,77 @@ enum AIFoodEstimator {
                          suggestions: suggestions)
     }
 
+    /// Week-level coach: looks for patterns across the last 7 days and
+    /// suggests the swaps that would have moved the needle most.
+    static func reviewWeek(days: [DayLog], targets: DailyTargets,
+                           labs: LabSnapshot? = nil) async throws -> DayReview {
+        struct PayloadSuggestion: Decodable {
+            let issue: String?
+            let swap: String?
+        }
+        struct Payload: Decodable {
+            let headline: String?
+            let wins: [String]?
+            let suggestions: [PayloadSuggestion]?
+        }
+
+        let logged = days.filter { $0.totalCalories > 0 }.sorted { $0.date < $1.date }
+        let dayLines = logged.map { d -> String in
+            let facts = d.totalFacts
+            let biggest = d.foods.sorted { $0.calories > $1.calories }.prefix(3)
+                .map { "\($0.name) (\($0.calories))" }
+                .joined(separator: ", ")
+            var line = "- \(d.date.formatted(.dateTime.weekday(.abbreviated).month().day())): "
+            line += "\(d.totalCalories) cal, \(d.totalProtein) g protein, "
+            line += "\(Int(facts.sodiumMg)) mg sodium, \(Int(facts.saturatedFatGrams)) g sat fat, "
+            line += "\(Int(facts.addedSugarGrams)) g added sugar, \(Int(facts.fiberGrams)) g fiber"
+            if !biggest.isEmpty { line += "; biggest: \(biggest)" }
+            return line
+        }.joined(separator: "\n")
+        guard !dayLines.isEmpty else { throw EstimatorError.badResponse }
+
+        let labSection: String
+        if let labs {
+            labSection = """
+
+            The user chose to share recent lab numbers (values only) to steer \
+            food choices: \(labs.promptLine).
+            Weight suggestions toward improving these markers, phrase related \
+            notes as things worth raising with their doctor, and never \
+            diagnose or recommend medication.
+            """
+        } else {
+            labSection = ""
+        }
+        let prompt = """
+        You are a supportive nutrition coach reviewing a WEEK of eating. \
+        Look for repeating patterns (a daily soda, heavy weekend meals, low \
+        protein at breakfast) rather than one-off slips. Be specific and \
+        practical, never preachy. Suggestions must be substitutions into \
+        foods that were actually eaten repeatedly.\(labSection)
+        Daily targets: \(targets.calories) cal, \(targets.proteinGrams) g protein.
+        The week (\(logged.count) logged day\(logged.count == 1 ? "" : "s")):
+        \(dayLines)
+        Respond with only JSON:
+        {"headline": "<one sentence verdict on the week>", \
+        "wins": ["<1-3 short things that went well this week>"], \
+        "suggestions": [{"issue": "<the recurring pattern to improve, tied to specific foods>", \
+        "swap": "<the concrete substitution and roughly what it saves per week>"}]}
+        Give 2-4 suggestions.
+        """
+        let payload: Payload = try await generate(prompt: prompt)
+        guard let headline = payload.headline, !headline.isEmpty else {
+            throw EstimatorError.badResponse
+        }
+        let suggestions = (payload.suggestions ?? []).compactMap { s -> DayReview.Suggestion? in
+            guard let issue = s.issue, let swap = s.swap else { return nil }
+            return DayReview.Suggestion(issue: issue, swap: swap)
+        }
+        return DayReview(headline: headline,
+                         wins: payload.wins ?? [],
+                         suggestions: suggestions)
+    }
+
     private struct GeminiResponse: Decodable {
         struct Candidate: Decodable {
             struct Content: Decodable {

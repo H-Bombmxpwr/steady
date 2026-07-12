@@ -109,13 +109,12 @@ struct MealDetailView: View {
 
 // MARK: - Gemini end-of-day review
 
-/// "Summarize My Day" — Gemini looks at everything eaten vs the targets
-/// and suggests concrete swaps for next time.
-struct DaySummarySheet: View {
+/// Shared coach-review sheet: headline, wins, and swap suggestions.
+/// Backs both "Summarize My Day" and the weekly report — pass the call.
+struct CoachReviewSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let day: DayLog
-    let targets: DailyTargets
-    var labs: AIFoodEstimator.LabSnapshot? = nil
+    let title: String
+    let run: () async throws -> AIFoodEstimator.DayReview
 
     @State private var review: AIFoodEstimator.DayReview?
     @State private var error: String?
@@ -168,7 +167,7 @@ struct DaySummarySheet: View {
                         } header: {
                             Text("Try These Swaps")
                         } footer: {
-                            Text("Based on today's log — take what's useful, skip what isn't.")
+                            Text("Take what's useful, skip what isn't.")
                         }
                     }
                 } else if let error {
@@ -176,7 +175,7 @@ struct DaySummarySheet: View {
                         Text(error).foregroundStyle(.secondary)
                         Button {
                             self.error = nil
-                            Task { await run() }
+                            Task { await load() }
                         } label: {
                             Label("Try Again", systemImage: "arrow.clockwise")
                         }
@@ -185,28 +184,28 @@ struct DaySummarySheet: View {
                     Section {
                         HStack(spacing: 12) {
                             ProgressView()
-                            Text("Reviewing your day…").foregroundStyle(.secondary)
+                            Text("Looking everything over…").foregroundStyle(.secondary)
                         }
                         .padding(.vertical, 8)
                     }
                 }
             }
             .themedForm()
-            .navigationTitle("Day Summary")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
-            .task { await run() }
+            .task { await load() }
         }
     }
 
-    private func run() async {
+    private func load() async {
         guard review == nil else { return }
         do {
-            review = try await AIFoodEstimator.reviewDay(day: day, targets: targets, labs: labs)
+            review = try await run()
         } catch {
             self.error = error.localizedDescription
         }

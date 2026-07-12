@@ -329,10 +329,11 @@ struct DayDetailView: View {
         .themedForm()
         .navigationTitle(Text(date, style: .date))
         .sheet(isPresented: $showDaySummary) {
-            DaySummarySheet(day: day, targets: targets,
-                            labs: labsEnabled
-                                ? AIFoodEstimator.LabSnapshot(labs: plan.latestLabs) : nil)
-                .themedRoot()
+            let labs = labsEnabled ? AIFoodEstimator.LabSnapshot(labs: plan.latestLabs) : nil
+            CoachReviewSheet(title: "Day Summary") { [day, targets] in
+                try await AIFoodEstimator.reviewDay(day: day, targets: targets, labs: labs)
+            }
+            .themedRoot()
         }
         .onChange(of: selectedItems) { _ in Task { await handlePicked() } }
         .sheet(isPresented: $showCamera) { CameraCaptureView { saveImage($0) } }

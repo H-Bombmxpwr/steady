@@ -6,9 +6,11 @@ import SwiftData
 /// entry back it up. Offline? Custom Food still works — just type the numbers.
 struct FoodSearchView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     var day: DayLog
 
     @State private var meal: Meal
+    @State private var quickFoods: [FoodLog] = []
     @State private var query = ""
     @State private var results: [FoodItem] = []
     @State private var searching = false
@@ -105,6 +107,44 @@ struct FoodSearchView: View {
                     )
                 }
 
+                // ===== Quick log: starred foods first, then recent ones
+                if !quickFoods.isEmpty {
+                    Section {
+                        ForEach(quickFoods, id: \.persistentModelID) { f in
+                            HStack(spacing: 10) {
+                                Button {
+                                    toggleFavorite(f)
+                                } label: {
+                                    Image(systemName: f.favorite ? "star.fill" : "star")
+                                        .foregroundStyle(f.favorite ? Theme.warn : Color.secondary)
+                                }
+                                .buttonStyle(.borderless)
+                                Button {
+                                    relog(f)
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(f.name).lineLimit(1).foregroundStyle(.primary)
+                                            Text("\(f.calories) cal · \(f.proteinGrams) g protein")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Image(systemName: "plus.circle.fill")
+                                            .foregroundStyle(Theme.accent)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    } header: {
+                        SectionHeader(icon: "star.fill", title: "Quick Log", tint: Theme.warn)
+                    } footer: {
+                        Text("Your starred and recent foods — tap ⊕ to log one again, star to pin it here.")
+                    }
+                }
+
                 // ===== Smaller fallbacks
                 Section {
                     Button { showFoodCamera = true } label: {
@@ -186,6 +226,7 @@ struct FoodSearchView: View {
                     placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "Search foods (e.g. chicken breast)")
         .onChange(of: query) { _ in runSearch() }
+        .onAppear { loadQuickFoods() }
         .sheet(item: $portionItem) { item in
             PortionSheet(item: item, source: "off", mealLabel: meal.label) { log in
                 add(log)
@@ -257,6 +298,59 @@ struct FoodSearchView: View {
 
     private func add(_ log: FoodLog) {
         day.addFood(log, meal: meal)
+    }
+
+    // MARK: Quick log (favorites + recents)
+
+    /// Starred foods first, then the most recent distinct foods, 8 total.
+    private func loadQuickFoods() {
+        var descriptor = FetchDescriptor<FoodLog>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+        descriptor.fetchLimit = 300
+        let all = (try? context.fetch(descriptor)) ?? []
+
+        var seen = Set<String>()
+        var favorites: [FoodLog] = []
+        var recents: [FoodLog] = []
+        let favoriteNames = Set(all.filter(\.favorite).map { $0.name.lowercased() })
+        for f in all {
+            let key = f.name.lowercased()
+            guard !key.isEmpty, !seen.contains(key) else { continue }
+            seen.insert(key)
+            if favoriteNames.contains(key) {
+                f.favorite = true    // surface the star on the newest instance
+                favorites.append(f)
+            } else {
+                recents.append(f)
+            }
+        }
+        quickFoods = favorites + recents.prefix(max(0, 8 - favorites.count))
+    }
+
+    /// Stars/unstars every logged instance of this food by name, so the
+    /// pin survives whichever copy gets fetched next time.
+    private func toggleFavorite(_ food: FoodLog) {
+        let key = food.name.lowercased()
+        let newValue = !food.favorite
+        var descriptor = FetchDescriptor<FoodLog>()
+        descriptor.fetchLimit = 1000
+        for f in (try? context.fetch(descriptor)) ?? [] where f.name.lowercased() == key {
+            f.favorite = newValue
+        }
+        try? context.save()
+        loadQuickFoods()
+    }
+
+    /// Logs a fresh copy of a previous food into the selected meal.
+    private func relog(_ f: FoodLog) {
+        add(FoodLog(name: f.name,
+                    calories: f.calories,
+                    proteinGrams: f.proteinGrams,
+                    grams: f.grams,
+                    source: f.source,
+                    density: f.density,
+                    facts: f.facts))
+        dismiss()
     }
 
     private func subtitle(for item: FoodItem) -> String {

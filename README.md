@@ -25,7 +25,7 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   (Gemini vision), **barcode scan** (crosshair reticle, only reads inside the
   frame), **database search** (live Open Food Facts, ~3M products, US-market
   first, re-ranked by relevance, outages retried + cached), and manual custom
-  entry. Every logged food carries a **full nutrition panel** — carbs, fats
+  entry — plus a **Quick Log** shelf of your starred and recent foods for one-tap re-logging. Every logged food carries a **full nutrition panel** — carbs, fats
   (sat/trans), cholesterol, sodium, fiber, sugars (incl. added), potassium,
   calcium, iron — from Gemini or OFF. A **Nutrition Report** grades the day
   Noom-style: macro split, FDA "keep under" limits (bars go red when blown),
@@ -71,7 +71,9 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   steps (Health), sleep (Health), measurements.
 - **Food**: calories vs budget, protein, **calorie-density mix** (stacked
   green/orange/red per day), fiber vs 28 g goal, sodium vs 2,300 mg limit,
-  alcohol; tiles for avg calories/protein/fiber/sodium.
+  alcohol; tiles for avg calories/protein/fiber/sodium. A **Week in Review**
+  button has the coach find repeating patterns across the last 7 days
+  (lab-aware when Blood Work is on).
 
 ### Blood work (opt-in)
 - Log a few numbers from a recent lab panel (LDL, HDL, triglycerides, fasting
@@ -83,6 +85,11 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   numbers (nothing identifying) steer the summary request. Panels chart over
   time on the Food stats tab.
 
+### Milestones
+- Dashboard badges for streaks (3–75 days), pounds down (5–25), and days
+  tracked (7–100) — earned ones in color, the next few locked as motivation,
+  with a one-time confetti moment when a new badge lands.
+
 ### Integrations
 - **Apple Health two-way**: writes weight/water/nutrition/workouts, reads steps,
   sleep, and external weigh-ins (Garmin/Watch/smart scales flow in via Health —
@@ -91,6 +98,11 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   inline). Streak is front and center; medium/large have Food and Today
   shortcuts plus one-tap water logging, in that order (Today deep-links into
   the current day's log). Weight is deliberately never shown on widgets.
+- **Siri shortcuts**: "log water in 75", "log a meal in 75" (speak the meal,
+  it's itemized and logged with totals read back), "open today in 75".
+- **Live Activity** (optional, Settings → Appearance): remaining calories,
+  protein, and water on the Lock Screen / Dynamic Island, refreshed whenever
+  the app runs.
 - **Notifications**: morning weigh-in, hydration nudges (times configurable, with
   a log-water action), workout reminders (lead time configurable), smart
   streak-at-risk guard (fires only when the streak is actually in danger;
@@ -106,6 +118,7 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   live, everywhere, no restart. A "75" gradient monogram heads the dashboard;
   every screen carries a subtle accent wash; cards have per-domain icon chips
   and tints (water sky, food tangerine, weight violet, alcohol amber…).
+  **Matching app icons**: one per accent palette, switchable in Settings.
   Floating **glass tab bar** (on by default) with a gradient pill you can tap,
   swipe pages under, or grab and slide across the tabs — pages follow live
   (Settings → Appearance toggles back to the classic bar).

@@ -6,6 +6,47 @@
 	<array>
 		<dict/>
 	</array>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>Icon-Emerald</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>Icon-Emerald</string>
+				</array>
+			</dict>
+			<key>Icon-Ocean</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>Icon-Ocean</string>
+				</array>
+			</dict>
+			<key>Icon-Rose</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>Icon-Rose</string>
+				</array>
+			</dict>
+			<key>Icon-Sunset</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>Icon-Sunset</string>
+				</array>
+			</dict>
+			<key>Icon-Violet</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>Icon-Violet</string>
+				</array>
+			</dict>
+		</dict>
+	</dict>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -17,15 +58,17 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>To dictate your meal so AI can estimate its calories and protein.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>To turn your spoken meal description into text for the AI estimate.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
 	<string>To add your planned workouts to your calendar as repeating events.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>To read steps, sleep, and weigh-ins from your devices (including Garmin via Apple Health) for your stats and trends.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>To save your logged weight, water, nutrition, and workouts to Apple Health.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>To dictate your meal so AI can estimate its calories and protein.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>To turn your spoken meal description into text for the AI estimate.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>

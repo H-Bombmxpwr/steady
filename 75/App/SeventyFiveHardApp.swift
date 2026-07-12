@@ -50,6 +50,7 @@ struct SeventyFiveHardApp: App {
         let context = ModelContext(PersistenceController.shared.container)
         guard let plan = try? context.fetch(FetchDescriptor<Plan>()).first,
               let profile = try? context.fetch(FetchDescriptor<UserProfile>()).first else { return }
+        LiveActivityManager.sync(plan: plan, profile: profile)
         let targets = CalorieEngine.targets(profile: profile, plan: plan)
         let today = Calendar.current.startOfDay(for: Date())
         let day = plan.days.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
