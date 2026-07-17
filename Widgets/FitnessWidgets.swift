@@ -87,11 +87,33 @@ struct TodayProvider: TimelineProvider {
 
 // MARK: - Shared bits
 
-private let accent = Color(red: 0.20, green: 0.83, blue: 0.60)     // emerald
-private let accent2 = Color(red: 0.13, green: 0.83, blue: 0.93)    // cyan
+private func hex(_ value: UInt32) -> Color {
+    Color(.sRGB,
+          red: Double((value >> 16) & 0xFF) / 255,
+          green: Double((value >> 8) & 0xFF) / 255,
+          blue: Double(value & 0xFF) / 255,
+          opacity: 1)
+}
+
+/// Widgets follow the in-app accent palette — the app mirrors its theme
+/// choice into the App Group defaults and reloads timelines on change.
+/// Hues match ThemePalette in the app's Theme.swift.
+private var accents: (Color, Color) {
+    switch UserDefaults(suiteName: appGroupID)?.string(forKey: "theme.palette") ?? "emerald" {
+    case "ocean":  return (hex(0x38BDF8), hex(0x6366F1))
+    case "sunset": return (hex(0xFB923C), hex(0xF43F5E))
+    case "violet": return (hex(0xA78BFA), hex(0xEC4899))
+    case "rose":   return (hex(0xFB7185), hex(0xFBBF24))
+    default:       return (hex(0x34D399), hex(0x22D3EE))   // emerald
+    }
+}
+private var accent: Color { accents.0 }
+private var accent2: Color { accents.1 }
+private var gradient: LinearGradient {
+    LinearGradient(colors: [accent, accent2],
+                   startPoint: .topLeading, endPoint: .bottomTrailing)
+}
 private let widgetBG = Color(red: 0.055, green: 0.067, blue: 0.086)
-private let gradient = LinearGradient(colors: [accent, accent2],
-                                      startPoint: .topLeading, endPoint: .bottomTrailing)
 private let good = Color(red: 0.29, green: 0.87, blue: 0.50)
 private let bad = Color(red: 0.98, green: 0.44, blue: 0.52)
 

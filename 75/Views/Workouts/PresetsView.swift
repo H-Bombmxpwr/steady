@@ -24,6 +24,9 @@ struct WorkoutsView: View {
     // Calendar sync feedback
     @State private var syncMessage: String?
 
+    // Searchable picker for the schedule's workout
+    @State private var showSchedulePicker = false
+
     var body: some View {
         NavigationStack {
             Form {
@@ -32,29 +35,26 @@ struct WorkoutsView: View {
                     if plan.presets.isEmpty {
                         Text("Start here: build a workout, then add it to your week below.")
                             .foregroundStyle(.secondary)
-                    }
-                    ForEach(plan.presets) { p in
-                        NavigationLink(value: p) {
+                    } else {
+                        // The full list lives one tap in — alphabetized and
+                        // searchable, so a growing collection never clogs
+                        // this page. Duplicated names show when they were
+                        // built.
+                        NavigationLink {
+                            WorkoutLibraryView(plan: plan)
+                        } label: {
                             HStack {
-                                Image(systemName: p.category.icon)
+                                Image(systemName: "list.bullet.rectangle.fill")
                                     .foregroundStyle(Theme.accent)
                                     .frame(width: 26)
-                                VStack(alignment: .leading) {
-                                    Text(p.name).font(.headline)
-                                    HStack {
-                                        Text(p.category.label)
-                                        Text("· \(p.defaultMinutes) min")
-                                        if !p.exercises.isEmpty { Text("· \(p.exercises.count) exercises") }
-                                        if p.outdoor { Text("· outdoor") }
-                                    }
-                                    .font(.caption).foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("All Workouts").font(.headline)
+                                    Text("\(plan.presets.count) built · search, edit, delete")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }
-                    }
-                    .onDelete { idx in
-                        idx.map { plan.presets[$0] }.forEach { context.delete($0) }
-                        try? context.save()
                     }
                     NavigationLink {
                         TemplatesView(plan: plan)
@@ -115,9 +115,22 @@ struct WorkoutsView: View {
                 }
 
                 Section("Add to Schedule") {
-                    Picker("Workout", selection: $scheduleSource) {
-                        ForEach(plan.presets) { p in Text(p.name).tag(p.name) }
-                        Text("Custom…").tag("")
+                    Button {
+                        showSchedulePicker = true
+                    } label: {
+                        HStack {
+                            Text("Workout").foregroundStyle(.primary)
+                            Spacer()
+                            Text(scheduleSource.isEmpty ? "Custom…" : scheduleSource)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if !scheduleSource.isEmpty {
+                        Button("Use a custom name instead") { scheduleSource = "" }
+                            .font(.footnote)
                     }
                     if scheduleSource.isEmpty {
                         TextField("Workout (e.g., Upper body, Run)", text: $newName)
@@ -167,6 +180,11 @@ struct WorkoutsView: View {
             .onAppear {
                 if scheduleSource.isEmpty, let first = plan.presets.first {
                     scheduleSource = first.name
+                }
+            }
+            .sheet(isPresented: $showSchedulePicker) {
+                PresetPickerSheet(plan: plan) { p in
+                    scheduleSource = p.name
                 }
             }
         }

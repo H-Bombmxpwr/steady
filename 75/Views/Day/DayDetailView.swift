@@ -20,6 +20,9 @@ struct DayDetailView: View {
     // "What should I eat?" — meal ideas that fit the remaining budget
     @State private var showMealIdeas = false
 
+    // Weight entry, text-backed so decimals type naturally
+    @State private var weightText: String
+
     // Lab-aware coaching (opt-in; Settings → Blood Work)
     @AppStorage("labs.enabled") private var labsEnabled = false
 
@@ -31,6 +34,29 @@ struct DayDetailView: View {
         self.date = date.startOfDay()
         let d = ensureDay(plan: plan, date: date)
         _day = State(initialValue: d)
+        _weightText = State(initialValue: d.weight.map {
+            $0.formatted(.number.precision(.fractionLength(0...1)).grouping(.never))
+        } ?? "")
+    }
+
+    /// Digits and one "." only; at most 3 digits before the point (nobody
+    /// weighs 1,000 lb) and 1 after (scales read tenths).
+    static func sanitizeWeight(_ raw: String) -> String {
+        var intPart = ""
+        var fracPart = ""
+        var seenDot = false
+        for ch in raw.replacingOccurrences(of: ",", with: ".") {
+            if ch == "." {
+                seenDot = true
+            } else if ch.isNumber {
+                if seenDot {
+                    if fracPart.count < 1 { fracPart.append(ch) }
+                } else {
+                    if intPart.count < 3 { intPart.append(ch) }
+                }
+            }
+        }
+        return intPart + (seenDot ? "." : "") + fracPart
     }
 
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
@@ -186,18 +212,20 @@ struct DayDetailView: View {
 
             // ===== Weight
             Section {
-                // Optional binding: field starts empty (placeholder), not "0".
-                TextField(
-                    "Weight (lb)",
-                    value: Binding<Double?>(
-                        get: { day.weight },
-                        set: { day.weight = $0 }
-                    ),
-                    // Tenths matter on a scale: show 183.4, not 183.
-                    format: .number.precision(.fractionLength(0...1))
-                )
-                .keyboardType(.decimalPad)
-                .focused($fieldFocused)
+                // Text-backed on purpose: the value+format TextField mangles
+                // live decimal typing ("224.9" became 2249). This keeps every
+                // keystroke sane: digits, one decimal point, max 999.9.
+                TextField("Weight (lb)", text: $weightText)
+                    .keyboardType(.decimalPad)
+                    .focused($fieldFocused)
+                    .onChange(of: weightText) { newValue in
+                        let cleaned = Self.sanitizeWeight(newValue)
+                        if cleaned != newValue {
+                            weightText = cleaned
+                            return
+                        }
+                        day.weight = Double(cleaned)
+                    }
             } header: {
                 SectionHeader(icon: "scalemass.fill", title: "Weight", tint: Theme.weightTint)
             }

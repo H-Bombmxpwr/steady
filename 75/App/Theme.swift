@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import WidgetKit
 
 // MARK: - User-selectable palette + appearance
 
@@ -42,7 +43,10 @@ final class ThemeStore {
     static let shared = ThemeStore()
 
     var palette: ThemePalette {
-        didSet { UserDefaults.standard.set(palette.rawValue, forKey: Theme.paletteKey) }
+        didSet {
+            UserDefaults.standard.set(palette.rawValue, forKey: Theme.paletteKey)
+            Self.mirrorToWidgets(palette)
+        }
     }
     var mode: ThemeMode {
         didSet { UserDefaults.standard.set(mode.rawValue, forKey: Theme.modeKey) }
@@ -51,6 +55,15 @@ final class ThemeStore {
     private init() {
         palette = ThemePalette(rawValue: UserDefaults.standard.string(forKey: Theme.paletteKey) ?? "") ?? .emerald
         mode = ThemeMode(rawValue: UserDefaults.standard.string(forKey: Theme.modeKey) ?? "") ?? .dark
+        Self.mirrorToWidgets(palette)
+    }
+
+    /// Widgets run in their own process and can't see the app's defaults —
+    /// mirror the palette into the App Group and refresh their timelines so
+    /// accents match the in-app theme.
+    private static func mirrorToWidgets(_ palette: ThemePalette) {
+        UserDefaults(suiteName: appGroupID)?.set(palette.rawValue, forKey: Theme.paletteKey)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 

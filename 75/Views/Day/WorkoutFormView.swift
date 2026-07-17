@@ -17,6 +17,7 @@ struct WorkoutFormView: View {
 
     @State private var entries: [ExerciseEntry] = []
     @State private var showExercisePicker = false
+    @State private var showPresetPicker = false
 
     struct SetEntry: Identifiable {
         let id = UUID()
@@ -34,21 +35,25 @@ struct WorkoutFormView: View {
         Form {
             if !plan.presets.isEmpty {
                 Section("Presets") {
-                    Picker("Preset", selection: $selectedPreset) {
-                        Text("None").tag(Optional<WorkoutPreset>.none)
-                        ForEach(plan.presets) { p in Text(p.name).tag(Optional(p)) }
+                    // A button into the searchable alphabetized picker — the
+                    // inline Picker menu became a giant unusable list once
+                    // the workout collection grew.
+                    Button {
+                        showPresetPicker = true
+                    } label: {
+                        HStack {
+                            Label(selectedPreset?.name ?? "Choose a Workout",
+                                  systemImage: selectedPreset?.category.icon ?? "list.bullet")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    .onChange(of: selectedPreset) { p in
-                        guard let p else { return }
-                        name = p.name
-                        minutes = p.defaultMinutes
-                        outdoor = p.outdoor
-                        category = p.category
-                        entries = p.orderedExercises.map { ex in
-                            ExerciseEntry(name: ex.name,
-                                          sets: (0..<max(1, ex.sets)).map { _ in
-                                              SetEntry(reps: ex.reps, weight: ex.weightLbs)
-                                          })
+                    if selectedPreset != nil {
+                        Button("Clear preset", role: .destructive) {
+                            selectedPreset = nil
                         }
                     }
                 }
@@ -129,6 +134,21 @@ struct WorkoutFormView: View {
                     sets: (0..<3).map { _ in SetEntry(reps: 10, weight: nil) }))
             }
             .themedRoot()
+        }
+        .sheet(isPresented: $showPresetPicker) {
+            PresetPickerSheet(plan: plan) { p in
+                selectedPreset = p
+                name = p.name
+                minutes = p.defaultMinutes
+                outdoor = p.outdoor
+                category = p.category
+                entries = p.orderedExercises.map { ex in
+                    ExerciseEntry(name: ex.name,
+                                  sets: (0..<max(1, ex.sets)).map { _ in
+                                      SetEntry(reps: ex.reps, weight: ex.weightLbs)
+                                  })
+                }
+            }
         }
     }
 

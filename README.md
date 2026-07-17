@@ -64,6 +64,11 @@ Product scope and work log live in `.scratch/fitness-tracker/`.
   starter templates (StrongLifts 5×5, Push/Pull/Legs, Couch-to-5K); as many
   workouts per day as you want, scheduled or not; categorized; weekly schedule
   built from your presets with **EventKit calendar sync** (local, no server).
+  The Workouts tab keeps its list one tap away in **All Workouts** —
+  alphabetized and searchable so a growing collection never clogs the page,
+  with same-named workouts showing when they were built — and the same
+  searchable picker backs preset selection in Log Workout and Add to
+  Schedule (no more giant inline picker menus).
 - **What Should I Eat?** (day view → Food): Gemini suggests three realistic
   options that fit what's *left* of today's calories and steer at the protein
   gap (lab-aware when Blood Work is on, skips what you already ate); each idea
@@ -136,6 +141,9 @@ Product scope and work log live in `.scratch/fitness-tracker/`.
   inline). Streak is front and center; medium/large have Food and Today
   shortcuts plus one-tap water logging, in that order (Today deep-links into
   the current day's log). Weight is deliberately never shown on widgets.
+  Widgets **follow the in-app accent palette** — pick Ocean in Settings and
+  the rings, gradients, and buttons on every widget match (palette mirrored
+  through the App Group; timelines reload on change).
 - **Siri shortcuts**: "log water in 75", "log a meal in 75" (speak the meal,
   it's itemized and logged with totals read back), "open today in 75".
 - **Live Activity** (optional, Settings → Appearance): remaining calories,

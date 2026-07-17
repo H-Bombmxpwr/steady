@@ -111,6 +111,9 @@ final class WorkoutPreset {
     var outdoor: Bool
     var categoryRaw: String = WorkoutCategory.other.rawValue
     var notes: String?
+    /// When this workout was built — shown to tell same-named workouts
+    /// apart in the library and picker. Additive default for old rows.
+    var createdAt: Date = Date()
     @Relationship(deleteRule: .cascade) var exercises: [PresetExercise] = []
 
     init(name: String, defaultMinutes: Int = 45, outdoor: Bool = false,
@@ -120,6 +123,7 @@ final class WorkoutPreset {
         self.outdoor = outdoor
         self.categoryRaw = category.rawValue
         self.notes = notes
+        self.createdAt = Date()
         self.exercises = []
     }
 
