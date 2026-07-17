@@ -44,10 +44,17 @@ struct MainTabView: View {
         Group {
             if glassBar {
                 ContinuousPager(position: $pagePosition, count: Self.tabs.count) { i in
+                    // Each page carries its own bottom inset: the custom
+                    // pager (unlike TabView) doesn't push the floating bar's
+                    // height into the pages' safe areas, and without this
+                    // the last row scrolls under the bar.
                     screen(i)
+                        .safeAreaInset(edge: .bottom) {
+                            Color.clear.frame(height: 66)
+                        }
                 }
                 .background(Theme.background.ignoresSafeArea())
-                .safeAreaInset(edge: .bottom) {
+                .overlay(alignment: .bottom) {
                     GlassTabBar(tabs: Self.tabs, position: $pagePosition)
                 }
             } else {
@@ -176,6 +183,11 @@ private struct GlassTabBar: View {
 
     /// True while a finger is on the pill (drives the lift effect).
     @State private var beadHeld = false
+    /// Position when the bead drag began — drags are RELATIVE (finger
+    /// travel of one tab-width moves the bead one slot). The old absolute
+    /// finger-location mapping left the tracked position half a tab behind
+    /// where the pill looked, so one-tab slides rounded back home.
+    @State private var beadDragStart: CGFloat?
 
     private static let spring = Animation.spring(response: 0.34, dampingFraction: 0.82)
     private let inset: CGFloat = 5
@@ -227,9 +239,14 @@ private struct GlassTabBar: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)
                     .onChanged { value in
-                        beadHeld = true
-                        let f = (value.location.x - inset) / tabWidth - 0.5
-                        let target = min(max(f, 0), CGFloat(tabs.count - 1))
+                        let start = beadDragStart
+                            ?? min(max(position, 0), CGFloat(tabs.count - 1))
+                        if beadDragStart == nil {
+                            beadDragStart = start
+                            beadHeld = true
+                        }
+                        let target = min(max(start + value.translation.width / tabWidth, 0),
+                                         CGFloat(tabs.count - 1))
                         let before = Int(min(max(position, 0), CGFloat(tabs.count - 1)).rounded())
                         // Pill and pages track the finger directly — no
                         // implicit animation, no snapping between slots.
@@ -242,6 +259,7 @@ private struct GlassTabBar: View {
                     }
                     .onEnded { _ in
                         beadHeld = false
+                        beadDragStart = nil
                         withAnimation(Self.spring) {
                             position = min(max(position.rounded(), 0), CGFloat(tabs.count - 1))
                         }

@@ -47,3 +47,18 @@ GradientBar, Open Day) and a two-item legend.
 
 Build: ** BUILD SUCCEEDED ** (fixed one "static stored properties not
 supported in generic types" on the pager's settle animation).
+
+## Follow-up (device feedback, same day)
+
+- Bead snapped back when slid one tab: the absolute finger-location
+  mapping (`location.x / tabWidth - 0.5`) left the tracked position half
+  a tab behind where the pill looked. Bead drags are now RELATIVE —
+  `startPosition + translation.width / tabWidth` — so one tab-width of
+  finger travel is exactly one slot.
+- Bottom rows hid under the floating bar: TabView used to convert the
+  safeAreaInset bar into page safe-area; the custom pager doesn't. Each
+  page now gets an explicit 66pt bottom `safeAreaInset` spacer and the
+  bar moved to an `overlay(alignment: .bottom)`.
+- CFPrefs "kCFPreferencesAnyUser with a container" console lines on
+  device install: benign cfprefsd probe noise from group UserDefaults
+  (the widget theme mirror); per-user reads work fine. No action.
