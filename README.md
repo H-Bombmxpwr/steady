@@ -21,7 +21,11 @@ Product scope and work log live in `.scratch/fitness-tracker/`.
   the formula (trust grows with logging consistency, formula keeps a 20%
   anchor, observed value clamped to sane bounds). Settings shows the learned
   number vs the formula so the budget never changes silently.
-- **Weight trend**: EWMA-smoothed trend line, goal line, projected goal date.
+- **Weight trend**: EWMA-smoothed trend line over your actual daily
+  weigh-ins (each day a visible dot, threaded by a thin line), goal line
+  with its label above it, projected goal date. A **Hide goal line** toggle
+  on the chart re-fits the y-axis to just your data — useful while the goal
+  is still far away.
 
 ### Logging
 - **Food** — logged into **meals** (breakfast, morning snack, lunch, afternoon
@@ -171,8 +175,11 @@ Product scope and work log live in `.scratch/fitness-tracker/`.
   (`ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES`), which generates the
   iPhone *and* iPad plist entries the old loose-PNG setup was missing.
   Floating **glass tab bar** (on by default) with a gradient pill you can tap,
-  swipe pages under, or grab and slide across the tabs — pages follow live
-  (Settings → Appearance toggles back to the classic bar).
+  swipe pages under, or grab and slide across the tabs. One continuous
+  position drives both surfaces — pages and pill track the finger
+  fractionally with no snapping, then spring-settle on release (a custom
+  pager replaced TabView's discrete paging). Settings → Appearance toggles
+  back to the classic bar.
 - **Backup export** as a single JSON (embedded photos). All data persists across
   rebuilds/redeploys (same bundle ID) in the App Group container.
 
@@ -202,7 +209,8 @@ Widgets/       WidgetKit extension (home + lock screen, interactive logging)
     Stats/       Time-range charts for every tracked series
     Day/         Day detail logging + workout form
     Food/        Food search, portion picker, barcode + photo recognition
-    Calendar/    Day-by-day history
+    Calendar/    Day-by-day history — custom month grid, logged days
+                 dotted, today ringed, selected day filled
     Photos/      Gallery, viewer, compare, timelapse (Face ID gated)
     Workouts/    Workout builder, exercise picker + history, templates,
                  weekly schedule, calendar sync

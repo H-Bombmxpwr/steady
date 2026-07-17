@@ -42,6 +42,7 @@ struct StatsView: View {
     @State private var showMonthWrap = false
     @AppStorage("labs.enabled") private var labsEnabled = false
     @AppStorage(Fasting.enabledKey) private var fastingEnabled = false
+    @AppStorage("chart.showGoal") private var showGoal = true
 
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
 
@@ -299,17 +300,25 @@ struct StatsView: View {
             Chart {
                 ForEach(trend) { p in
                     if let raw = p.raw {
+                        LineMark(x: .value("Date", p.date), y: .value("lb", raw),
+                                 series: .value("Series", "daily"))
+                            .foregroundStyle(Theme.weightTint.opacity(0.35))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5))
+                            .interpolationMethod(.monotone)
                         PointMark(x: .value("Date", p.date), y: .value("lb", raw))
-                            .foregroundStyle(.white.opacity(0.25)).symbolSize(18)
+                            .foregroundStyle(Theme.weightTint).symbolSize(24)
                     }
-                    LineMark(x: .value("Date", p.date), y: .value("Trend", p.trend))
+                    LineMark(x: .value("Date", p.date), y: .value("Trend", p.trend),
+                             series: .value("Series", "trend"))
                         .foregroundStyle(Theme.gradient)
                         .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round))
                         .interpolationMethod(.catmullRom)
                 }
-                RuleMark(y: .value("Goal", plan.goalWeight))
-                    .foregroundStyle(Theme.warn.opacity(0.6))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                if showGoal {
+                    RuleMark(y: .value("Goal", plan.goalWeight))
+                        .foregroundStyle(Theme.warn.opacity(0.6))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                }
             }
             .chartYScale(domain: .automatic(includesZero: false))
         }

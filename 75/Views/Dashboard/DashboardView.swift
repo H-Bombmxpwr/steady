@@ -10,10 +10,11 @@ struct MainTabView: View {
     /// Floating glass tab bar with swipe-between-tabs; off = classic iOS bar.
     @AppStorage("ui.glassBar") private var glassBar = true
     @State private var tab = 0
-    /// While the pill is being dragged, the bar owns `tab` — the paged
-    /// TabView's async stale write-backs are ignored (they bounced the
-    /// pill off tabs 1 and 3).
-    @State private var barDragging = false
+    /// Glass mode's single source of truth: a continuous page position
+    /// (0…4). Pages sit at -position × width and the bead pill sits at
+    /// position × tabWidth, so finger drags on either surface move both
+    /// fluidly — nothing snaps until release.
+    @State private var pagePosition: CGFloat = 0
 
     // Widget deep links (seventyfive://log-food, log-workout, today)
     @State private var showFoodLog = false
@@ -42,18 +43,12 @@ struct MainTabView: View {
     var body: some View {
         Group {
             if glassBar {
-                TabView(selection: Binding(
-                    get: { tab },
-                    set: { if !barDragging { tab = $0 } }
-                )) {
-                    ForEach(0..<5) { i in
-                        screen(i).tag(i)
-                    }
+                ContinuousPager(position: $pagePosition, count: Self.tabs.count) { i in
+                    screen(i)
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
                 .background(Theme.background.ignoresSafeArea())
                 .safeAreaInset(edge: .bottom) {
-                    GlassTabBar(tabs: Self.tabs, selection: $tab, dragging: $barDragging)
+                    GlassTabBar(tabs: Self.tabs, position: $pagePosition)
                 }
             } else {
                 TabView(selection: $tab) {
@@ -63,6 +58,14 @@ struct MainTabView: View {
                             .tag(i)
                     }
                 }
+            }
+        }
+        // Keep the two modes' positions in sync when the style is toggled.
+        .onChange(of: glassBar) { on in
+            if on {
+                pagePosition = CGFloat(tab)
+            } else {
+                tab = Int(pagePosition.rounded())
             }
         }
         .onOpenURL { url in
@@ -95,18 +98,84 @@ struct MainTabView: View {
     }
 }
 
+// MARK: - Continuous pager (glass mode)
+
+/// Five screens in a row, offset by a continuous fractional position —
+/// the replacement for TabView's paged mode, whose page snapping made
+/// bead drags feel stepped. Content swipes drive the same position, so
+/// pages AND bead track the finger with no snapping until release.
+private struct ContinuousPager<Content: View>: View {
+    @Binding var position: CGFloat
+    let count: Int
+    @ViewBuilder let content: (Int) -> Content
+
+    /// Position when the current drag began (nil = not dragging).
+    @State private var dragBase: CGFloat?
+    /// Direction lock: decided on the first movement, horizontal drags
+    /// page, vertical ones are left to the inner scroll views.
+    @State private var horizontal: Bool?
+
+    private static var settle: Animation { .spring(response: 0.32, dampingFraction: 0.86) }
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = max(1, geo.size.width)
+            HStack(spacing: 0) {
+                ForEach(0..<count, id: \.self) { i in
+                    content(i)
+                        .frame(width: width)
+                }
+            }
+            .offset(x: -position * width)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 15)
+                    .onChanged { value in
+                        // Leave the left edge to the navigation back-swipe.
+                        guard value.startLocation.x > 30 else { return }
+                        if horizontal == nil {
+                            horizontal = abs(value.translation.width) > abs(value.translation.height)
+                        }
+                        guard horizontal == true else { return }
+                        let base = dragBase ?? position
+                        dragBase = base
+                        var p = base - value.translation.width / width
+                        // Rubber-band past either end.
+                        if p < 0 { p /= 3 }
+                        if p > CGFloat(count - 1) {
+                            p = CGFloat(count - 1) + (p - CGFloat(count - 1)) / 3
+                        }
+                        var follow = Transaction()
+                        follow.disablesAnimations = true
+                        withTransaction(follow) { position = p }
+                    }
+                    .onEnded { value in
+                        defer { dragBase = nil; horizontal = nil }
+                        guard horizontal == true, let base = dragBase else { return }
+                        // Flicks use the projected landing spot, capped at
+                        // one page per swipe from where the drag started.
+                        let projected = base - value.predictedEndTranslation.width / width
+                        let target = min(max(projected.rounded(), base.rounded() - 1),
+                                         base.rounded() + 1)
+                        withAnimation(Self.settle) {
+                            position = min(max(target, 0), CGFloat(count - 1))
+                        }
+                    }
+            )
+        }
+    }
+}
+
 // MARK: - Floating glass tab bar
 
-/// Translucent floating capsule bar (the "liquid glass" look). One gradient
-/// pill marks the active tab; tap a tab, swipe the pages, or grab the pill
-/// and slide it across the bar — pages follow live.
+/// Translucent floating capsule bar (the "liquid glass" look). The gradient
+/// pill rides the shared continuous position: tap a tab, swipe the pages,
+/// or slide the pill — everything moves together, fluidly.
 private struct GlassTabBar: View {
     let tabs: [(label: String, icon: String)]
-    @Binding var selection: Int
-    @Binding var dragging: Bool
+    @Binding var position: CGFloat
 
-    /// Fractional pill position while a finger is sliding along the bar.
-    @State private var dragIndex: CGFloat?
+    /// True while a finger is on the pill (drives the lift effect).
+    @State private var beadHeld = false
 
     private static let spring = Animation.spring(response: 0.34, dampingFraction: 0.82)
     private let inset: CGFloat = 5
@@ -117,25 +186,24 @@ private struct GlassTabBar: View {
             // frames ("Invalid frame dimension" console spam).
             let tabWidth = max(1, (geo.size.width - inset * 2) / CGFloat(tabs.count))
             let pillHeight = max(1, geo.size.height - inset * 2)
-            let position = dragIndex ?? CGFloat(selection)
-            // While dragging, the highlight follows the pill, not the page.
-            let highlighted = dragIndex.map { Int($0.rounded()) } ?? selection
+            let clamped = min(max(position, 0), CGFloat(tabs.count - 1))
+            let highlighted = Int(clamped.rounded())
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Theme.gradient)
                     .frame(width: tabWidth, height: pillHeight)
-                    .offset(x: inset + position * tabWidth)
-                    .scaleEffect(dragIndex == nil ? 1 : 1.07)
-                    .shadow(color: Theme.accent.opacity(dragIndex == nil ? 0.35 : 0.5),
-                            radius: dragIndex == nil ? 8 : 12, y: 2)
+                    .offset(x: inset + clamped * tabWidth)
+                    .scaleEffect(beadHeld ? 1.07 : 1)
+                    .shadow(color: Theme.accent.opacity(beadHeld ? 0.5 : 0.35),
+                            radius: beadHeld ? 12 : 8, y: 2)
                     .animation(.spring(response: 0.25, dampingFraction: 0.8),
-                               value: dragIndex == nil)
+                               value: beadHeld)
 
                 HStack(spacing: 0) {
                     ForEach(tabs.indices, id: \.self) { i in
                         Button {
-                            withAnimation(Self.spring) { selection = i }
+                            withAnimation(Self.spring) { position = CGFloat(i) }
                         } label: {
                             VStack(spacing: 3) {
                                 Image(systemName: tabs[i].icon)
@@ -159,34 +227,23 @@ private struct GlassTabBar: View {
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)
                     .onChanged { value in
-                        dragging = true
+                        beadHeld = true
                         let f = (value.location.x - inset) / tabWidth - 0.5
-                        let clamped = min(max(f, 0), CGFloat(tabs.count - 1))
-                        // The pill tracks the finger directly — no implicit
-                        // animation to lag behind it.
+                        let target = min(max(f, 0), CGFloat(tabs.count - 1))
+                        let before = Int(min(max(position, 0), CGFloat(tabs.count - 1)).rounded())
+                        // Pill and pages track the finger directly — no
+                        // implicit animation, no snapping between slots.
                         var follow = Transaction()
                         follow.disablesAnimations = true
-                        withTransaction(follow) { dragIndex = clamped }
-
-                        // The page follows the pill live. Safe now: while
-                        // `dragging` is true the TabView's stale async
-                        // write-backs are ignored upstream.
-                        let nearest = Int(clamped.rounded())
-                        if nearest != selection {
-                            withTransaction(follow) { selection = nearest }
+                        withTransaction(follow) { position = target }
+                        if Int(target.rounded()) != before {
                             UISelectionFeedbackGenerator().selectionChanged()
                         }
                     }
-                    .onEnded { value in
-                        let f = (value.location.x - inset) / tabWidth - 0.5
-                        let nearest = Int(min(max(f, 0), CGFloat(tabs.count - 1)).rounded())
-                        selection = nearest
-                        // Pill just seats into the slot it's already on.
-                        withAnimation(Self.spring) { dragIndex = nil }
-                        // Keep ignoring pager write-backs until any in-flight
-                        // transition finishes, so the landing tab sticks.
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            dragging = false
+                    .onEnded { _ in
+                        beadHeld = false
+                        withAnimation(Self.spring) {
+                            position = min(max(position.rounded(), 0), CGFloat(tabs.count - 1))
                         }
                     }
             )
@@ -383,6 +440,10 @@ struct DashboardView: View {
 private struct WeightCard: View {
     let plan: Plan
 
+    /// Goal line on the weight charts — hiding it re-fits the y-axis to
+    /// just your data, which matters when the goal is still far away.
+    @AppStorage("chart.showGoal") private var showGoal = true
+
     var body: some View {
         Card(title: "Weight", icon: "scalemass.fill", tint: Theme.weightTint) {
             let trend = CalorieEngine.weightTrend(plan: plan)
@@ -402,24 +463,36 @@ private struct WeightCard: View {
             if trend.count >= 2 {
                 Chart {
                     ForEach(trend) { point in
+                        // Each day's actual weigh-in: a visible dot, thin
+                        // line threading them so the raw path reads too.
                         if let raw = point.raw {
+                            LineMark(x: .value("Date", point.date), y: .value("Weight", raw),
+                                     series: .value("Series", "daily"))
+                                .foregroundStyle(Theme.weightTint.opacity(0.35))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5))
+                                .interpolationMethod(.monotone)
                             PointMark(x: .value("Date", point.date), y: .value("Weight", raw))
-                                .foregroundStyle(.white.opacity(0.25))
-                                .symbolSize(20)
+                                .foregroundStyle(Theme.weightTint)
+                                .symbolSize(28)
                         }
-                        LineMark(x: .value("Date", point.date), y: .value("Trend", point.trend))
+                        LineMark(x: .value("Date", point.date), y: .value("Trend", point.trend),
+                                 series: .value("Series", "trend"))
                             .foregroundStyle(Theme.gradient)
                             .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round))
                             .interpolationMethod(.catmullRom)
                     }
-                    RuleMark(y: .value("Goal", plan.goalWeight))
-                        .foregroundStyle(Theme.warn.opacity(0.6))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                        .annotation(position: .bottom, alignment: .leading) {
-                            Text("goal \(plan.goalWeight.formatted(.number.precision(.fractionLength(0...1))))")
-                                .font(.caption2)
-                                .foregroundStyle(Theme.warn)
-                        }
+                    if showGoal {
+                        RuleMark(y: .value("Goal", plan.goalWeight))
+                            .foregroundStyle(Theme.warn.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            // Above the line so it never collides with the
+                            // x-axis labels below the plot.
+                            .annotation(position: .top, alignment: .leading) {
+                                Text("goal \(plan.goalWeight.formatted(.number.precision(.fractionLength(0...1))))")
+                                    .font(.caption2)
+                                    .foregroundStyle(Theme.warn)
+                            }
+                    }
                 }
                 .chartYScale(domain: yDomain(trend: trend))
                 .chartXAxis {
@@ -435,6 +508,19 @@ private struct WeightCard: View {
                     }
                 }
                 .frame(height: 160)
+
+                HStack {
+                    Spacer()
+                    Button {
+                        withAnimation(.easeOut(duration: 0.25)) { showGoal.toggle() }
+                    } label: {
+                        Label(showGoal ? "Hide goal line" : "Show goal line",
+                              systemImage: "target")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textDim)
+                    }
+                    .buttonStyle(.plain)
+                }
             } else {
                 Text("Log your weight a few days in a row and the trend line appears here.")
                     .font(.footnote)
@@ -444,7 +530,9 @@ private struct WeightCard: View {
     }
 
     private func yDomain(trend: [TrendPoint]) -> ClosedRange<Double> {
-        let values = trend.flatMap { [$0.raw, $0.trend].compactMap { $0 } } + [plan.goalWeight]
+        var values = trend.flatMap { [$0.raw, $0.trend].compactMap { $0 } }
+        // The goal only stretches the axis while its line is shown.
+        if showGoal { values.append(plan.goalWeight) }
         let lo = (values.min() ?? 0) - 2
         let hi = (values.max() ?? 300) + 2
         return lo...hi
