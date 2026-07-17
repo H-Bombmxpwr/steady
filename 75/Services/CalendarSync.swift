@@ -38,7 +38,7 @@ enum CalendarSync {
             let event = EKEvent(eventStore: store)
             event.calendar = calendar
             event.title = "Workout: \(entry.name)"
-            event.notes = "Planned in 75 — \(entry.minutes) min"
+            event.notes = "Planned in Steady — \(entry.minutes) min"
             event.startDate = start
             event.endDate = start.addingTimeInterval(TimeInterval(entry.minutes * 60))
             event.addRecurrenceRule(EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, end: nil))

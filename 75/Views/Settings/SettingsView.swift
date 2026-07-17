@@ -39,6 +39,7 @@ struct SettingsView: View {
 
     // Alternate app icon (palette name)
     @AppStorage("ui.appIcon") private var appIconChoice = ThemePalette.emerald.rawValue
+    @State private var iconMessage: String?
 
     // Lab-aware coaching
     @AppStorage("labs.enabled") private var labsEnabled = false
@@ -341,7 +342,10 @@ struct SettingsView: View {
                             Button {
                                 // Emerald is the primary icon — pass nil.
                                 UIApplication.shared.setAlternateIconName(
-                                    p == .emerald ? nil : "Icon-\(p.label)")
+                                    p == .emerald ? nil : "Icon-\(p.label)") { error in
+                                    iconMessage = error == nil
+                                        ? nil : "Couldn't switch the icon — \(error!.localizedDescription)"
+                                }
                                 appIconChoice = p.rawValue
                             } label: {
                                 Circle()
@@ -355,6 +359,9 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.borderless)
                         }
+                    }
+                    if let iconMessage {
+                        Text(iconMessage).font(.footnote).foregroundStyle(.secondary)
                     }
                     Toggle("Glass tab bar", isOn: $glassBar)
                     Toggle("Live Activity", isOn: $liveActivity)

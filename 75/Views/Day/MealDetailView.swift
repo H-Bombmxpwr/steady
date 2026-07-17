@@ -10,8 +10,14 @@ struct MealDetailView: View {
     let label: String
     let icon: String
 
+    @Environment(\.modelContext) private var context
     @State private var inspectedFood: FoodLog?
     @State private var confirmDeleteMeal = false
+
+    // "Save as Meal" — name prompt, then a reusable snapshot
+    @State private var showSavePrompt = false
+    @State private var saveName = ""
+    @State private var savedToast = false
 
     private var foods: [FoodLog] { day.foods(for: meal) }
     private var calories: Int { foods.reduce(0) { $0 + $1.calories } }
@@ -62,6 +68,21 @@ struct MealDetailView: View {
             } footer: {
                 Text("Tap a food for its full nutrition · swipe to remove it.")
             }
+            if !foods.isEmpty {
+                Section {
+                    Button {
+                        saveName = ""
+                        showSavePrompt = true
+                    } label: {
+                        Label(savedToast ? "Saved — find it in Add Food" : "Save as Meal",
+                              systemImage: savedToast ? "checkmark.circle.fill" : "bookmark.fill")
+                            .foregroundStyle(savedToast ? .green : Theme.accent)
+                    }
+                    .disabled(savedToast)
+                } footer: {
+                    Text("Eat this combo often? Save it once and re-log the whole thing with one tap next time.")
+                }
+            }
             Section {
                 Button(role: .destructive) {
                     confirmDeleteMeal = true
@@ -95,6 +116,29 @@ struct MealDetailView: View {
             Text("Removes everything logged under \(label) for this day.")
         }
         .sheet(item: $inspectedFood) { FoodNutritionSheet(food: $0) }
+        .alert("Save as Meal", isPresented: $showSavePrompt) {
+            TextField("Name (e.g. My usual breakfast)", text: $saveName)
+            Button("Save") { saveMeal() }
+                .disabled(saveName.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saves these \(foods.count) item\(foods.count == 1 ? "" : "s") (\(calories) cal) for one-tap logging from Add Food.")
+        }
+    }
+
+    /// Snapshot this meal's foods into a reusable SavedMeal.
+    private func saveMeal() {
+        let trimmed = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let saved = SavedMeal(name: trimmed)
+        for (i, f) in foods.enumerated() {
+            saved.items.append(SavedMealItem(food: f, orderIndex: i))
+        }
+        context.insert(saved)
+        try? context.save()
+        savedToast = true
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { savedToast = false }
     }
 
     private func subtitle(_ f: FoodLog) -> String {

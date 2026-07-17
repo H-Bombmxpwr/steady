@@ -11,6 +11,7 @@ struct FoodSearchView: View {
 
     @State private var meal: Meal
     @State private var quickFoods: [FoodLog] = []
+    @Query(sort: \SavedMeal.createdAt, order: .reverse) private var savedMeals: [SavedMeal]
     @State private var query = ""
     @State private var results: [FoodItem] = []
     @State private var searching = false
@@ -80,31 +81,63 @@ struct FoodSearchView: View {
             }
 
             if query.isEmpty {
-                // ===== Headline path: Gemini
+                // ===== Headline paths: describe it or shoot it — equal billing
                 Section {
                     Button { showDescribe = true } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: "sparkles")
-                                .font(.title2.bold())
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("Describe Your Meal")
-                                    .font(.title3.bold())
-                                Text("Type or dictate what you ate — get every item with full nutrition")
-                                    .font(.caption)
-                                    .opacity(0.9)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.bold())
-                                .opacity(0.7)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.vertical, 14)
+                        headlineLabel(icon: "sparkles",
+                                      title: "Describe Your Meal",
+                                      subtitle: "Type or dictate what you ate — get every item with full nutrition")
                     }
                     .listRowBackground(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(Theme.gradient)
                     )
+                }
+                Section {
+                    Button { showFoodCamera = true } label: {
+                        headlineLabel(icon: "camera.viewfinder",
+                                      title: "Photo of Food",
+                                      subtitle: "Point at the plate — it's identified and estimated",
+                                      busy: recognizing)
+                    }
+                    .listRowBackground(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(LinearGradient(colors: [Theme.foodTint, Theme.photoTint],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                    )
+                }
+
+                // ===== Saved meals: whole combos, one tap
+                if !savedMeals.isEmpty {
+                    Section {
+                        ForEach(savedMeals) { saved in
+                            Button {
+                                logSavedMeal(saved)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(saved.name).lineLimit(1).foregroundStyle(.primary)
+                                        Text("\(saved.items.count) item\(saved.items.count == 1 ? "" : "s") · \(saved.totalCalories) cal · \(saved.totalProtein) g protein")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundStyle(Theme.accent)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                        .onDelete { idx in
+                            idx.map { savedMeals[$0] }.forEach { context.delete($0) }
+                            try? context.save()
+                        }
+                    } header: {
+                        SectionHeader(icon: "bookmark.fill", title: "Saved Meals", tint: Theme.accent)
+                    } footer: {
+                        Text("Whole meals you saved — tap to log every item at once. Save one from any meal's screen; swipe here to remove.")
+                    }
                 }
 
                 // ===== Quick log: starred foods first, then recent ones
@@ -147,12 +180,6 @@ struct FoodSearchView: View {
 
                 // ===== Smaller fallbacks
                 Section {
-                    Button { showFoodCamera = true } label: {
-                        HStack {
-                            Label("Photo of Food", systemImage: "camera.viewfinder")
-                            if recognizing { Spacer(); ProgressView() }
-                        }
-                    }
                     Button { showScanner = true } label: {
                         Label("Scan Barcode", systemImage: "barcode.viewfinder")
                     }
@@ -168,7 +195,7 @@ struct FoodSearchView: View {
                     SectionHeader(icon: "tray.full.fill", title: "Other ways to log")
                 } footer: {
                     Text("""
-                    Photos and meal descriptions are estimated automatically; search covers ~3M crowd-sourced products (Open Food Facts). No internet? Custom Food takes manual numbers.
+                    Search covers ~3M crowd-sourced products (Open Food Facts). No internet? Custom Food takes manual numbers.
 
                     Food colors are calorie density, Noom-style: 🟢 green = under 1 cal per gram (eat freely) · 🟠 orange = 1–2.4 (moderate) · 🔴 red = over 2.4 (calorie-dense — small portions add up fast).
                     """)
@@ -300,6 +327,33 @@ struct FoodSearchView: View {
         day.addFood(log, meal: meal)
     }
 
+    /// Shared look for the two headline buttons so describing and shooting
+    /// a meal carry equal weight.
+    private func headlineLabel(icon: String, title: String, subtitle: String,
+                               busy: Bool = false) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.title2.bold())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.title3.bold())
+                Text(subtitle)
+                    .font(.caption)
+                    .opacity(0.9)
+            }
+            Spacer()
+            if busy {
+                ProgressView().tint(.white)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.bold())
+                    .opacity(0.7)
+            }
+        }
+        .foregroundStyle(.white)
+        .padding(.vertical, 14)
+    }
+
     // MARK: Quick log (favorites + recents)
 
     /// Starred foods first, then the most recent distinct foods, 8 total.
@@ -339,6 +393,13 @@ struct FoodSearchView: View {
         }
         try? context.save()
         loadQuickFoods()
+    }
+
+    /// Logs every item of a saved meal into the selected meal.
+    private func logSavedMeal(_ saved: SavedMeal) {
+        saved.orderedItems.forEach { add($0.makeLog()) }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        dismiss()
     }
 
     /// Logs a fresh copy of a previous food into the selected meal.

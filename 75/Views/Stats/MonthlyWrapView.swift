@@ -85,8 +85,8 @@ struct MonthlyWrapView: View {
         let s = MonthSummary(plan: plan, profile: profile, month: month)
         return VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 10) {
-                Text("75")
-                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                Image(systemName: "chart.line.downtrend.xyaxis")
+                    .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 38, height: 38)
                     .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -133,7 +133,7 @@ struct MonthlyWrapView: View {
                 }
             }
 
-            Text("Made with 75")
+            Text("Made with Steady")
                 .font(.caption2.bold())
                 .opacity(0.7)
         }

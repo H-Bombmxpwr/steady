@@ -193,7 +193,8 @@ struct DayDetailView: View {
                         get: { day.weight },
                         set: { day.weight = $0 }
                     ),
-                    format: .number
+                    // Tenths matter on a scale: show 183.4, not 183.
+                    format: .number.precision(.fractionLength(0...1))
                 )
                 .keyboardType(.decimalPad)
                 .focused($fieldFocused)

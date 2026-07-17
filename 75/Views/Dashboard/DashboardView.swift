@@ -227,10 +227,11 @@ struct DashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    // Brand header — the "75" monogram is the app's wordmark.
+                    // Brand header — the Steady trendline mark and a greeting
+                    // that actually knows what time it is and how it's going.
                     HStack(spacing: 12) {
-                        Text("75")
-                            .font(.system(size: 22, weight: .heavy, design: .rounded))
+                        Image(systemName: "chart.line.downtrend.xyaxis")
+                            .font(.system(size: 21, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 46, height: 46)
                             .background(
@@ -239,15 +240,19 @@ struct DashboardView: View {
                             )
                             .shadow(color: Theme.accent.opacity(0.4), radius: 8, y: 3)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Day \(dayNumber)")
+                            Text(greeting)
                                 .font(.system(.title2, design: .rounded).bold())
-                            Text(today.formatted(.dateTime.weekday(.wide).month().day()))
+                            Text("Day \(dayNumber) · \(today.formatted(.dateTime.weekday(.wide).month().day()))")
                                 .font(.subheadline)
                                 .foregroundStyle(Theme.textDim)
                         }
                         Spacer()
                     }
-                    .padding(.bottom, 2)
+
+                    Text(encouragement)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textDim)
+                        .padding(.bottom, 2)
 
                     WeightCard(plan: plan)
 
@@ -318,6 +323,40 @@ struct DashboardView: View {
         }
     }
 
+    private var greeting: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default: return "Up late"
+        }
+    }
+
+    /// One human line under the header, built from the actual numbers and
+    /// rotated daily so it doesn't wear out its welcome.
+    private var encouragement: String {
+        let stats = CalorieEngine.streakStats(plan: plan, targets: targets)
+        let trendDelta = CalorieEngine.trendWeight(plan: plan) - plan.startingWeight
+
+        var lines: [String] = []
+        if trendDelta <= -1 {
+            lines.append("Down \(abs(trendDelta).formatted(.number.precision(.fractionLength(1)))) lb from day one. That didn't happen by accident.")
+            lines.append("The trend is \(abs(trendDelta).formatted(.number.precision(.fractionLength(1)))) lb lighter than when you started. Keep feeding it.")
+        }
+        if stats.current >= 3 {
+            lines.append("\(stats.current) days straight of showing up. Streaks are just proof you're someone who does this.")
+        }
+        if stats.consistency >= 0.7, stats.daysTracked >= 14 {
+            lines.append("You've shown up \(Int(stats.consistency * 100))% of days. That's the whole secret, honestly.")
+        }
+        lines.append("Log the day you actually had, not the one you planned. The math works either way.")
+        lines.append("Nobody's watching. Show up anyway.")
+        lines.append("A boring day on plan beats a heroic Monday.")
+
+        let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
+        return lines[dayOfYear % lines.count]
+    }
+
     /// Fire confetti once per newly earned milestone (ids remembered in
     /// UserDefaults so a badge only ever celebrates once).
     private func celebrateNewMilestones() {
@@ -377,7 +416,7 @@ private struct WeightCard: View {
                         .foregroundStyle(Theme.warn.opacity(0.6))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
                         .annotation(position: .bottom, alignment: .leading) {
-                            Text("goal \(String(format: "%.0f", plan.goalWeight))")
+                            Text("goal \(plan.goalWeight.formatted(.number.precision(.fractionLength(0...1))))")
                                 .font(.caption2)
                                 .foregroundStyle(Theme.warn)
                         }
@@ -542,7 +581,7 @@ private struct ProjectionCard: View {
     var body: some View {
         Card(title: "Goal", icon: "target", tint: Theme.accent) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(String(format: "%.0f lb", plan.goalWeight))
+                Text("\(plan.goalWeight.formatted(.number.precision(.fractionLength(0...1)))) lb")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                 if let projected = plan.projectedGoalDate {
                     Text("est. \(projected.formatted(.dateTime.month(.abbreviated).day()))")

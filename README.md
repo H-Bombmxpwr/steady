@@ -1,8 +1,10 @@
-# 75 — Personal Fitness & Weight-Loss Tracker (SwiftUI + SwiftData)
+# Steady — Personal Fitness & Weight-Loss Tracker (SwiftUI + SwiftData)
 
 A private, local-first iOS app for losing weight through proven methods. Originally
-a 75 Hard tracker, now a general fitness tracker built around an adaptive calorie
-budget. Product scope and work log live in `.scratch/fitness-tracker/`.
+a 75 Hard tracker (the repo/project is still named `75`; bundle ID and App Group
+are unchanged so data persists), now **Steady**: a general fitness tracker built
+around an adaptive calorie budget, branded with a descending-trendline mark.
+Product scope and work log live in `.scratch/fitness-tracker/`.
 
 ## Features
 
@@ -28,11 +30,13 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   full panel. Five ways in, **Gemini-first**: **describe your meal** is the
   big gradient button (type or **dictate** plain text — Gemini itemizes every
   component separately, never merging ingredients, with a per-item portion
-  assumption; every number is editable before logging), then **photo of food**
-  (Gemini vision), **barcode scan** (crosshair reticle, only reads inside the
-  frame), **database search** (live Open Food Facts, ~3M products, US-market
-  first, re-ranked by relevance, outages retried + cached), and manual custom
-  entry — plus a **Quick Log** shelf of your starred and recent foods for one-tap re-logging. Every logged food carries a **full nutrition panel** — carbs, fats
+  assumption; every number is editable before logging), with **photo of food**
+  (Gemini vision) right below it at equal billing, then **Saved Meals** (name
+  any meal from its screen — "my usual breakfast" — and re-log the whole
+  thing in one tap), a **Quick Log** shelf of starred and recent foods,
+  **barcode scan** (crosshair reticle, only reads inside the frame),
+  **database search** (live Open Food Facts, ~3M products, US-market first,
+  re-ranked by relevance, outages retried + cached), and manual custom entry. Every logged food carries a **full nutrition panel** — carbs, fats
   (sat/trans), cholesterol, sodium, fiber, sugars (incl. added), potassium,
   calcium, iron — from Gemini or OFF. A **Nutrition Report** grades the day
   Noom-style: macro split, FDA "keep under" limits (bars go red when blown),
@@ -78,7 +82,9 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   water, weight, a workout, a photo…). Prefer accountability? Switch to a
   **strict streak** (requires meeting the day's goals) at onboarding or in
   Settings → Goal. The widget streak and streak-at-risk reminder follow the
-  same style.
+  same style. The streak is recomputed from the data every time, so
+  **backfilling a missed day** (Calendar → that day → log anything)
+  reconnects it retroactively.
 
 ### Stats
 - Dedicated **Stats tab**, split into **Body** and **Food** sections, each with
@@ -147,10 +153,15 @@ budget. Product scope and work log live in `.scratch/fitness-tracker/`.
   app's Documents, invisible to the Photos app unless you save/share them.
 - **Photo timelapse**: builds an MP4 from your progress photos on-device.
 - **Themes & brand**: five accent palettes + dark/light/system mode — applies
-  live, everywhere, no restart. A "75" gradient monogram heads the dashboard;
-  every screen carries a subtle accent wash; cards have per-domain icon chips
-  and tints (water sky, food tangerine, weight violet, alcohol amber…).
-  **Matching app icons**: one per accent palette, switchable in Settings.
+  live, everywhere, no restart. The dashboard opens with the Steady trendline
+  mark, a time-of-day greeting, and a daily-rotating encouragement line built
+  from your actual numbers; every screen carries a subtle accent wash; cards
+  have per-domain icon chips and tints (water sky, food tangerine, weight
+  violet, alcohol amber…). **Matching app icons**: the descending-trendline
+  mark on each accent gradient (primary has dark + tinted variants), switchable
+  in Settings — alternates live in the asset catalog
+  (`ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES`), which generates the
+  iPhone *and* iPad plist entries the old loose-PNG setup was missing.
   Floating **glass tab bar** (on by default) with a gradient pill you can tap,
   swipe pages under, or grab and slide across the tabs — pages follow live
   (Settings → Appearance toggles back to the classic bar).

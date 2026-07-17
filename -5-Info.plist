@@ -6,47 +6,6 @@
 	<array>
 		<dict/>
 	</array>
-	<key>CFBundleIcons</key>
-	<dict>
-		<key>CFBundleAlternateIcons</key>
-		<dict>
-			<key>Icon-Emerald</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>Icon-Emerald</string>
-				</array>
-			</dict>
-			<key>Icon-Ocean</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>Icon-Ocean</string>
-				</array>
-			</dict>
-			<key>Icon-Rose</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>Icon-Rose</string>
-				</array>
-			</dict>
-			<key>Icon-Sunset</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>Icon-Sunset</string>
-				</array>
-			</dict>
-			<key>Icon-Violet</key>
-			<dict>
-				<key>CFBundleIconFiles</key>
-				<array>
-					<string>Icon-Violet</string>
-				</array>
-			</dict>
-		</dict>
-	</dict>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
