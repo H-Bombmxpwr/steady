@@ -29,7 +29,7 @@ struct FoodSearchView: View {
 
     // Photo-of-food (Gemini vision)
     @State private var showFoodCamera = false
-    @State private var recognizing = false
+    @State private var capturedPlate: CapturedPlate?
 
     init(day: DayLog, meal: Meal = .suggested()) {
         self.day = day
@@ -97,8 +97,7 @@ struct FoodSearchView: View {
                     Button { showFoodCamera = true } label: {
                         headlineLabel(icon: "camera.viewfinder",
                                       title: "Photo of Food",
-                                      subtitle: "Point at the plate — it's identified and estimated",
-                                      busy: recognizing)
+                                      subtitle: "Point at the plate — every item identified and estimated")
                     }
                     .listRowBackground(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -303,17 +302,17 @@ struct FoodSearchView: View {
         .sheet(isPresented: $showFoodCamera) {
             CameraCaptureView { image in
                 showFoodCamera = false
-                Task {
-                    recognizing = true
-                    do {
-                        let est = try await AIFoodEstimator.estimate(photo: image)
-                        customRequest = CustomFoodRequest(estimate: est)
-                    } catch {
-                        scanError = error.localizedDescription
-                    }
-                    recognizing = false
-                }
+                capturedPlate = CapturedPlate(image: image)
             }
+        }
+        .sheet(item: $capturedPlate) { plate in
+            // Photo goes through the same itemized review as Describe —
+            // per-component items, portion steppers, editable numbers.
+            DescribeMealView(mealLabel: meal.label, photo: plate.image) { logs in
+                logs.forEach { add($0) }
+                dismiss()
+            }
+            .themedRoot()
         }
         .alert("Product not found", isPresented: Binding(get: { scanError != nil },
                                                          set: { if !$0 { scanError = nil } })) {
@@ -487,16 +486,12 @@ private struct CustomFoodRequest: Identifiable {
         self.autoEstimate = autoEstimate
     }
 
-    /// Pre-filled from a photo recognition result.
-    init(estimate: AIFoodEstimator.Estimate) {
-        name = estimate.name
-        calories = estimate.calories
-        protein = estimate.proteinGrams
-        grams = estimate.grams
-        facts = estimate.facts
-        density = estimate.density
-        assumed = estimate.assumed
-    }
+}
+
+/// Identifiable wrapper so the photo-review sheet always sees a fresh image.
+private struct CapturedPlate: Identifiable {
+    let id = UUID()
+    let image: UIImage
 }
 
 // MARK: - Portion picker
@@ -661,6 +656,12 @@ private struct CustomFoodSheet: View {
     @State private var estimateError: String?
     @State private var estimated = false
     @State private var assumedText = ""
+    /// Whether the estimate came from a live web lookup (nil until one runs).
+    @State private var groundedResult: Bool?
+    /// Portion multiplier vs the assumed serving — stepping it rescales
+    /// calories, protein, grams, and the full panel in place (by ratio, so
+    /// it composes with manual edits).
+    @State private var servings = 1.0
 
     /// `autoEstimate` runs the AI fill immediately — used when a search had
     /// no Open Food Facts match and the user asked AI to take over. Photo
@@ -697,9 +698,15 @@ private struct CustomFoodSheet: View {
                         Text(err).font(.footnote).foregroundStyle(.red)
                     }
                     if !assumedText.isEmpty {
-                        Text("Assumed: \(assumedText)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        HStack(alignment: .top) {
+                            Text("Assumed: \(assumedText)")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if let g = groundedResult {
+                                GroundingBadge(grounded: g)
+                            }
+                        }
                     }
                 } footer: {
                     Text(AIFoodEstimator.apiKey.isEmpty
@@ -707,6 +714,24 @@ private struct CustomFoodSheet: View {
                          : estimated
                             ? "Estimated for one typical serving — if that's not what you meant, refine the name and estimate again."
                             : "Estimates one typical serving: calories, protein, fats, sodium, and more.")
+                }
+                if calories > 0 {
+                    Stepper(value: $servings, in: 0.25...10, step: 0.25) {
+                        HStack(spacing: 6) {
+                            Text("Portion")
+                            Spacer()
+                            Text("\(servings.formatted())×\(grams.map { " · \(Int($0)) g" } ?? "")")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .onChange(of: servings) { old, new in
+                        guard old > 0 else { return }
+                        let f = new / old
+                        calories = Int((Double(calories) * f).rounded())
+                        if !proteinUnknown { protein = Int((Double(protein) * f).rounded()) }
+                        grams = grams.map { $0 * f }
+                        facts = facts.scaled(by: f)
+                    }
                 }
                 HStack {
                     Text("Calories")
@@ -775,7 +800,9 @@ private struct CustomFoodSheet: View {
             facts = result.facts
             density = result.density
             estimated = true
+            servings = 1
             assumedText = result.assumed
+            groundedResult = result.grounded
         } catch {
             estimateError = error.localizedDescription
         }

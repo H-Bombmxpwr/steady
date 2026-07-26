@@ -37,6 +37,20 @@ struct NutritionFactsRows: View {
     }
 }
 
+/// Where an AI estimate's numbers came from: a live web lookup (search
+/// grounding) or model memory alone — grounding can silently fall back, and
+/// the difference is worth a glance before trusting a number.
+struct GroundingBadge: View {
+    let grounded: Bool
+
+    var body: some View {
+        Label(grounded ? "Looked up" : "Best guess",
+              systemImage: grounded ? "checkmark.seal.fill" : "wand.and.stars")
+            .font(.caption2.bold())
+            .foregroundStyle(grounded ? Color.green : Color.orange)
+    }
+}
+
 enum Nutrient {
     static func format(_ value: Double, unit: String) -> String {
         let shown: String
@@ -58,6 +72,10 @@ struct FoodNutritionSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
     @Bindable var food: FoodLog
+
+    /// Portion multiplier vs what was logged — stepping it rescales the
+    /// whole row (by ratio, so it composes with manual edits).
+    @State private var servings = 1.0
 
     var body: some View {
         NavigationStack {
@@ -85,6 +103,24 @@ struct FoodNutritionSheet: View {
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 90)
+                    }
+                    if food.calories > 0 {
+                        Stepper(value: $servings, in: 0.25...10, step: 0.25) {
+                            HStack {
+                                Text("Portion")
+                                Spacer()
+                                Text("\(servings.formatted())× logged")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .onChange(of: servings) { old, new in
+                            guard old > 0 else { return }
+                            let f = new / old
+                            food.calories = Int((Double(food.calories) * f).rounded())
+                            food.proteinGrams = Int((Double(food.proteinGrams) * f).rounded())
+                            food.grams = food.grams.map { $0 * f }
+                            food.facts = food.facts.scaled(by: f)
+                        }
                     }
                 }
                 Section {

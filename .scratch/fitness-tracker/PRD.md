@@ -2,7 +2,9 @@
 
 Status: agreed scope (2026-07-07); all phases 1–8 shipped, including the
 exercise DB + templates (issue 09) and the 2026-07-10 polish pass (issue 10).
-App keeps the name **75** for now.
+App keeps the name **75** for now. Latest: 2026-07-26 batch (issue 29) —
+portion steppers on every food path, grounded-lookup badge on AI estimates,
+photo meals itemized like described meals, higher-accuracy model toggle.
 
 ## Vision
 
@@ -63,8 +65,10 @@ invisible to the Photos app unless explicitly saved).
   (no server; auto-syncs wherever their calendar does).
 
 ### Stretch (later phase)
-- **Photo-of-food logging**: on-device CoreML classifier suggests the dish → user
-  confirms + sets portion → logged from USDA data. No cloud upload.
+- **Photo-of-food logging** — shipped, but not as the on-device CoreML classifier
+  planned here: Gemini vision reads the plate and (since issue 29) itemizes it
+  into components like Describe Meal. Photos are downscaled and sent to Google;
+  only food photos, never progress photos.
 
 ## Explicitly out of scope (for now)
 Social features, AI chat coaching, meal planning/recipes, Apple Watch app,

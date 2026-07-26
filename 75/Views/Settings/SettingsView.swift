@@ -33,6 +33,7 @@ struct SettingsView: View {
 
     // AI assist
     @AppStorage(AIFoodEstimator.apiKeyKey) private var geminiKey = ""
+    @AppStorage(AIFoodEstimator.accurateModelKey) private var accurateModel = false
 
     // Live Activity (Lock Screen / Dynamic Island)
     @AppStorage(LiveActivityManager.enabledKey) private var liveActivity = false
@@ -299,13 +300,13 @@ struct SettingsView: View {
                         Nutrition estimates in this app are powered by Google's Gemini model. It's behind:
 
                         • Describe Your Meal — itemizing what you type or dictate
-                        • Photo of Food — reading a plate
+                        • Photo of Food — reading a plate into separate items
                         • Estimate Nutrition on custom foods and "Not listed?" search results
                         • Filling in protein when a database entry is missing it
                         • What Should I Eat? — meal ideas that fit your remaining budget
                         • Summarize My Day — the end-of-day review and swaps
 
-                        Only food descriptions and food photos are sent to Google. Progress photos, weight, and everything else never leave the device. Estimates are good, not perfect — every number stays editable after logging.
+                        Only food descriptions and food photos are sent to Google. Progress photos, weight, and everything else never leave the device. Estimates are good, not perfect — every number stays editable after logging, and a green "Looked up" badge marks numbers checked against real published data (vs an orange "Best guess").
                         """)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -315,10 +316,11 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .focused($fieldFocused)
+                    Toggle("Higher accuracy (slower)", isOn: $accurateModel)
                 } header: {
                     Text("About Estimates")
                 } footer: {
-                    Text("A key is already bundled with the app — paste your own from aistudio.google.com to override it.")
+                    Text("A key is already bundled with the app — paste your own from aistudio.google.com to override it. Higher accuracy switches estimates to the full Gemini Flash model: noticeably better numbers on complex meals, but a response takes several seconds instead of about one.")
                 }
 
                 // --- Appearance

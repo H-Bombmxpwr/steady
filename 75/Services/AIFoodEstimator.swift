@@ -7,9 +7,16 @@ import UIKit
 /// Estimate, and only the food description goes out.
 enum AIFoodEstimator {
     static let apiKeyKey = "ai.gemini.key"
-    // Flash-Lite: no thinking pass, so answers come back in ~1 s instead of
-    // 10+; plenty for a nutrition lookup, and a higher free-tier rate limit.
-    private static let model = "gemini-flash-lite-latest"
+    /// Settings → About Estimates "Higher accuracy" toggle. Default is
+    /// Flash-Lite (no thinking pass — answers in ~1 s, higher free-tier rate
+    /// limit); accurate mode trades that speed for full Flash's better
+    /// numbers on complex meals.
+    static let accurateModelKey = "ai.model.accurate"
+
+    private static var model: String {
+        UserDefaults.standard.bool(forKey: accurateModelKey)
+            ? "gemini-flash-latest" : "gemini-flash-lite-latest"
+    }
 
     /// A key entered in Settings wins; otherwise the one bundled from
     /// Resources/Secrets.plist (git-ignored, so it never leaves this machine).
@@ -34,6 +41,7 @@ enum AIFoodEstimator {
         let facts: NutritionFacts
         let density: String?       // computed locally from kcal ÷ grams
         let assumed: String        // what food + serving the model based this on
+        let grounded: Bool         // numbers came from a live web lookup
     }
 
     struct ProteinEstimate {
@@ -56,11 +64,23 @@ enum AIFoodEstimator {
             guard let grams, grams > 0, calories > 0 else { return }
             density = FoodDensity(caloriesPer100g: Double(calories) / grams * 100)?.rawValue
         }
+
+        /// The same food at a different portion size — every stat scales
+        /// linearly. Density is per-gram, so it stays put.
+        func scaled(by factor: Double) -> MealItem {
+            var copy = self
+            copy.calories = Int((Double(calories) * factor).rounded())
+            copy.proteinGrams = Int((Double(proteinGrams) * factor).rounded())
+            copy.grams = grams.map { $0 * factor }
+            copy.facts = facts.scaled(by: factor)
+            return copy
+        }
     }
 
     struct MealBreakdown {
         let items: [MealItem]
         let assumed: String
+        let grounded: Bool         // numbers came from a live web lookup
     }
 
     /// The full nutrition panel every food estimate asks for. Density is NOT
@@ -150,8 +170,50 @@ enum AIFoodEstimator {
         \(nutritionSchema)}], \
         "assumed": "<one short sentence: overall assumptions about the meal>"}
         """
-        let payload: Payload = try await generate(prompt: prompt, grounded: true)
-        let items = (payload.items ?? []).compactMap { p -> MealItem? in
+        let (payload, grounded): (Payload, Bool) =
+            try await generateGrounded(parts: [["text": prompt]])
+        let items = mealItems(from: payload.items ?? [])
+        guard !items.isEmpty else { throw EstimatorError.badResponse }
+        return MealBreakdown(items: items, assumed: payload.assumed ?? "", grounded: grounded)
+    }
+
+    /// "Photo of Food" — same itemized breakdown as the text path, from a
+    /// picture of the plate plus whatever notes the photo can't show
+    /// (brand, cooking oil, portion context).
+    static func mealBreakdown(photo: UIImage, notes: String = "") async throws -> MealBreakdown {
+        struct Payload: Decodable {
+            let items: [FoodPayload]?
+            let assumed: String?
+        }
+        guard let jpeg = downscaledJPEG(photo) else { throw EstimatorError.badResponse }
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let notesLine = trimmedNotes.isEmpty ? "" : "\nThe user adds: \"\(trimmedNotes)\"."
+        let prompt = """
+        Identify every distinct food in this photo and estimate the full \
+        nutrition of each from the portions shown. \(nutritionGuidance)
+        List EVERY distinct component as its own item — never merge two \
+        foods into one line; sauces, dressings, sides, and drinks each get \
+        their own item.\(notesLine)
+        Respond with only JSON:
+        {"items": [{"name": "<short item name>", \
+        "assumed": "<short: what you identified and the portion you assumed>", \
+        \(nutritionSchema)}], \
+        "assumed": "<one short sentence: overall assumptions about the plate>"}
+        If there is no food in the photo, use {"items": []}.
+        """
+        let parts: [[String: Any]] = [
+            ["text": prompt],
+            ["inline_data": ["mime_type": "image/jpeg",
+                             "data": jpeg.base64EncodedString()]]
+        ]
+        let (payload, grounded): (Payload, Bool) = try await generateGrounded(parts: parts)
+        let items = mealItems(from: payload.items ?? [])
+        guard !items.isEmpty else { throw EstimatorError.badResponse }
+        return MealBreakdown(items: items, assumed: payload.assumed ?? "", grounded: grounded)
+    }
+
+    private static func mealItems(from payloads: [FoodPayload]) -> [MealItem] {
+        payloads.compactMap { p -> MealItem? in
             guard let name = p.name, !name.isEmpty, let calories = p.calories else { return nil }
             return MealItem(name: name, calories: calories,
                             proteinGrams: Int((p.protein_g ?? 0).rounded()),
@@ -160,8 +222,6 @@ enum AIFoodEstimator {
                             density: p.density,
                             assumed: p.assumed)
         }
-        guard !items.isEmpty else { throw EstimatorError.badResponse }
-        return MealBreakdown(items: items, assumed: payload.assumed ?? "")
     }
 
     struct DayReview {
@@ -460,7 +520,8 @@ enum AIFoodEstimator {
         {"food": {"name": "<short food name>", \(nutritionSchema)}, \
         "assumed": "<one short sentence: exactly what food and serving size you assumed>"}
         """
-        let payload: Payload = try await generate(prompt: prompt, grounded: true)
+        let (payload, grounded): (Payload, Bool) =
+            try await generateGrounded(parts: [["text": prompt]])
         guard let p = payload.food, let calories = p.calories else {
             throw EstimatorError.badResponse
         }
@@ -470,7 +531,8 @@ enum AIFoodEstimator {
                         grams: p.portion_grams,
                         facts: p.facts,
                         density: p.density,
-                        assumed: payload.assumed ?? "")
+                        assumed: payload.assumed ?? "",
+                        grounded: grounded)
     }
 
     /// Protein per 100 g — auto-fills Open Food Facts results that are
@@ -493,42 +555,6 @@ enum AIFoodEstimator {
         return ProteinEstimate(gramsPer100g: protein, assumed: payload.assumed ?? "")
     }
 
-    /// Identify a food photo and estimate its nutrition (Gemini vision).
-    /// The image is downscaled and sent with the request — worth knowing,
-    /// but this is a plate of food, not a progress photo.
-    static func estimate(photo: UIImage) async throws -> Estimate {
-        struct Payload: Decodable {
-            let food: FoodPayload?
-            let assumed: String?
-        }
-        guard let jpeg = downscaledJPEG(photo) else { throw EstimatorError.badResponse }
-        let prompt = """
-        Identify the food in this photo and estimate the full nutrition for \
-        the portion shown. \(nutritionGuidance)
-        Respond with only JSON:
-        {"food": {"name": "<short food name>", \(nutritionSchema)}, \
-        "assumed": "<one short sentence: what you identified and the portion size you assumed>"}
-        If there is no food in the photo, use {"food": null}.
-        """
-        let parts: [[String: Any]] = [
-            ["text": prompt],
-            ["inline_data": ["mime_type": "image/jpeg",
-                             "data": jpeg.base64EncodedString()]]
-        ]
-        let payload: Payload = try await generate(parts: parts, grounded: true)
-        guard let p = payload.food, let name = p.name, !name.isEmpty,
-              let calories = p.calories else {
-            throw EstimatorError.badResponse
-        }
-        return Estimate(name: name,
-                        calories: calories,
-                        proteinGrams: Int((p.protein_g ?? 0).rounded()),
-                        grams: p.portion_grams,
-                        facts: p.facts,
-                        density: p.density,
-                        assumed: payload.assumed ?? "")
-    }
-
     private static func downscaledJPEG(_ image: UIImage, maxDimension: CGFloat = 768) -> Data? {
         let scale = min(1, maxDimension / max(image.size.width, image.size.height))
         let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
@@ -538,22 +564,21 @@ enum AIFoodEstimator {
         return resized.jpegData(compressionQuality: 0.6)
     }
 
-    /// One Gemini call decoding the model's JSON reply into `T`. `grounded`
-    /// runs it with Google Search so nutrition comes from real sources
-    /// (restaurant pages, USDA) instead of memory; if the grounded attempt
-    /// fails (search quota, transport), it falls back to the plain call so
-    /// logging never breaks.
-    private static func generate<T: Decodable>(prompt: String, grounded: Bool = false) async throws -> T {
-        try await generate(parts: [["text": prompt]], grounded: grounded)
+    /// One plain Gemini call decoding the model's JSON reply into `T`.
+    private static func generate<T: Decodable>(prompt: String) async throws -> T {
+        try await performGenerate(parts: [["text": prompt]], grounded: false)
     }
 
-    private static func generate<T: Decodable>(parts: [[String: Any]], grounded: Bool = false) async throws -> T {
-        if grounded {
-            if let payload: T = try? await performGenerate(parts: parts, grounded: true) {
-                return payload
-            }
+    /// Grounded call: runs with Google Search so nutrition comes from real
+    /// sources (restaurant pages, USDA) instead of memory; if the grounded
+    /// attempt fails (search quota, transport), it falls back to the plain
+    /// call so logging never breaks. Reports which one actually answered so
+    /// the UI can badge "looked up" vs "best guess".
+    private static func generateGrounded<T: Decodable>(parts: [[String: Any]]) async throws -> (payload: T, grounded: Bool) {
+        if let payload: T = try? await performGenerate(parts: parts, grounded: true) {
+            return (payload, true)
         }
-        return try await performGenerate(parts: parts, grounded: false)
+        return (try await performGenerate(parts: parts, grounded: false), false)
     }
 
     private static func performGenerate<T: Decodable>(parts: [[String: Any]], grounded: Bool) async throws -> T {
@@ -562,7 +587,9 @@ enum AIFoodEstimator {
 
         var request = URLRequest(url: URL(string:
             "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!)
-        request.timeoutInterval = grounded ? 35 : 20
+        // Full Flash thinks before answering — give accurate mode more room.
+        let accurate = UserDefaults.standard.bool(forKey: accurateModelKey)
+        request.timeoutInterval = accurate ? 60 : (grounded ? 35 : 20)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(key, forHTTPHeaderField: "x-goog-api-key")

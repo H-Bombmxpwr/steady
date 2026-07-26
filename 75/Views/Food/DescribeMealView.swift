@@ -1,13 +1,17 @@
 import SwiftUI
+import UIKit
 import Speech
 import AVFoundation
 
 /// "Describe your meal" — type or dictate plain text ("two eggs, sourdough
 /// toast with butter, and an orange juice") and Gemini breaks it into items
 /// with calories, protein, and a calorie-density color. Review, prune, log.
+/// Pass a `photo` and the same flow reads the plate instead — the text field
+/// becomes optional notes for what the photo can't show.
 struct DescribeMealView: View {
     @Environment(\.dismiss) private var dismiss
     var mealLabel: String = "Today"
+    var photo: UIImage? = nil
     let onLog: ([FoodLog]) -> Void
 
     @StateObject private var speech = SpeechTranscriber()
@@ -16,21 +20,52 @@ struct DescribeMealView: View {
     @State private var building = false
     @State private var buildError: String?
     @State private var items: [AIFoodEstimator.MealItem] = []
+    /// Per-item portion multiplier (item id → ×). Items stay at the AI's
+    /// assumed portion as the baseline; display, totals, and logging all use
+    /// the scaled values, so a half-portion is two taps, not a rebuild.
+    @State private var multipliers: [UUID: Double] = [:]
     @State private var assumed = ""
+    /// Whether the estimate came from a live web lookup (nil until built).
+    @State private var grounded: Bool?
     @State private var editingItem: AIFoodEstimator.MealItem?
 
-    private var totalCalories: Int { items.reduce(0) { $0 + $1.calories } }
-    private var totalProtein: Int { items.reduce(0) { $0 + $1.proteinGrams } }
+    private func portion(of item: AIFoodEstimator.MealItem) -> Double {
+        multipliers[item.id] ?? 1
+    }
+
+    private var scaledItems: [AIFoodEstimator.MealItem] {
+        items.map { $0.scaled(by: portion(of: $0)) }
+    }
+
+    private var totalCalories: Int { scaledItems.reduce(0) { $0 + $1.calories } }
+    private var totalProtein: Int { scaledItems.reduce(0) { $0 + $1.proteinGrams } }
 
     var body: some View {
         NavigationStack {
             Form {
+                if let photo {
+                    Section {
+                        HStack {
+                            Spacer()
+                            Image(uiImage: photo)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(maxWidth: 240, maxHeight: 160)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            Spacer()
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets())
+                    }
+                }
                 Section {
                     TextEditor(text: $text)
-                        .frame(minHeight: 100)
+                        .frame(minHeight: photo == nil ? 100 : 60)
                         .overlay(alignment: .topLeading) {
                             if text.isEmpty {
-                                Text("What did you eat? Name the restaurant if you ate out.")
+                                Text(photo == nil
+                                     ? "What did you eat? Name the restaurant if you ate out."
+                                     : "Anything the photo can't show? Brand, cooking oil, what's in the cup…")
                                     .foregroundStyle(.tertiary)
                                     .padding(.top, 8)
                                     .allowsHitTesting(false)
@@ -57,7 +92,9 @@ struct DescribeMealView: View {
                         Text(msg).font(.caption).foregroundStyle(.red)
                     }
                 } footer: {
-                    Text("e.g. “two scrambled eggs, sourdough toast with butter, and an orange juice” — or “Chipotle chicken bowl with white rice, black beans, and guac”. Named restaurants and brands are looked up against their published nutrition.")
+                    Text(photo == nil
+                         ? "e.g. “two scrambled eggs, sourdough toast with butter, and an orange juice” — or “Chipotle chicken bowl with white rice, black beans, and guac”. Named restaurants and brands are looked up against their published nutrition."
+                         : "Notes are optional — the photo is read on its own, but a brand name or a hidden ingredient sharpens the numbers.")
                 }
 
                 Section {
@@ -65,11 +102,14 @@ struct DescribeMealView: View {
                         Task { await build() }
                     } label: {
                         HStack {
-                            Label(items.isEmpty ? "Build My Meal" : "Rebuild", systemImage: "sparkles")
+                            Label(photo == nil
+                                  ? (items.isEmpty ? "Build My Meal" : "Rebuild")
+                                  : (items.isEmpty ? "Read the Photo" : "Re-read with Notes"),
+                                  systemImage: "sparkles")
                             if building { Spacer(); ProgressView() }
                         }
                     }
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || building)
+                    .disabled((photo == nil && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || building)
                     if let err = buildError {
                         Text(err).font(.footnote).foregroundStyle(.red)
                     }
@@ -78,33 +118,49 @@ struct DescribeMealView: View {
                 if !items.isEmpty {
                     Section {
                         ForEach(items) { item in
-                            Button { editingItem = item } label: {
-                                HStack(alignment: .top, spacing: 8) {
-                                    Circle()
-                                        .fill(FoodDensity(rawValue: item.density ?? "")?.color ?? .secondary)
-                                        .frame(width: 9, height: 9)
-                                        .padding(.top, 5)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.name).lineLimit(2).foregroundStyle(.primary)
-                                        if let a = item.assumed, !a.isEmpty {
-                                            Text(a)
+                            let scaled = item.scaled(by: portion(of: item))
+                            VStack(spacing: 6) {
+                                Button { editingItem = scaled } label: {
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Circle()
+                                            .fill(FoodDensity(rawValue: item.density ?? "")?.color ?? .secondary)
+                                            .frame(width: 9, height: 9)
+                                            .padding(.top, 5)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(item.name).lineLimit(2).foregroundStyle(.primary)
+                                            if let a = item.assumed, !a.isEmpty {
+                                                Text(a)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        Spacer()
+                                        VStack(alignment: .trailing, spacing: 2) {
+                                            Text("\(scaled.calories) cal").foregroundStyle(.primary)
+                                            Text("\(scaled.proteinGrams) g protein")
                                                 .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                     }
-                                    Spacer()
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text("\(item.calories) cal").foregroundStyle(.primary)
-                                        Text("\(item.proteinGrams) g protein")
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                }
+                                Stepper(value: Binding(get: { portion(of: item) },
+                                                       set: { multipliers[item.id] = $0 }),
+                                        in: 0.25...5, step: 0.25) {
+                                    HStack(spacing: 6) {
+                                        Text("\(portion(of: item).formatted())× portion")
+                                        if let g = scaled.grams {
+                                            Text("\(Int(g)) g")
+                                                .foregroundStyle(.tertiary)
+                                        }
                                     }
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                                 }
                             }
                         }
                         .onDelete { idx in items.remove(atOffsets: idx) }
                         Button {
-                            onLog(items.map { FoodLog(name: $0.name,
+                            onLog(scaledItems.map { FoodLog(name: $0.name,
                                                       calories: $0.calories,
                                                       proteinGrams: $0.proteinGrams,
                                                       grams: $0.grams,
@@ -117,26 +173,37 @@ struct DescribeMealView: View {
                                 .bold()
                         }
                     } header: {
-                        Text("Your Meal")
+                        HStack {
+                            Text("Your Meal")
+                            Spacer()
+                            if let grounded {
+                                GroundingBadge(grounded: grounded)
+                            }
+                        }
                     } footer: {
                         Text(assumed.isEmpty
-                             ? "Tap an item to edit its numbers · swipe to remove it."
-                             : "Assumed: \(assumed)\nTap an item to edit its numbers · swipe to remove it.")
+                             ? "Step a portion up or down and every stat follows · tap an item to edit its numbers · swipe to remove it."
+                             : "Assumed: \(assumed)\nStep a portion up or down and every stat follows · tap an item to edit its numbers · swipe to remove it.")
                     }
                 }
             }
             .sheet(item: $editingItem) { item in
                 MealItemEditSheet(item: item) { edited in
                     if let i = items.firstIndex(where: { $0.id == edited.id }) {
+                        // Hand-corrected numbers become the new 1× baseline.
                         items[i] = edited
+                        multipliers[edited.id] = 1
                     }
                 }
                 .themedRoot()
             }
             .themedForm()
             .keyboardDoneButton()
-            .navigationTitle("Describe Your Meal")
+            .navigationTitle(photo == nil ? "Describe Your Meal" : "Photo of Food")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                if photo != nil && items.isEmpty && !building { await build() }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -159,9 +226,16 @@ struct DescribeMealView: View {
         buildError = nil
         defer { building = false }
         do {
-            let breakdown = try await AIFoodEstimator.mealBreakdown(description: text)
+            let breakdown: AIFoodEstimator.MealBreakdown
+            if let photo {
+                breakdown = try await AIFoodEstimator.mealBreakdown(photo: photo, notes: text)
+            } else {
+                breakdown = try await AIFoodEstimator.mealBreakdown(description: text)
+            }
             items = breakdown.items
+            multipliers = [:]
             assumed = breakdown.assumed
+            grounded = breakdown.grounded
         } catch {
             buildError = error.localizedDescription
         }
