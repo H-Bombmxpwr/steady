@@ -21,6 +21,27 @@ enum ThemePalette: String, CaseIterable, Identifiable {
     }
 }
 
+/// A selectable app icon: one of the five palettes in either the light
+/// (color background, white line) or dark (black background, colored line)
+/// style. Both styles of every palette ship as fixed, single-appearance
+/// alternate icons, so any of them can be chosen at any time regardless of
+/// the in-app theme or the system's light/dark setting. The empty selection
+/// (`nil` name) is the primary icon, which follows the system appearance.
+struct AppIconOption: Identifiable, Equatable {
+    let palette: ThemePalette
+    let dark: Bool
+
+    /// Alternate-icon asset name, e.g. "Icon-Ocean-Dark". Must match the
+    /// .appiconset names and ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES.
+    var assetName: String { "Icon-\(palette.label)-\(dark ? "Dark" : "Light")" }
+    var id: String { assetName }
+
+    /// Every palette in both styles, grouped palette-by-palette.
+    static let all: [AppIconOption] = ThemePalette.allCases.flatMap {
+        [AppIconOption(palette: $0, dark: false), AppIconOption(palette: $0, dark: true)]
+    }
+}
+
 enum ThemeMode: String, CaseIterable, Identifiable {
     case system, dark, light
     var id: String { rawValue }

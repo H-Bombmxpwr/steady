@@ -38,8 +38,9 @@ struct SettingsView: View {
     // Live Activity (Lock Screen / Dynamic Island)
     @AppStorage(LiveActivityManager.enabledKey) private var liveActivity = false
 
-    // Alternate app icon (palette name)
-    @AppStorage("ui.appIcon") private var appIconChoice = ThemePalette.emerald.rawValue
+    // Alternate app icon — stores the alternate icon's asset name, or "" for
+    // the primary icon (which follows the system light/dark appearance).
+    @AppStorage("ui.appIcon") private var appIconChoice = ""
     @State private var iconMessage: String?
 
     // Lab-aware coaching
@@ -337,31 +338,7 @@ struct SettingsView: View {
                         ForEach(ThemeMode.allCases) { m in Text(m.label).tag(m) }
                     }
                     .pickerStyle(.segmented)
-                    HStack {
-                        Text("App icon")
-                        Spacer()
-                        ForEach(ThemePalette.allCases) { p in
-                            Button {
-                                // Emerald is the primary icon — pass nil.
-                                UIApplication.shared.setAlternateIconName(
-                                    p == .emerald ? nil : "Icon-\(p.label)") { error in
-                                    iconMessage = error == nil
-                                        ? nil : "Couldn't switch the icon — \(error!.localizedDescription)"
-                                }
-                                appIconChoice = p.rawValue
-                            } label: {
-                                Circle()
-                                    .fill(LinearGradient(colors: [p.accents.0, p.accents.1],
-                                                         startPoint: .topLeading,
-                                                         endPoint: .bottomTrailing))
-                                    .frame(width: 26, height: 26)
-                                    .overlay(Circle().strokeBorder(
-                                        appIconChoice == p.rawValue ? Color.primary : .clear,
-                                        lineWidth: 2))
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
+                    appIconPicker
                     if let iconMessage {
                         Text(iconMessage).font(.footnote).foregroundStyle(.secondary)
                     }
@@ -377,7 +354,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Appearance")
                 } footer: {
-                    Text("App icon dots switch to an icon matching that palette. Glass tab bar floats over the content and lets you swipe left/right between tabs. Live Activity keeps today's remaining calories, protein, and water on the Lock Screen and Dynamic Island — it refreshes whenever the app runs.")
+                    Text("App icon: pick any palette in light (color background, white line) or dark (black background, color line), or “Match appearance” to follow the system. Glass tab bar floats over the content and lets you swipe left/right between tabs. Live Activity keeps today's remaining calories, protein, and water on the Lock Screen and Dynamic Island — it refreshes whenever the app runs.")
                 }
 
                 // --- Notifications
@@ -532,6 +509,59 @@ struct SettingsView: View {
         .themedRoot()
     }
 
+    // MARK: App icon picker
+
+    /// "Match appearance" (the primary icon, follows the system) plus every
+    /// palette in both light and dark styles — all selectable at any time.
+    private var appIconPicker: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button { selectIcon(nil) } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "circle.lefthalf.filled")
+                        .font(.title3)
+                        .frame(width: 44, height: 44)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.surface2))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Match appearance").foregroundStyle(.primary)
+                        Text("Emerald — follows Light / Dark")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if appIconChoice.isEmpty {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            ForEach(ThemePalette.allCases) { p in
+                HStack(spacing: 12) {
+                    Text(p.label)
+                        .font(.subheadline)
+                        .frame(width: 62, alignment: .leading)
+                    ForEach([false, true], id: \.self) { dark in
+                        let option = AppIconOption(palette: p, dark: dark)
+                        Button { selectIcon(option.assetName) } label: {
+                            IconSwatch(palette: p, dark: dark,
+                                       selected: appIconChoice == option.assetName)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func selectIcon(_ name: String?) {
+        UIApplication.shared.setAlternateIconName(name) { error in
+            iconMessage = error == nil
+                ? nil : "Couldn't switch the icon — \(error!.localizedDescription)"
+        }
+        appIconChoice = name ?? ""
+    }
+
     private func reschedule() {
         NotificationManager.rescheduleAll(plan: plan)
     }
@@ -617,6 +647,52 @@ struct SettingsView: View {
 
         // Delete photos directory
         try? FileManager.default.removeItem(at: photosDir())
+    }
+}
+
+/// A rounded-square preview of an app-icon option — a diagonal descending
+/// "line" over the background, matching the two real styles: light is a
+/// color gradient background with a white line, dark is a near-black
+/// background with the color-gradient line. Approximate, but enough to tell
+/// the ten options apart at a glance.
+private struct IconSwatch: View {
+    let palette: ThemePalette
+    let dark: Bool
+    let selected: Bool
+
+    private var gradient: LinearGradient {
+        LinearGradient(colors: [palette.accents.0, palette.accents.1],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    var body: some View {
+        ZStack {
+            // Background
+            if dark {
+                Color(hex: 0x12161F)
+            } else {
+                gradient
+            }
+            // The descending line
+            Capsule()
+                .fill(dark ? AnyShapeStyle(gradient) : AnyShapeStyle(Color.white))
+                .frame(width: 30, height: 8)
+                .rotationEffect(.degrees(26))
+        }
+        .frame(width: 44, height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(selected ? Color.primary : Theme.hairline,
+                              lineWidth: selected ? 2.5 : 1))
+        .overlay(alignment: .bottomTrailing) {
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white, Theme.accent)
+                    .padding(2)
+            }
+        }
     }
 }
 
