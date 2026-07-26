@@ -19,11 +19,12 @@ struct TodaySnapshot {
 
     var caloriesLeft: Int { calorieBudget - caloriesEaten }
 
-    /// Targets/streak come from the WidgetSnapshot the app precomputed —
-    /// never from walking `plan.days` here, which faults the whole history
-    /// graph and gets this process killed at the ~30 MB widget memory cap.
-    /// Only today's row (and its foods) is fetched live so the numbers
-    /// stay current between app runs.
+    /// Everything comes from the WidgetSnapshot the app precomputed — the
+    /// render path never opens SwiftData, which is what kept getting this
+    /// process killed at the ~30 MB widget memory cap (opening the store,
+    /// especially with a grown WAL, spikes memory). The app rewrites the
+    /// cache on every launch/background, and the water button below keeps it
+    /// in sync, so today's numbers stay current without a fetch here.
     static func load() -> TodaySnapshot {
         var snapshot = TodaySnapshot()
         guard let cached = WidgetSnapshot.load(), cached.hasPlan else { return snapshot }
@@ -35,10 +36,13 @@ struct TodaySnapshot {
         snapshot.streak = cached.streak
         snapshot.goalDate = cached.goalDate
 
-        if let day = fetchToday(in: ModelContext(PersistenceController.shared.container)) {
-            snapshot.caloriesEaten = day.totalCalories
-            snapshot.protein = day.totalProtein
-            snapshot.waterOz = day.waterOunces
+        // Trust today's live totals only if the cache is actually for today;
+        // if the app hasn't run since midnight, show targets with zero
+        // progress rather than yesterday's numbers.
+        if let day = cached.dayDate, Calendar.current.isDateInToday(day) {
+            snapshot.caloriesEaten = cached.caloriesEaten
+            snapshot.protein = cached.protein
+            snapshot.waterOz = cached.waterOz
         }
         return snapshot
     }
@@ -46,7 +50,8 @@ struct TodaySnapshot {
 
 /// Fetches today's DayLog by date predicate — O(1) regardless of history.
 /// DayLog.date is normalized to startOfDay, but match by range so a
-/// timezone change can't orphan the row.
+/// timezone change can't orphan the row. Used only by the water button
+/// (a user tap, with more memory headroom than a render), never at render.
 private func fetchToday(in context: ModelContext) -> DayLog? {
     let start = Calendar.current.startOfDay(for: Date())
     guard let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return nil }
@@ -64,18 +69,33 @@ struct LogWaterIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let context = ModelContext(PersistenceController.shared.container)
-        let step = WidgetSnapshot.load().map { max(1, $0.waterStep) } ?? 8
-        if let day = fetchToday(in: context) {
-            day.waterOunces += step
-            try? context.save()
+        var cached = WidgetSnapshot.load() ?? WidgetSnapshot()
+        let step = max(1, cached.waterStep)
+
+        let day: DayLog
+        if let existing = fetchToday(in: context) {
+            day = existing
         } else if let plan = try? context.fetch(FetchDescriptor<Plan>()).first {
             // First log of the day: appending materializes the day rows but
             // not their foods/photos, so it stays under the widget memory cap.
-            let day = DayLog(date: Date())
+            day = DayLog(date: Date())
             plan.days.append(day)
-            day.waterOunces = step
-            try? context.save()
+        } else {
+            return .result()
         }
+        day.waterOunces += step
+        try? context.save()
+
+        // Keep the render cache in sync so the widget shows the new total
+        // without opening the DB. Refresh all three of today's numbers from
+        // the row (cheap — today only) so a first-tap after midnight can't
+        // leave yesterday's calories showing under today's date.
+        cached.caloriesEaten = day.totalCalories
+        cached.protein = day.totalProtein
+        cached.waterOz = day.waterOunces
+        cached.dayDate = Calendar.current.startOfDay(for: Date())
+        cached.save()
+
         WidgetCenter.shared.reloadAllTimelines()
         return .result()
     }
@@ -133,6 +153,18 @@ private var gradient: LinearGradient {
                    startPoint: .topLeading, endPoint: .bottomTrailing)
 }
 private let widgetBG = Color(red: 0.055, green: 0.067, blue: 0.086)
+
+/// Deep base with an accent-tinted corner wash, so the themed color reads
+/// even on a fresh day with nothing logged (when the ring/stat fills are
+/// empty and would otherwise leave the widget looking grey).
+private var widgetBackground: some View {
+    ZStack {
+        widgetBG
+        LinearGradient(colors: [accent.opacity(0.28), accent2.opacity(0.12), .clear],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
 private let good = Color(red: 0.29, green: 0.87, blue: 0.50)
 private let bad = Color(red: 0.98, green: 0.44, blue: 0.52)
 
@@ -256,7 +288,7 @@ struct TodayWidgetView: View {
                 }
             }
         }
-        .containerBackground(widgetBG, for: .widget)
+        .containerBackground(for: .widget) { widgetBackground }
     }
 
     // Home screen medium — streak, stat columns, and one row of action buttons
@@ -289,7 +321,7 @@ struct TodayWidgetView: View {
                 .buttonStyle(.plain)
             }
         }
-        .containerBackground(widgetBG, for: .widget)
+        .containerBackground(for: .widget) { widgetBackground }
     }
 
     /// icon + label with the consumed/total value right underneath.
@@ -351,7 +383,7 @@ struct TodayWidgetView: View {
                 .buttonStyle(.plain)
             }
         }
-        .containerBackground(widgetBG, for: .widget)
+        .containerBackground(for: .widget) { widgetBackground }
     }
 
     private func actionLabel(_ icon: String, _ text: String, _ color: Color, wide: Bool = false) -> some View {

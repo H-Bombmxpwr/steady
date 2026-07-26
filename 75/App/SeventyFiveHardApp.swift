@@ -104,16 +104,10 @@ struct SeventyFiveHardApp: App {
         NotificationManager.updateStreakGuard(todayMet: met, streak: streak)
 
         // Precompute the widget's numbers here, in the app process — the
-        // widget's memory cap can't afford walking the full plan graph.
-        var snapshot = WidgetSnapshot()
-        snapshot.hasPlan = true
-        snapshot.calorieBudget = targets.calories
-        snapshot.proteinTarget = targets.proteinGrams
-        snapshot.waterGoal = targets.waterOunces
-        snapshot.waterStep = max(1, plan.waterStepOunces)
-        snapshot.streak = streak
-        snapshot.goalDate = plan.projectedGoalDate
-        snapshot.save()
+        // widget's memory cap can't afford opening the store, let alone
+        // walking the full plan graph. Includes today's live totals so the
+        // widget renders entirely from this cache.
+        WidgetSnapshot.build(plan: plan, profile: profile, today: day).save()
     }
 }
 
@@ -151,16 +145,9 @@ struct RootRouterView: View {
                     NotificationManager.rescheduleAll(plan: plan)
                     // Seed the widget cache on launch too, so widgets have
                     // numbers before the app ever hits the background.
-                    let targets = CalorieEngine.targets(profile: profile, plan: plan)
-                    var snapshot = WidgetSnapshot()
-                    snapshot.hasPlan = true
-                    snapshot.calorieBudget = targets.calories
-                    snapshot.proteinTarget = targets.proteinGrams
-                    snapshot.waterGoal = targets.waterOunces
-                    snapshot.waterStep = max(1, plan.waterStepOunces)
-                    snapshot.streak = CalorieEngine.streakStats(plan: plan, targets: targets).current
-                    snapshot.goalDate = plan.projectedGoalDate
-                    snapshot.save()
+                    let today = Calendar.current.startOfDay(for: Date())
+                    let day = plan.days.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
+                    WidgetSnapshot.build(plan: plan, profile: profile, today: day).save()
                 }
         } else {
             OnboardingView()
