@@ -19,29 +19,41 @@ struct TodaySnapshot {
 
     var caloriesLeft: Int { calorieBudget - caloriesEaten }
 
+    /// Targets/streak come from the WidgetSnapshot the app precomputed —
+    /// never from walking `plan.days` here, which faults the whole history
+    /// graph and gets this process killed at the ~30 MB widget memory cap.
+    /// Only today's row (and its foods) is fetched live so the numbers
+    /// stay current between app runs.
     static func load() -> TodaySnapshot {
         var snapshot = TodaySnapshot()
-        let context = ModelContext(PersistenceController.shared.container)
-        guard let plan = try? context.fetch(FetchDescriptor<Plan>()).first,
-              let profile = try? context.fetch(FetchDescriptor<UserProfile>()).first else {
-            return snapshot
-        }
-        let targets = CalorieEngine.targets(profile: profile, plan: plan)
-        let today = Calendar.current.startOfDay(for: Date())
-        let day = plan.days.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
-
+        guard let cached = WidgetSnapshot.load(), cached.hasPlan else { return snapshot }
         snapshot.hasPlan = true
-        snapshot.calorieBudget = targets.calories
-        snapshot.proteinTarget = targets.proteinGrams
-        snapshot.waterGoal = targets.waterOunces
-        snapshot.waterStep = max(1, plan.waterStepOunces)
-        snapshot.caloriesEaten = day?.totalCalories ?? 0
-        snapshot.protein = day?.totalProtein ?? 0
-        snapshot.waterOz = day?.waterOunces ?? 0
-        snapshot.streak = CalorieEngine.streakStats(plan: plan, targets: targets).current
-        snapshot.goalDate = plan.projectedGoalDate
+        snapshot.calorieBudget = cached.calorieBudget
+        snapshot.proteinTarget = cached.proteinTarget
+        snapshot.waterGoal = cached.waterGoal
+        snapshot.waterStep = max(1, cached.waterStep)
+        snapshot.streak = cached.streak
+        snapshot.goalDate = cached.goalDate
+
+        if let day = fetchToday(in: ModelContext(PersistenceController.shared.container)) {
+            snapshot.caloriesEaten = day.totalCalories
+            snapshot.protein = day.totalProtein
+            snapshot.waterOz = day.waterOunces
+        }
         return snapshot
     }
+}
+
+/// Fetches today's DayLog by date predicate — O(1) regardless of history.
+/// DayLog.date is normalized to startOfDay, but match by range so a
+/// timezone change can't orphan the row.
+private func fetchToday(in context: ModelContext) -> DayLog? {
+    let start = Calendar.current.startOfDay(for: Date())
+    guard let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return nil }
+    var descriptor = FetchDescriptor<DayLog>(
+        predicate: #Predicate { $0.date >= start && $0.date < end })
+    descriptor.fetchLimit = 1
+    return try? context.fetch(descriptor).first
 }
 
 // MARK: - Interactive intent: log one water step from the widget
@@ -52,9 +64,16 @@ struct LogWaterIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let context = ModelContext(PersistenceController.shared.container)
-        if let plan = try? context.fetch(FetchDescriptor<Plan>()).first {
-            let day = ensureDay(plan: plan, date: Date())
-            day.waterOunces += max(1, plan.waterStepOunces)
+        let step = WidgetSnapshot.load().map { max(1, $0.waterStep) } ?? 8
+        if let day = fetchToday(in: context) {
+            day.waterOunces += step
+            try? context.save()
+        } else if let plan = try? context.fetch(FetchDescriptor<Plan>()).first {
+            // First log of the day: appending materializes the day rows but
+            // not their foods/photos, so it stays under the widget memory cap.
+            let day = DayLog(date: Date())
+            plan.days.append(day)
+            day.waterOunces = step
             try? context.save()
         }
         WidgetCenter.shared.reloadAllTimelines()

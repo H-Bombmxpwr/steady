@@ -327,6 +327,9 @@ struct DayDetailView: View {
                         }
                         .padding(.vertical, 4)
                     }
+                    // The tab-level bottom content margin is for vertical
+                    // scrollers; don't let it stretch this photo strip.
+                    .contentMargins(.bottom, 0, for: .scrollContent)
                 }
                 HStack(spacing: 12) {
                     Button {

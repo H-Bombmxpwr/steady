@@ -16,7 +16,50 @@ struct SeventyFiveHardApp: App {
     init() {
         UNUserNotificationCenter.current().delegate = Self.notificationDelegate
         NotificationManager.registerCategories()
+        #if DEBUG
+        // Simulator/UI-test hook: `-seedDemo` fills an empty store with a
+        // month of plausible data so screens render without onboarding.
+        if CommandLine.arguments.contains("-seedDemo") {
+            Self.seedDemoData()
+        }
+        #endif
     }
+
+    #if DEBUG
+    private static func seedDemoData() {
+        let context = ModelContext(PersistenceController.shared.container)
+        guard ((try? context.fetch(FetchDescriptor<Plan>())) ?? []).isEmpty else { return }
+        let cal = Calendar.current
+        let profile = UserProfile(birthDate: cal.date(byAdding: .year, value: -30, to: Date())!,
+                                  heightInches: 70, sex: .male, activityLevel: .moderate)
+        let plan = Plan(startDate: cal.date(byAdding: .day, value: -29, to: Date())!,
+                        startingWeight: 230, goalWeight: 200, paceLbsPerWeek: 1.5,
+                        proteinTargetGrams: 160)
+        context.insert(profile)
+        context.insert(plan)
+        for i in 0..<30 {
+            let date = cal.date(byAdding: .day, value: i, to: plan.startDate)!
+            let day = DayLog(date: date)
+            // Downhill with believable wobble; every 4th day unlogged.
+            if i % 4 != 3 {
+                day.weight = ((230 - Double(i) * 0.28 + sin(Double(i)) * 0.8) * 10).rounded() / 10
+                day.waterOunces = 64 + (i % 3) * 16
+                day.foods.append(FoodLog(name: "Chicken bowl", calories: 650,
+                                         proteinGrams: 45, grams: 420, source: "custom",
+                                         meal: .lunch))
+                day.foods.append(FoodLog(name: "Yogurt + berries", calories: 220,
+                                         proteinGrams: 18, grams: 250, source: "custom",
+                                         meal: .breakfast))
+                if i % 3 == 0 {
+                    day.workouts.append(WorkoutLog(name: "Strength", minutes: 45,
+                                                   category: .strength))
+                }
+            }
+            plan.days.append(day)
+        }
+        try? context.save()
+    }
+    #endif
 
     var body: some Scene {
         WindowGroup {
@@ -35,8 +78,8 @@ struct SeventyFiveHardApp: App {
                     case .inactive, .background:
                         showPrivacyShield = true
                         appLock.lockPhotos()   // photos require Face ID again on return
-                        WidgetCenter.shared.reloadAllTimelines()
-                        refreshStreakGuard()
+                        refreshStreakGuard()   // also caches the widget snapshot…
+                        WidgetCenter.shared.reloadAllTimelines()   // …which this reload reads
                     @unknown default:
                         showPrivacyShield = true
                         appLock.lockPhotos()
@@ -59,6 +102,18 @@ struct SeventyFiveHardApp: App {
         } ?? false
         let streak = CalorieEngine.streakStats(plan: plan, targets: targets).current
         NotificationManager.updateStreakGuard(todayMet: met, streak: streak)
+
+        // Precompute the widget's numbers here, in the app process — the
+        // widget's memory cap can't afford walking the full plan graph.
+        var snapshot = WidgetSnapshot()
+        snapshot.hasPlan = true
+        snapshot.calorieBudget = targets.calories
+        snapshot.proteinTarget = targets.proteinGrams
+        snapshot.waterGoal = targets.waterOunces
+        snapshot.waterStep = max(1, plan.waterStepOunces)
+        snapshot.streak = streak
+        snapshot.goalDate = plan.projectedGoalDate
+        snapshot.save()
     }
 }
 
@@ -94,6 +149,18 @@ struct RootRouterView: View {
                 .task {
                     _ = await NotificationManager.requestAuthorization()
                     NotificationManager.rescheduleAll(plan: plan)
+                    // Seed the widget cache on launch too, so widgets have
+                    // numbers before the app ever hits the background.
+                    let targets = CalorieEngine.targets(profile: profile, plan: plan)
+                    var snapshot = WidgetSnapshot()
+                    snapshot.hasPlan = true
+                    snapshot.calorieBudget = targets.calories
+                    snapshot.proteinTarget = targets.proteinGrams
+                    snapshot.waterGoal = targets.waterOunces
+                    snapshot.waterStep = max(1, plan.waterStepOunces)
+                    snapshot.streak = CalorieEngine.streakStats(plan: plan, targets: targets).current
+                    snapshot.goalDate = plan.projectedGoalDate
+                    snapshot.save()
                 }
         } else {
             OnboardingView()

@@ -44,14 +44,15 @@ struct MainTabView: View {
         Group {
             if glassBar {
                 ContinuousPager(position: $pagePosition, count: Self.tabs.count) { i in
-                    // Each page carries its own bottom inset: the custom
-                    // pager (unlike TabView) doesn't push the floating bar's
-                    // height into the pages' safe areas, and without this
-                    // the last row scrolls under the bar.
+                    // The floating bar's height must reach the scroll views
+                    // INSIDE each page. safeAreaInset can't do it here —
+                    // NavigationStack rebuilds its safe area from UIKit
+                    // window geometry and drops SwiftUI-added insets (the
+                    // "Open Today hides under the bar" bug). contentMargins
+                    // rides the environment straight into every scrollable.
                     screen(i)
-                        .safeAreaInset(edge: .bottom) {
-                            Color.clear.frame(height: 66)
-                        }
+                        .contentMargins(.bottom, 72, for: .scrollContent)
+                        .contentMargins(.bottom, 72, for: .scrollIndicators)
                 }
                 .background(Theme.background.ignoresSafeArea())
                 .overlay(alignment: .bottom) {
@@ -67,6 +68,11 @@ struct MainTabView: View {
                 }
             }
         }
+        #if DEBUG
+        .onChange(of: pagePosition) { p in
+            if abs(p - p.rounded()) < 0.001 { NSLog("[tab] position settled at %.0f", p) }
+        }
+        #endif
         // Keep the two modes' positions in sync when the style is toggled.
         .onChange(of: glassBar) { on in
             if on {
@@ -141,6 +147,10 @@ private struct ContinuousPager<Content: View>: View {
                         guard value.startLocation.x > 30 else { return }
                         if horizontal == nil {
                             horizontal = abs(value.translation.width) > abs(value.translation.height)
+                            #if DEBUG
+                            NSLog("[pager] ENGAGE h=%d start=(%.0f,%.0f)", horizontal == true ? 1 : 0,
+                                  value.startLocation.x, value.startLocation.y)
+                            #endif
                         }
                         guard horizontal == true else { return }
                         let base = dragBase ?? position
@@ -163,6 +173,9 @@ private struct ContinuousPager<Content: View>: View {
                         let projected = base - value.predictedEndTranslation.width / width
                         let target = min(max(projected.rounded(), base.rounded() - 1),
                                          base.rounded() + 1)
+                        #if DEBUG
+                        NSLog("[pager] END base=%.2f projected=%.2f -> %.0f", base, projected, target)
+                        #endif
                         withAnimation(Self.settle) {
                             position = min(max(target, 0), CGFloat(count - 1))
                         }
@@ -215,6 +228,9 @@ private struct GlassTabBar: View {
                 HStack(spacing: 0) {
                     ForEach(tabs.indices, id: \.self) { i in
                         Button {
+                            #if DEBUG
+                            NSLog("[bar] TAP tab %d", i)
+                            #endif
                             withAnimation(Self.spring) { position = CGFloat(i) }
                         } label: {
                             VStack(spacing: 3) {
@@ -236,7 +252,11 @@ private struct GlassTabBar: View {
                 .padding(.horizontal, inset)
             }
             .contentShape(Rectangle())
-            .simultaneousGesture(
+            // highPriority, not simultaneous: once the drag moves, it must
+            // CANCEL the tab buttons underneath — with simultaneousGesture
+            // the origin tab's Button still fired on release and yanked the
+            // bead straight back to where the drag started.
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 10)
                     .onChanged { value in
                         let start = beadDragStart
@@ -257,11 +277,19 @@ private struct GlassTabBar: View {
                             UISelectionFeedbackGenerator().selectionChanged()
                         }
                     }
-                    .onEnded { _ in
+                    .onEnded { value in
                         beadHeld = false
+                        let start = beadDragStart ?? position
                         beadDragStart = nil
+                        // Momentum counts: a short quick flick projects past
+                        // the halfway point and advances, instead of the
+                        // release position alone rounding the bead home.
+                        let projected = start + value.predictedEndTranslation.width / tabWidth
+                        #if DEBUG
+                        NSLog("[bar] END start=%.2f projected=%.2f -> %.0f", start, projected, projected.rounded())
+                        #endif
                         withAnimation(Self.spring) {
-                            position = min(max(position.rounded(), 0), CGFloat(tabs.count - 1))
+                            position = min(max(projected.rounded(), 0), CGFloat(tabs.count - 1))
                         }
                     }
             )
