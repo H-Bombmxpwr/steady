@@ -2,7 +2,10 @@
 
 Status: agreed scope (2026-07-07); all phases 1–8 shipped, including the
 exercise DB + templates (issue 09) and the 2026-07-10 polish pass (issue 10).
-App keeps the name **75** for now. Latest: 2026-07-26 batch (issue 29) —
+App keeps the name **75** for now. Latest: 2026-08-01 (issue 32) — de-biased
+the AI nutrition guidance so estimates stop coming back high, and moved AI
+into its own Settings screen that shows how it's used plus every prompt sent
+(user input rendered as ‹placeholders›). Prior: 2026-07-26 batch (issue 29) —
 portion steppers on every food path, grounded-lookup badge on AI estimates,
 photo meals itemized like described meals, higher-accuracy model toggle.
 

@@ -98,9 +98,14 @@ enum AIFoodEstimator {
     """
 
     private static let nutritionGuidance = """
-    Act like a careful nutrition coach: be realistic about restaurant and \
-    home portion sizes (err large, people underestimate), include cooking \
-    fats and condiments, and base values on USDA-style nutrition data. \
+    Act like a careful nutrition coach. Estimate realistic, typical \
+    portion sizes — do NOT inflate them; assume an average adult serving \
+    unless the description clearly says otherwise. Base every value on \
+    USDA-style nutrition data and aim for the accurate middle of the \
+    plausible range, not the high end — most estimates come back too high, \
+    so round toward the honest number rather than padding for safety. \
+    Include cooking fats and condiments that are actually present, but \
+    don't add extras that probably aren't there. \
     When a restaurant, chain, or packaged brand is named — or the dish is \
     clearly from one — search for and use that restaurant's or brand's \
     published nutrition numbers instead of generic estimates, and say so \
@@ -627,5 +632,143 @@ enum AIFoodEstimator {
         guard let start = text.firstIndex(of: "{"),
               let end = text.lastIndex(of: "}"), start < end else { return text }
         return String(text[start...end])
+    }
+}
+
+// MARK: - Prompt transparency
+
+extension AIFoodEstimator {
+    /// A human-readable preview of one prompt the app can send, with the
+    /// parts you enter shown as ‹placeholders›. Built from the same guidance
+    /// and schema constants the live calls use, so what's shown here can't
+    /// drift from what's actually sent.
+    struct PromptInfo: Identifiable {
+        let id: String
+        let title: String
+        let whenUsed: String       // when this call fires
+        let sends: String          // what leaves the device
+        let grounded: Bool         // runs with Google Search grounding
+        let template: String       // the prompt, user input as ‹placeholders›
+
+        var groundingNote: String {
+            grounded
+                ? "Runs with Google Search so numbers can be checked against real published data (green “Looked up” badge). Falls back to a plain estimate if search is unavailable."
+                : "A plain model call — no web search."
+        }
+    }
+
+    /// Every prompt the app sends, in the order they appear in the app, with
+    /// user-entered text replaced by ‹placeholders›.
+    static var promptCatalog: [PromptInfo] {
+        [
+            PromptInfo(
+                id: "describe",
+                title: "Describe Your Meal",
+                whenUsed: "When you type or dictate a meal and tap estimate.",
+                sends: "Only the meal text you entered.",
+                grounded: true,
+                template: """
+                Break this meal description into separate food items and estimate the \
+                full nutrition of each. \(nutritionGuidance)
+                List EVERY distinct component or ingredient as its own item — never \
+                merge two ingredients into one line. Oils, butter, cheeses, sauces, \
+                and dressings each get their own item (feta and cream cheese are two \
+                items; olive oil is never folded into the vegetables it's on). If the \
+                user names an ingredient, it must appear as its own item.
+                Meal: "‹your meal description›"
+                Respond with only JSON:
+                {"items": [{"name": "<short item name>", \
+                "assumed": "<short: the exact portion you assumed for this item>", \
+                \(nutritionSchema)}], \
+                "assumed": "<one short sentence: overall assumptions about the meal>"}
+                """),
+            PromptInfo(
+                id: "photo",
+                title: "Photo of Food",
+                whenUsed: "When you snap or pick a photo of a plate.",
+                sends: "The food photo (downscaled) plus any notes you add.",
+                grounded: true,
+                template: """
+                Identify every distinct food in this photo and estimate the full \
+                nutrition of each from the portions shown. \(nutritionGuidance)
+                List EVERY distinct component as its own item — never merge two \
+                foods into one line; sauces, dressings, sides, and drinks each get \
+                their own item.
+                The user adds: "‹your notes, if any›".
+                Respond with only JSON:
+                {"items": [{"name": "<short item name>", \
+                "assumed": "<short: what you identified and the portion you assumed>", \
+                \(nutritionSchema)}], \
+                "assumed": "<one short sentence: overall assumptions about the plate>"}
+                If there is no food in the photo, use {"items": []}.
+                [the photo is attached alongside this text]
+                """),
+            PromptInfo(
+                id: "estimate",
+                title: "Estimate Nutrition",
+                whenUsed: "“Estimate with AI” on a custom food or a “Not listed?” search result.",
+                sends: "Only the food name you entered.",
+                grounded: true,
+                template: """
+                Estimate the full nutrition for one typical serving of: "‹food name›". \
+                \(nutritionGuidance)
+                Respond with only JSON:
+                {"food": {"name": "<short food name>", \(nutritionSchema)}, \
+                "assumed": "<one short sentence: exactly what food and serving size you assumed>"}
+                """),
+            PromptInfo(
+                id: "protein",
+                title: "Fill in Missing Protein",
+                whenUsed: "When a database entry has no protein value.",
+                sends: "Only the food name.",
+                grounded: false,
+                template: """
+                Estimate the protein content of this food: "‹food name›".
+                Respond with only JSON:
+                {"protein_grams_per_100g": <number, grams of protein per 100 grams>, \
+                "assumed": "<short phrase: what food you assumed this is>"}
+                """),
+            PromptInfo(
+                id: "suggest",
+                title: "What Should I Eat?",
+                whenUsed: "When you ask for meal ideas that fit today's budget.",
+                sends: "The meal name, your remaining calories and protein, and the names of foods already logged today (plus lab numbers only if you turned that on).",
+                grounded: false,
+                template: """
+                Suggest 3 realistic ‹meal› options someone could actually make at \
+                home or grab easily tonight. They have ‹remaining› calories \
+                and ‹remaining› g protein left in today's budget — every \
+                option must fit inside the remaining calories, and at least two \
+                should make a real dent in the protein gap. Already eaten today: \
+                ‹foods logged today›. Don't repeat these.
+                \(nutritionGuidance)
+                Respond with only JSON:
+                {"suggestions": [{"name": "<short dish name>", \
+                "why": "<one short sentence: why this fits right now>", \
+                "assumed": "<short: the exact portion assumed>", \
+                "food": {\(nutritionSchema)}}]}
+                """),
+            PromptInfo(
+                id: "day",
+                title: "Summarize My Day",
+                whenUsed: "The end-of-day review with swap suggestions.",
+                sends: "Your calorie and protein targets and a list of what you ate that day (names and nutrition) — never anything identifying (lab numbers only if you turned that on).",
+                grounded: false,
+                template: """
+                You are a supportive nutrition coach reviewing one day of eating. \
+                Be specific and practical, never preachy. Suggestions must be food \
+                SUBSTITUTIONS into what was actually eaten (swap X for Y in that \
+                meal), not generic advice.
+                Targets: ‹calorie target› cal, ‹protein target› g protein.
+                Eaten (total ‹totals for the day›):
+                ‹each food you logged today, one per line›
+                Respond with only JSON:
+                {"headline": "<one sentence verdict on the day>", \
+                "wins": ["<1-3 short things that went well>"], \
+                "suggestions": [{"issue": "<what to improve, tied to a specific food eaten>", \
+                "swap": "<the concrete substitution and roughly what it saves or adds>"}]}
+                Give 2-4 suggestions.
+                """),
+        ]
     }
 }

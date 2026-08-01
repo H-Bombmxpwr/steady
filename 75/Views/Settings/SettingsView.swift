@@ -31,10 +31,6 @@ struct SettingsView: View {
     @AppStorage(HealthKitService.enabledKey) private var healthEnabled = false
     @State private var healthMessage: String?
 
-    // AI assist
-    @AppStorage(AIFoodEstimator.apiKeyKey) private var geminiKey = ""
-    @AppStorage(AIFoodEstimator.accurateModelKey) private var accurateModel = false
-
     // Live Activity (Lock Screen / Dynamic Island)
     @AppStorage(LiveActivityManager.enabledKey) private var liveActivity = false
 
@@ -293,35 +289,25 @@ struct SettingsView: View {
                     Text("Not medical advice — think of it as prep for your next doctor visit. Log a few numbers from a recent panel and day summaries and nutrition targets lean toward improving them. Values stay on this device; while this is on, only the bare numbers (never your name, age, or anything identifying) are included when a day summary is generated.")
                 }
 
-                // --- Where AI is used (the one place the app talks about it)
+                // --- AI & estimates (details live on their own screen)
                 Section {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Where AI is used").font(.subheadline.bold())
-                        Text("""
-                        Nutrition estimates in this app are powered by Google's Gemini model. It's behind:
-
-                        • Describe Your Meal — itemizing what you type or dictate
-                        • Photo of Food — reading a plate into separate items
-                        • Estimate Nutrition on custom foods and "Not listed?" search results
-                        • Filling in protein when a database entry is missing it
-                        • What Should I Eat? — meal ideas that fit your remaining budget
-                        • Summarize My Day — the end-of-day review and swaps
-
-                        Only food descriptions and food photos are sent to Google. Progress photos, weight, and everything else never leave the device. Estimates are good, not perfect — every number stays editable after logging, and a green "Looked up" badge marks numbers checked against real published data (vs an orange "Best guess").
-                        """)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    NavigationLink {
+                        AISettingsView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("AI & Estimates")
+                                Text("How it's used, your key, accuracy, and the exact prompts")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "sparkles")
+                        }
                     }
-                    .padding(.vertical, 4)
-                    TextField("Gemini API key", text: $geminiKey)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .focused($fieldFocused)
-                    Toggle("Higher accuracy (slower)", isOn: $accurateModel)
                 } header: {
                     Text("About Estimates")
                 } footer: {
-                    Text("A key is already bundled with the app — paste your own from aistudio.google.com to override it. Higher accuracy switches estimates to the full Gemini Flash model: noticeably better numbers on complex meals, but a response takes several seconds instead of about one.")
+                    Text("Nutrition estimates are powered by Google's Gemini. Only food descriptions and photos are sent — everything else stays on this device.")
                 }
 
                 // --- Appearance
