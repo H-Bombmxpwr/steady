@@ -325,6 +325,11 @@ struct DashboardView: View {
     private var dayNumber: Int { max(0, plan.startDate.days(to: today)) + 1 }
     private var todayLog: DayLog { ensureDay(plan: plan, date: today) }
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
+    /// Today's budget with training-day fueling folded in (the base budget on
+    /// rest days). Only today's card uses this — history cards stay on base.
+    private var todayTargets: DailyTargets {
+        CalorieEngine.targets(profile: profile, plan: plan, on: today)
+    }
 
     var body: some View {
         NavigationStack {
@@ -359,7 +364,11 @@ struct DashboardView: View {
 
                     WeightCard(plan: plan)
 
-                    TodayCard(day: todayLog, targets: targets, plan: plan)
+                    TodayCard(day: todayLog, targets: todayTargets, plan: plan)
+
+                    if !plan.scheduledWorkouts(on: today).isEmpty {
+                        FuelCard(plan: plan)
+                    }
 
                     if fastingEnabled {
                         FastingCard(plan: plan)

@@ -149,10 +149,11 @@ struct SettingsView: View {
                             Text("\(plan.waterStepOunces) oz").foregroundStyle(.secondary)
                         }
                     }
+                    Toggle("Fuel training days", isOn: $plan.fuelTrainingDays)
                 } header: {
                     Text("Daily Targets")
                 } footer: {
-                    Text("Adaptive budget compares what you logged eating against how your weight trend actually moved, and quietly corrects the textbook formula — the longer you log, the more it trusts your own data.")
+                    Text("Adaptive budget compares what you logged eating against how your weight trend actually moved, and quietly corrects the textbook formula — the longer you log, the more it trusts your own data. Fuel training days adds a scheduled workout's estimated burn back to that day's calorie budget and shows a fueling card — carbs per hour, plus before and after — on the dashboard.")
                 }
 
                 // --- Supplements

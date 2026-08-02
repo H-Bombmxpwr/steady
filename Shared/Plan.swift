@@ -19,6 +19,10 @@ final class Plan {
     /// learned from actual intake vs the weight trend instead of relying on
     /// the Mifflin-St Jeor formula alone (Settings → Daily Targets).
     var adaptiveBudget: Bool = true
+    /// Training-day fueling: on days with a scheduled workout, add the
+    /// session's estimated burn to that day's calorie budget and surface
+    /// carb/fluid fueling guidance (Settings → Daily Targets).
+    var fuelTrainingDays: Bool = true
 
     @Relationship(deleteRule: .cascade) var days: [DayLog]
     @Relationship(deleteRule: .cascade) var presets: [WorkoutPreset]
@@ -211,6 +215,38 @@ extension Plan {
     }
 }
 
+/// How hard a session is — drives fueling (carbs/fluid) and the burn
+/// estimate. Kept coarse on purpose; most people can place a session in one
+/// of three buckets without a power meter.
+enum WorkoutIntensity: String, Codable, CaseIterable, Identifiable {
+    case easy, moderate, hard
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .easy: return "Easy"
+        case .moderate: return "Moderate"
+        case .hard: return "Hard"
+        }
+    }
+    /// Conversational anchor shown under the picker.
+    var cue: String {
+        switch self {
+        case .easy: return "Zone 2, can hold a conversation"
+        case .moderate: return "Steady, breathing up, short sentences"
+        case .hard: return "Threshold or intervals, hard to talk"
+        }
+    }
+    /// Multiplier applied to the MET burn estimate.
+    var burnFactor: Double {
+        switch self {
+        case .easy: return 0.85
+        case .moderate: return 1.0
+        case .hard: return 1.2
+        }
+    }
+}
+
 /// One planned workout slot per weekday (weekday: 1 = Sunday … 7 = Saturday).
 @Model
 final class WorkoutScheduleEntry {
@@ -220,14 +256,30 @@ final class WorkoutScheduleEntry {
     var hour: Int                     // planned start time (for reminders/calendar)
     var minute: Int
     var calendarEventID: String?      // EventKit identifier once synced
+    // Additive (defaulted) so existing schedules migrate cleanly. Together
+    // they drive the fueling engine — endurance vs strength, and how hard.
+    var categoryRaw: String = WorkoutCategory.cardio.rawValue
+    var intensityRaw: String = WorkoutIntensity.moderate.rawValue
 
-    init(weekday: Int, name: String, minutes: Int = 45, hour: Int = 7, minute: Int = 0) {
+    init(weekday: Int, name: String, minutes: Int = 45, hour: Int = 7, minute: Int = 0,
+         category: WorkoutCategory = .cardio, intensity: WorkoutIntensity = .moderate) {
         self.weekday = weekday
         self.name = name
         self.minutes = minutes
         self.hour = hour
         self.minute = minute
         self.calendarEventID = nil
+        self.categoryRaw = category.rawValue
+        self.intensityRaw = intensity.rawValue
+    }
+
+    var category: WorkoutCategory {
+        get { WorkoutCategory(rawValue: categoryRaw) ?? .cardio }
+        set { categoryRaw = newValue.rawValue }
+    }
+    var intensity: WorkoutIntensity {
+        get { WorkoutIntensity(rawValue: intensityRaw) ?? .moderate }
+        set { intensityRaw = newValue.rawValue }
     }
 
     var weekdayName: String {

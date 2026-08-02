@@ -276,4 +276,36 @@ enum CalorieEngine {
                              trendDelta7d: delta,
                              suggestion: suggestion)
     }
+
+    // MARK: - Training-day fueling
+
+    /// Fueling plans for every workout scheduled on `date`, sized to the
+    /// user's current weight.
+    static func fuelingPlans(plan: Plan, on date: Date) -> [FuelingPlan] {
+        plan.scheduledWorkouts(on: date).map {
+            FuelingEngine.plan(category: $0.category,
+                               intensity: $0.intensity,
+                               minutes: $0.minutes,
+                               bodyweightLbs: plan.currentWeight)
+        }
+    }
+
+    /// Estimated calories the day's scheduled training burns — the amount to
+    /// add back to the budget on a training day.
+    static func trainingBurn(plan: Plan, on date: Date) -> Int {
+        fuelingPlans(plan: plan, on: date).reduce(0) { $0 + $1.burnCalories }
+    }
+
+    /// Targets for a specific day. When training-day fueling is on and a
+    /// workout is scheduled, the session's burn is added back to the calorie
+    /// budget so eating the fuel doesn't read as going "over."
+    static func targets(profile: UserProfile, plan: Plan, on date: Date) -> DailyTargets {
+        let base = targets(profile: profile, plan: plan)
+        guard plan.fuelTrainingDays else { return base }
+        let bump = trainingBurn(plan: plan, on: date)
+        guard bump > 0 else { return base }
+        return DailyTargets(calories: base.calories + bump,
+                            proteinGrams: base.proteinGrams,
+                            waterOunces: base.waterOunces)
+    }
 }

@@ -20,6 +20,8 @@ struct WorkoutsView: View {
     @State private var newName = ""
     @State private var newMinutes = 45
     @State private var newTime = Calendar.current.date(from: DateComponents(hour: 7, minute: 0))!
+    @State private var newCategory: WorkoutCategory = .cardio
+    @State private var newIntensity: WorkoutIntensity = .moderate
 
     // Calendar sync feedback
     @State private var syncMessage: String?
@@ -96,7 +98,7 @@ struct WorkoutsView: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text("\(entry.weekdayName) — \(entry.name)")
-                                Text("\(entry.minutes) min at \(entry.timeString)")
+                                Text("\(entry.minutes) min · \(entry.intensity.label) at \(entry.timeString)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -114,7 +116,7 @@ struct WorkoutsView: View {
                     Text("Workouts only count against your daily goals on scheduled days — everything else is a rest day.")
                 }
 
-                Section("Add to Schedule") {
+                Section {
                     Button {
                         showSchedulePicker = true
                     } label: {
@@ -135,7 +137,16 @@ struct WorkoutsView: View {
                     if scheduleSource.isEmpty {
                         TextField("Workout (e.g., Upper body, Run)", text: $newName)
                         Stepper("Minutes: \(newMinutes)", value: $newMinutes, in: 5...300, step: 5)
+                        Picker("Type", selection: $newCategory) {
+                            ForEach(WorkoutCategory.allCases) { c in
+                                Label(c.label, systemImage: c.icon).tag(c)
+                            }
+                        }
                     }
+                    Picker("Intensity", selection: $newIntensity) {
+                        ForEach(WorkoutIntensity.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
                     Picker("Day", selection: $newWeekday) {
                         ForEach(1...7, id: \.self) { d in
                             Text(Calendar.current.weekdaySymbols[d - 1]).tag(d)
@@ -145,6 +156,27 @@ struct WorkoutsView: View {
                     Button("Add to Schedule") { addToSchedule() }
                         .disabled(scheduleSource.isEmpty
                                   && newName.trimmingCharacters(in: .whitespaces).isEmpty)
+                } header: {
+                    Text("Add to Schedule")
+                } footer: {
+                    Text("Type and intensity size the fueling plan — carbs per hour during, plus what to eat before and after. Cardio and sports longer than an hour are where mid-workout carbs start to matter.")
+                }
+
+                // --- Fuel calculator (works without touching the schedule)
+                Section {
+                    NavigationLink {
+                        FuelCalculatorView(plan: plan)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Fuel Calculator")
+                                Text("Carbs/hr, fluids, and recovery for any session")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "bolt.fill").foregroundStyle(Theme.foodTint)
+                        }
+                    }
                 }
 
                 // --- Calendar sync (local via EventKit — no server involved)
@@ -199,7 +231,9 @@ struct WorkoutsView: View {
             name: name,
             minutes: preset?.defaultMinutes ?? newMinutes,
             hour: comps.hour ?? 7,
-            minute: comps.minute ?? 0))
+            minute: comps.minute ?? 0,
+            category: preset?.category ?? newCategory,
+            intensity: newIntensity))
         try? context.save()
         NotificationManager.rescheduleAll(plan: plan)
         newName = ""
