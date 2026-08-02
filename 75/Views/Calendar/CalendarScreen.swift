@@ -156,7 +156,8 @@ private struct MonthGrid: View {
             .padding(.horizontal, 4)
 
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 6) {
-                ForEach(weekdaySymbols, id: \.self) { s in
+                // Index-keyed: weekday initials repeat (S, T…), so \.self collides.
+                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, s in
                     Text(s)
                         .font(.caption2.bold())
                         .foregroundStyle(Theme.textDim)

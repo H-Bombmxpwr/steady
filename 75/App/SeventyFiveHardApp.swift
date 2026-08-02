@@ -9,7 +9,12 @@ struct SeventyFiveHardApp: App {
     var sharedModelContainer: ModelContainer = PersistenceController.shared.container
     @StateObject private var appLock = AppLockManager()
     @Environment(\.scenePhase) private var scenePhase
-    @State private var showPrivacyShield = true
+    /// App-switcher privacy cover (branded, not a lock). Off until the app
+    /// has been active once, so it never flashes over the launch screen.
+    @State private var showPrivacyShield = false
+    @State private var hasBecomeActive = false
+    /// Cold-launch loading screen, dismissed once its progress bar fills.
+    @State private var launching = true
 
     private static let notificationDelegate = NotificationDelegate()
 
@@ -67,21 +72,30 @@ struct SeventyFiveHardApp: App {
                 .modelContainer(sharedModelContainer)
                 .environmentObject(appLock)
                 .themedRoot()
-                // Privacy blur when backgrounded/app switcher
-                .overlay(alignment: .center) {
-                    if showPrivacyShield { PrivacyShieldView() }
+                // Branded privacy cover in the app switcher / when backgrounded.
+                .overlay { if showPrivacyShield { PrivacyShieldView() } }
+                // Themed launch screen on top, until its progress bar fills.
+                .overlay {
+                    if launching {
+                        LaunchLoadingView {
+                            withAnimation(.easeOut(duration: 0.35)) { launching = false }
+                        }
+                        .transition(.opacity)
+                    }
                 }
                 .onChange(of: scenePhase) { phase in
                     switch phase {
                     case .active:
+                        hasBecomeActive = true
                         showPrivacyShield = false
                     case .inactive, .background:
-                        showPrivacyShield = true
+                        // Don't cover the launch screen before the first activation.
+                        if hasBecomeActive { showPrivacyShield = true }
                         appLock.lockPhotos()   // photos require Face ID again on return
                         refreshStreakGuard()   // also caches the widget snapshot…
                         WidgetCenter.shared.reloadAllTimelines()   // …which this reload reads
                     @unknown default:
-                        showPrivacyShield = true
+                        if hasBecomeActive { showPrivacyShield = true }
                         appLock.lockPhotos()
                     }
                 }
