@@ -83,6 +83,15 @@ enum AIFoodEstimator {
         let grounded: Bool         // numbers came from a live web lookup
     }
 
+    struct RecipeBreakdown {
+        let title: String
+        let items: [MealItem]      // nutrition for the WHOLE recipe as written
+        let servings: Int          // how many servings the whole recipe yields
+        let assumed: String
+        let note: String           // e.g. "couldn't fully read the link" (may be empty)
+        let grounded: Bool
+    }
+
     /// The full nutrition panel every food estimate asks for. Density is NOT
     /// requested — the model was unreliable at bucketing it (large pancakes
     /// came back "green"), so it's computed locally from kcal ÷ grams.
@@ -215,6 +224,75 @@ enum AIFoodEstimator {
         let items = mealItems(from: payload.items ?? [])
         guard !items.isEmpty else { throw EstimatorError.badResponse }
         return MealBreakdown(items: items, assumed: payload.assumed ?? "", grounded: grounded)
+    }
+
+    /// "Paste a link" — read a recipe from a web page or video URL and break
+    /// the WHOLE recipe into ingredients with nutrition, plus how many
+    /// servings it yields (the UI divides down to the servings you log).
+    /// Uses Gemini's URL-reading (`url_context`) for pages and native video
+    /// understanding for YouTube; short-form video (TikTok/Instagram) is
+    /// best-effort — when the link can't be read, `note` says so.
+    static func recipeBreakdown(url: String) async throws -> RecipeBreakdown {
+        struct Payload: Decodable {
+            let title: String?
+            let servings: Int?
+            let items: [FoodPayload]?
+            let assumed: String?
+            let note: String?
+        }
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = URL(string: trimmed),
+              parsed.scheme?.hasPrefix("http") == true else {
+            throw EstimatorError.badLink
+        }
+        let host = (parsed.host ?? "").lowercased()
+        let isYouTube = host.contains("youtube.com") || host.contains("youtu.be")
+
+        let videoLine = isYouTube
+            ? "This is a video — watch it and read its on-screen text, title, and description, and use the top comments to pin down exact quantities."
+            : "Read the page. If it's a video post, use its caption, description, and top comments to pin down exact quantities."
+        let prompt = """
+        The user pasted a link to a recipe. \(videoLine) Get the ingredient \
+        list and quantities as precisely as you can, then break the FULL \
+        recipe (as written, not one serving) into its ingredients and \
+        estimate the nutrition of each. \(nutritionGuidance)
+        List EVERY ingredient as its own item — never merge two ingredients \
+        into one line; oils, butter, and sauces each get their own item. \
+        Base each item on the amount used in the WHOLE recipe.
+        Also report how many servings the whole recipe makes.
+        Link: \(trimmed)
+        Respond with only JSON:
+        {"title": "<recipe name>", \
+        "servings": <integer: how many servings the whole recipe yields, best estimate, at least 1>, \
+        "items": [{"name": "<ingredient>", \
+        "assumed": "<short: the amount used in the whole recipe, e.g. '2 cups, ~250 g'>", \
+        \(nutritionSchema)}], \
+        "assumed": "<one short sentence: overall assumptions about the recipe>", \
+        "note": "<if you could NOT read the link, say so in a few words; otherwise empty>"}
+        If you cannot read the link at all, use {"items": [], "note": "<why>"}.
+        """
+        var parts: [[String: Any]] = [["text": prompt]]
+        if isYouTube {
+            parts.append(["file_data": ["file_uri": trimmed]])
+        }
+        // url_context reads the page; google_search lets it cross-check brand
+        // or packaged-ingredient nutrition. Recipe import always uses the
+        // fuller model — it's an occasional, get-it-right action.
+        let tools: [[String: Any]] = [["url_context": [String: String]()],
+                                      ["google_search": [String: String]()]]
+        let payload: Payload = try await generateTooled(parts: parts, tools: tools,
+                                                        modelName: "gemini-flash-latest")
+        let items = mealItems(from: payload.items ?? [])
+        guard !items.isEmpty else {
+            let why = (payload.note?.isEmpty == false) ? payload.note! : nil
+            throw EstimatorError.linkUnread(why)
+        }
+        return RecipeBreakdown(title: payload.title ?? "Recipe",
+                               items: items,
+                               servings: max(1, payload.servings ?? 1),
+                               assumed: payload.assumed ?? "",
+                               note: payload.note ?? "",
+                               grounded: true)
     }
 
     private static func mealItems(from payloads: [FoodPayload]) -> [MealItem] {
@@ -501,13 +579,19 @@ enum AIFoodEstimator {
     }
 
     enum EstimatorError: LocalizedError {
-        case noKey, badResponse
+        case noKey, badResponse, badLink, linkUnread(String?)
         var errorDescription: String? {
             switch self {
             case .noKey:
                 return "Add your free Gemini API key in Settings → AI Assist first."
             case .badResponse:
                 return "Couldn't get an estimate — check the key, your connection, or try a more specific description."
+            case .badLink:
+                return "That doesn't look like a web link — paste the full https:// address of the recipe."
+            case .linkUnread(let why):
+                let base = "Couldn't read that link"
+                if let why, !why.isEmpty { return "\(base) — \(why). Try a recipe website or a YouTube link." }
+                return "\(base). Short-form video (TikTok, Instagram) often can't be read — try a recipe website or YouTube, or paste the ingredients into Describe Your Meal."
             }
         }
     }
@@ -584,6 +668,42 @@ enum AIFoodEstimator {
             return (payload, true)
         }
         return (try await performGenerate(parts: parts, grounded: false), false)
+    }
+
+    /// A call that runs with explicit tools (url_context, google_search) on a
+    /// named model. Tools can't be combined with JSON response mode, so the
+    /// reply comes back as text and the JSON is extracted below. Reading a
+    /// page or video is slow, so this gets a generous timeout.
+    private static func generateTooled<T: Decodable>(parts: [[String: Any]],
+                                                     tools: [[String: Any]],
+                                                     modelName: String) async throws -> T {
+        let key = apiKey
+        guard !key.isEmpty else { throw EstimatorError.noKey }
+
+        var request = URLRequest(url: URL(string:
+            "https://generativelanguage.googleapis.com/v1beta/models/\(modelName):generateContent")!)
+        request.timeoutInterval = 90
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
+
+        let body: [String: Any] = ["contents": [["parts": parts]],
+                                   "tools": tools,
+                                   "generationConfig": ["temperature": 0]]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw EstimatorError.badResponse
+        }
+        let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
+        let text = (decoded.candidates?.first?.content?.parts ?? [])
+            .compactMap(\.text)
+            .joined()
+        guard let payload = try? JSONDecoder().decode(T.self, from: Data(extractJSON(text).utf8)) else {
+            throw EstimatorError.badResponse
+        }
+        return payload
     }
 
     private static func performGenerate<T: Decodable>(parts: [[String: Any]], grounded: Bool) async throws -> T {
@@ -702,6 +822,31 @@ extension AIFoodEstimator {
                 "assumed": "<one short sentence: overall assumptions about the plate>"}
                 If there is no food in the photo, use {"items": []}.
                 [the photo is attached alongside this text]
+                """),
+            PromptInfo(
+                id: "recipe",
+                title: "Recipe from a Link",
+                whenUsed: "When you paste a recipe web link or video URL.",
+                sends: "Only the link you pasted (the model reads the page or video itself).",
+                grounded: true,
+                template: """
+                The user pasted a link to a recipe. Read the page (or watch the \
+                video and read its description and top comments) to get the \
+                ingredient list and quantities as precisely as you can, then \
+                break the FULL recipe into its ingredients and estimate the \
+                nutrition of each. \(nutritionGuidance)
+                List EVERY ingredient as its own item. Base each item on the \
+                amount used in the WHOLE recipe. Also report how many servings \
+                the whole recipe makes.
+                Link: ‹the link you pasted›
+                Respond with only JSON:
+                {"title": "<recipe name>", \
+                "servings": <integer servings the whole recipe yields>, \
+                "items": [{"name": "<ingredient>", \
+                "assumed": "<the amount used in the whole recipe>", \
+                \(nutritionSchema)}], \
+                "assumed": "<one short sentence: overall assumptions>", \
+                "note": "<if the link couldn't be read, why; else empty>"}
                 """),
             PromptInfo(
                 id: "estimate",

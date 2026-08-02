@@ -31,6 +31,9 @@ struct FoodSearchView: View {
     @State private var showFoodCamera = false
     @State private var capturedPlate: CapturedPlate?
 
+    // Recipe-from-a-link (Gemini URL/video reading)
+    @State private var showRecipeLink = false
+
     init(day: DayLog, meal: Meal = .suggested()) {
         self.day = day
         _meal = State(initialValue: meal)
@@ -102,6 +105,18 @@ struct FoodSearchView: View {
                     .listRowBackground(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(LinearGradient(colors: [Theme.foodTint, Theme.photoTint],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                    )
+                }
+                Section {
+                    Button { showRecipeLink = true } label: {
+                        headlineLabel(icon: "link",
+                                      title: "Recipe from a Link",
+                                      subtitle: "Paste a recipe page or video — get every ingredient, per serving")
+                    }
+                    .listRowBackground(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(LinearGradient(colors: [Theme.photoTint, Theme.accent],
                                                  startPoint: .topLeading, endPoint: .bottomTrailing))
                     )
                 }
@@ -304,6 +319,13 @@ struct FoodSearchView: View {
                 showFoodCamera = false
                 capturedPlate = CapturedPlate(image: image)
             }
+        }
+        .sheet(isPresented: $showRecipeLink) {
+            RecipeImportView(mealLabel: meal.label) { logs in
+                logs.forEach { add($0) }
+                dismiss()
+            }
+            .themedRoot()
         }
         .sheet(item: $capturedPlate) { plate in
             // Photo goes through the same itemized review as Describe —

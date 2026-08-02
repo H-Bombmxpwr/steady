@@ -246,7 +246,7 @@ struct DescribeMealView: View {
 
 /// Every number the AI guessed, editable — fix anything that looks off
 /// before logging. Density re-buckets itself from the edited values.
-private struct MealItemEditSheet: View {
+struct MealItemEditSheet: View {
     @Environment(\.dismiss) private var dismiss
     let onSave: (AIFoodEstimator.MealItem) -> Void
 

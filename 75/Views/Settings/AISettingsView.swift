@@ -18,6 +18,7 @@ struct AISettingsView: View {
 
                 • Describe Your Meal — itemizing what you type or dictate
                 • Photo of Food — reading a plate into separate items
+                • Recipe from a Link — reading a web or video recipe into items
                 • Estimate Nutrition on custom foods and “Not listed?” search results
                 • Filling in protein when a database entry is missing it
                 • What Should I Eat? — meal ideas that fit your remaining budget
