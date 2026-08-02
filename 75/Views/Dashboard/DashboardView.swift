@@ -15,6 +15,9 @@ struct MainTabView: View {
     /// position × tabWidth, so finger drags on either surface move both
     /// fluidly — nothing snaps until release.
     @State private var pagePosition: CGFloat = 0
+    /// Raised while a drag is on an inner horizontal scroller (Milestones),
+    /// so the page swipe yields to it.
+    @State private var hScrollLock = false
 
     // Widget deep links (seventyfive://log-food, log-workout, today)
     @State private var showFoodLog = false
@@ -43,7 +46,8 @@ struct MainTabView: View {
     var body: some View {
         Group {
             if glassBar {
-                ContinuousPager(position: $pagePosition, count: Self.tabs.count) { i in
+                ContinuousPager(position: $pagePosition, count: Self.tabs.count,
+                                scrollLock: $hScrollLock) { i in
                     // The floating bar's height must reach the scroll views
                     // INSIDE each page. safeAreaInset can't do it here —
                     // NavigationStack rebuilds its safe area from UIKit
@@ -111,6 +115,38 @@ struct MainTabView: View {
     }
 }
 
+// MARK: - Nested horizontal-scroll coordination
+
+/// Set true by an inner horizontally-scrolling view (e.g. the Milestones
+/// carousel) while a drag on it is in progress, so the page swipe stands
+/// down and the finger scrolls the inner content instead of changing tabs.
+private struct PagerHScrollLockKey: EnvironmentKey {
+    static let defaultValue: Binding<Bool>? = nil
+}
+extension EnvironmentValues {
+    var pagerHScrollLock: Binding<Bool>? {
+        get { self[PagerHScrollLockKey.self] }
+        set { self[PagerHScrollLockKey.self] = newValue }
+    }
+}
+
+/// Attach to a horizontal ScrollView that lives inside the glass pager — it
+/// claims horizontal drags so a swipe scrolls it rather than flipping tabs.
+struct ClaimsHorizontalDrag: ViewModifier {
+    @Environment(\.pagerHScrollLock) private var lock
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            DragGesture(minimumDistance: 2)
+                .onChanged { _ in lock?.wrappedValue = true }
+                .onEnded { _ in lock?.wrappedValue = false }
+        )
+    }
+}
+extension View {
+    func claimsHorizontalDrag() -> some View { modifier(ClaimsHorizontalDrag()) }
+}
+
 // MARK: - Continuous pager (glass mode)
 
 /// Five screens in a row, offset by a continuous fractional position —
@@ -120,6 +156,8 @@ struct MainTabView: View {
 private struct ContinuousPager<Content: View>: View {
     @Binding var position: CGFloat
     let count: Int
+    /// Raised by an inner horizontal scroller so this pager yields the drag.
+    @Binding var scrollLock: Bool
     @ViewBuilder let content: (Int) -> Content
 
     /// Position when the current drag began (nil = not dragging).
@@ -139,6 +177,7 @@ private struct ContinuousPager<Content: View>: View {
                         .frame(width: width)
                 }
             }
+            .environment(\.pagerHScrollLock, $scrollLock)
             .offset(x: -position * width)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 15)
@@ -146,7 +185,10 @@ private struct ContinuousPager<Content: View>: View {
                         // Leave the left edge to the navigation back-swipe.
                         guard value.startLocation.x > 30 else { return }
                         if horizontal == nil {
-                            horizontal = abs(value.translation.width) > abs(value.translation.height)
+                            // An inner horizontal scroller (e.g. Milestones)
+                            // already claimed this drag — don't page.
+                            horizontal = !scrollLock
+                                && abs(value.translation.width) > abs(value.translation.height)
                             #if DEBUG
                             NSLog("[pager] ENGAGE h=%d start=(%.0f,%.0f)", horizontal == true ? 1 : 0,
                                   value.startLocation.x, value.startLocation.y)

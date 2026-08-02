@@ -330,6 +330,8 @@ struct DayDetailView: View {
                     // The tab-level bottom content margin is for vertical
                     // scrollers; don't let it stretch this photo strip.
                     .contentMargins(.bottom, 0, for: .scrollContent)
+                    // Own horizontal drags so swiping photos doesn't flip tabs.
+                    .claimsHorizontalDrag()
                 }
                 HStack(spacing: 12) {
                     Button {
