@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Observation
 import WidgetKit
 
@@ -244,11 +245,21 @@ struct Card<Content: View>: View {
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Theme.surface)
+                // A faint lit-from-above wash in the card's own hue — depth
+                // and color instead of a flat fill.
+                .overlay(
+                    LinearGradient(colors: [(tint ?? Theme.accent).opacity(0.07), .clear],
+                                   startPoint: .top, endPoint: .center)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .strokeBorder(tint?.opacity(0.22) ?? Theme.hairline)
                 )
-                .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                // Layered shadow: a soft ambient one to ground it, plus a
+                // colored glow in the tint for that premium floating feel.
+                .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
+                .shadow(color: (tint ?? Theme.accent).opacity(0.16), radius: 18, y: 9)
         )
     }
 }
@@ -291,7 +302,7 @@ struct StatRing: View {
                     .padding(.horizontal, 10)
             }
             .frame(width: size, height: size)
-            .animation(.easeOut(duration: 0.4), value: value)
+            .animation(.spring(response: 0.55, dampingFraction: 0.7), value: value)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(Theme.textDim)
@@ -315,7 +326,7 @@ struct GradientBar: View {
             }
         }
         .frame(height: 8)
-        .animation(.easeOut(duration: 0.4), value: value)
+        .animation(.spring(response: 0.5, dampingFraction: 0.75), value: value)
     }
 }
 
@@ -381,5 +392,77 @@ extension View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Haptics
+
+/// Thin wrapper over the feedback generators so taps and confirmations feel
+/// physical instead of silent. Cheap to call; the OS coalesces rapid hits.
+enum Haptics {
+    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    static func soft() { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
+}
+
+// MARK: - Button styles (spring press + haptic)
+
+/// A subtle spring scale-down with a light haptic on press — keeps the
+/// button's own look, just adds the tactile "give." Use anywhere:
+/// `.buttonStyle(.pressable)`.
+struct PressableButtonStyle: ButtonStyle {
+    var scale: CGFloat = 0.96
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed { Haptics.tap() }
+            }
+    }
+}
+
+extension ButtonStyle where Self == PressableButtonStyle {
+    static var pressable: PressableButtonStyle { PressableButtonStyle() }
+}
+
+/// A prominent call-to-action: accent (or tinted) gradient fill, white bold
+/// label, and a soft colored shadow that tightens as the button presses in.
+/// `.buttonStyle(.primaryAction)` or `.buttonStyle(.primaryAction(tint:))`.
+struct PrimaryActionButtonStyle: ButtonStyle {
+    var tint: Color? = nil
+
+    private var fill: LinearGradient {
+        if let tint {
+            return LinearGradient(colors: [tint, tint.opacity(0.72)],
+                                  startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+        return Theme.gradient
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        let glow = tint ?? Theme.accent
+        return configuration.label
+            .font(.headline)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 15)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(fill))
+            .shadow(color: glow.opacity(configuration.isPressed ? 0.18 : 0.40),
+                    radius: configuration.isPressed ? 5 : 14,
+                    y: configuration.isPressed ? 2 : 7)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.spring(response: 0.3, dampingFraction: 0.65), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed { Haptics.tap() }
+            }
+    }
+}
+
+extension ButtonStyle where Self == PrimaryActionButtonStyle {
+    static var primaryAction: PrimaryActionButtonStyle { PrimaryActionButtonStyle() }
+    static func primaryAction(tint: Color) -> PrimaryActionButtonStyle {
+        PrimaryActionButtonStyle(tint: tint)
     }
 }

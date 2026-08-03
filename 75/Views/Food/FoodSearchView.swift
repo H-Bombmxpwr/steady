@@ -91,6 +91,7 @@ struct FoodSearchView: View {
                                       title: "Describe Your Meal",
                                       subtitle: "Type or dictate what you ate — get every item with full nutrition")
                     }
+                    .buttonStyle(.pressable)
                     .listRowBackground(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(Theme.gradient)
@@ -102,6 +103,7 @@ struct FoodSearchView: View {
                                       title: "Photo of Food",
                                       subtitle: "Point at the plate — every item identified and estimated")
                     }
+                    .buttonStyle(.pressable)
                     .listRowBackground(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(LinearGradient(colors: [Theme.foodTint, Theme.photoTint],
@@ -114,6 +116,7 @@ struct FoodSearchView: View {
                                       title: "Recipe from a Link",
                                       subtitle: "Paste a recipe page or video — get every ingredient, per serving")
                     }
+                    .buttonStyle(.pressable)
                     .listRowBackground(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(LinearGradient(colors: [Theme.photoTint, Theme.accent],

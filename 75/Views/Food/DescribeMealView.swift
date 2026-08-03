@@ -160,6 +160,7 @@ struct DescribeMealView: View {
                         }
                         .onDelete { idx in items.remove(atOffsets: idx) }
                         Button {
+                            Haptics.success()
                             onLog(scaledItems.map { FoodLog(name: $0.name,
                                                       calories: $0.calories,
                                                       proteinGrams: $0.proteinGrams,

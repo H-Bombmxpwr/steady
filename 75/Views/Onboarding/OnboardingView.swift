@@ -358,12 +358,16 @@ struct OnboardingView: View {
             }
             Section {
                 Button("Start Tracking") { createPlan() }
+                    .buttonStyle(.primaryAction)
                     .disabled(!goalsValid || !pinValid)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
             }
         }
     }
 
     private func createPlan() {
+        Haptics.success()
         if pin.count >= 4, pin == pinConfirm {
             PinStore.set(pin)
         }

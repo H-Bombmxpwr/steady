@@ -114,6 +114,7 @@ struct RecipeImportView: View {
                         }
                         .onDelete { idx in items.remove(atOffsets: idx) }
                         Button {
+                            Haptics.success()
                             onLog(items.map { scaled($0) }.map {
                                 FoodLog(name: $0.name,
                                         calories: $0.calories,
