@@ -9,6 +9,9 @@ struct OnboardingView: View {
     // Streak style — relaxed (any logging) is the default
     @State private var strictStreak = false
 
+    // AI assist (optional own Gemini key; a shared one is bundled)
+    @AppStorage(AIFoodEstimator.apiKeyKey) private var geminiKey = ""
+
     // Blood work (optional, opt-in)
     @AppStorage("labs.enabled") private var labsEnabled = false
     @State private var ldlText = ""
@@ -66,6 +69,7 @@ struct OnboardingView: View {
                 case 3: scheduleStep
                 case 4: hydrationStep
                 case 5: labsStep
+                case 6: aiStep
                 default: privacyStep
                 }
             }
@@ -87,7 +91,7 @@ struct OnboardingView: View {
         .themedRoot()
     }
 
-    private let titles = ["About You", "Your Goal", "Your Budget", "Workout Days", "Hydration", "Blood Work", "Photo Privacy"]
+    private let titles = ["About You", "Your Goal", "Your Budget", "Workout Days", "Hydration", "Blood Work", "AI Assist", "Photo Privacy"]
 
     // MARK: Step 1 — profile
 
@@ -267,6 +271,45 @@ struct OnboardingView: View {
             }
             Section {
                 Button("Continue") { step = 6 }
+            }
+        }
+    }
+
+    // MARK: Step 7 — AI assist (optional own key; a shared one is bundled)
+
+    private var geminiKeyEntered: Bool {
+        !geminiKey.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var aiStep: some View {
+        Form {
+            Section {
+                Text("Steady uses Google's Gemini to turn your meals into calories and macros — describe them, snap a photo, or paste a recipe link, and get every item broken out.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Smart food logging")
+            }
+
+            Section {
+                TextField("Paste a Gemini key (optional)", text: $geminiKey)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .font(.system(.body, design: .monospaced))
+                    .focused($weightFocused)
+                NavigationLink {
+                    GeminiKeyGuideView()
+                } label: {
+                    Label("How to get a free key", systemImage: "key.horizontal.fill")
+                }
+            } footer: {
+                Text("A shared key is already built in, so this works right away — just continue. Prefer your own private quota? Paste a free key, or tap above to get one in a minute. You can add or change it anytime in Settings → AI & Estimates.")
+            }
+
+            Section {
+                Button(geminiKeyEntered ? "Save Key & Continue" : "Use Built-in Key & Continue") {
+                    step = 7
+                }
             }
         }
     }
