@@ -37,12 +37,21 @@ struct AISettingsView: View {
                 TextField("Gemini API key", text: $geminiKey)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
+                    .font(.system(.body, design: .monospaced))
                     .focused($keyFocused)
+                Label(keyStatus.text, systemImage: keyStatus.icon)
+                    .font(.caption)
+                    .foregroundStyle(keyStatus.color)
+                NavigationLink {
+                    GeminiKeyGuideView()
+                } label: {
+                    Label("How to get a free key", systemImage: "key.horizontal.fill")
+                }
                 Toggle("Higher accuracy (slower)", isOn: $accurateModel)
             } header: {
                 Text("Model")
             } footer: {
-                Text("A key is already bundled with the app — paste your own from aistudio.google.com to override it. Higher accuracy switches estimates to the full Gemini Flash model: noticeably better numbers on complex meals, but a response takes several seconds instead of about one.")
+                Text("A key is already bundled with the app, so estimates work out of the box — paste your own to use your own private quota. Higher accuracy switches estimates to the full Gemini Flash model: noticeably better numbers on complex meals, but a response takes several seconds instead of about one.")
             }
 
             // --- The exact prompts
@@ -82,6 +91,111 @@ struct AISettingsView: View {
                 Button("Done") { keyFocused = false }
             }
         }
+    }
+
+    /// A quick read on what's in the key field, so pasting a bad key is
+    /// obvious before an estimate ever fails. Real AI Studio keys start with
+    /// "AIza" and are ~39 characters of letters, digits, - and _.
+    private var keyStatus: (text: String, icon: String, color: Color) {
+        let trimmed = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return ("Using the built-in key — paste your own to override it.",
+                    "checkmark.circle", .secondary)
+        }
+        let looksValid = trimmed.hasPrefix("AIza") && trimmed.count >= 30
+            && trimmed.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        return looksValid
+            ? ("Key looks valid.", "checkmark.seal.fill", .green)
+            : ("This doesn't look like a Gemini key — it should start with “AIza”. See “How to get a free key”.",
+               "exclamationmark.triangle.fill", Theme.warn)
+    }
+}
+
+/// Step-by-step guide to creating a free Gemini API key in Google AI Studio,
+/// with a button straight to the right page and exactly how to paste it back.
+struct GeminiKeyGuideView: View {
+    /// The API-keys page in Google AI Studio.
+    private let studioURL = URL(string: "https://aistudio.google.com/apikey")!
+
+    var body: some View {
+        Form {
+            Section {
+                Text("The app already includes a shared key, so nothing is required. Add your own free key to use your own private quota — it's free, and no credit card is needed.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Link(destination: studioURL) {
+                    Label("Open Google AI Studio", systemImage: "safari.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.accent)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            } header: {
+                Text("Get a free key")
+            }
+
+            Section {
+                step(1, "Open Google AI Studio", "Tap the button above, or go to aistudio.google.com/apikey in Safari.")
+                step(2, "Sign in with Google", "Use any Google account and accept the terms if you're asked.")
+                step(3, "Create the key", "Tap “Create API key,” then “Create API key in a new project” (or pick an existing project).")
+                step(4, "Copy it", "Your new key appears — tap it to copy the whole string.")
+                step(5, "Paste it back here", "Return to AI & Estimates and paste it into the “Gemini API key” field. That's it.")
+            } header: {
+                Text("Step by step")
+            }
+
+            Section {
+                Text("""
+                A Gemini key looks like:
+
+                AIzaSyD-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+                • It starts with “AIza” and is about 39 characters.
+                • Only letters, numbers, “-” and “_” — no spaces.
+                • Paste the key by itself. Don't add quotes, and don't paste a whole URL or “key=…”.
+
+                The field shows a green “Key looks valid” once it's formatted right. (Stray spaces are trimmed automatically, but paste it clean when you can.)
+                """)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            } header: {
+                Text("How the key should look")
+            }
+
+            Section {
+                Text("The free tier is generous — plenty for everyday logging — and needs no card. If an estimate ever fails with a rate-limit error, wait a minute, or turn off “Higher accuracy” (the lighter model has a higher free limit).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Cost & limits")
+            }
+
+            Section {
+                Text("Your key is stored only on this device and treated like a password — it's never shared. You can delete or regenerate it anytime in Google AI Studio; if it ever leaks, regenerate it there and paste the new one here.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Keeping it safe")
+            }
+        }
+        .themedForm()
+        .navigationTitle("Get a Gemini Key")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func step(_ n: Int, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(n)")
+                .font(.subheadline.bold())
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Theme.gradient))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 
