@@ -1,231 +1,187 @@
-# Steady — Personal Fitness & Weight-Loss Tracker (SwiftUI + SwiftData)
+# Steady
 
-A private, local-first iOS app for losing weight through proven methods. Originally
-a 75 Hard tracker (the repo/project is still named `75`; bundle ID and App Group
-are unchanged so data persists), now **Steady**: a general fitness tracker built
-around an adaptive calorie budget, branded with a descending-trendline mark.
-Product scope and work log live in `.scratch/fitness-tracker/`.
+**A private, local-first iOS weight-loss & fitness tracker built around an adaptive calorie budget and AI food logging.**
+
+`iOS 18.5+` · `SwiftUI` · `SwiftData` · `WidgetKit` · `HealthKit` · `Local-first` · `No external dependencies`
+
+Steady started life as a 75 Hard tracker and grew into a general weight-loss app built on proven methods: an adaptive calorie budget, high-protein targets, real workout programming, and consistency mechanics — all on-device.
+
+> The Xcode project and repo are still named `75`, and the bundle ID / App Group are unchanged so existing data persists. Product scope and the work log live in [`.scratch/fitness-tracker/`](.scratch/fitness-tracker/).
+
+---
+
+## Contents
+
+- [Highlights](#highlights)
+- [Features](#features)
+  - [Plan & adaptive budget](#plan--adaptive-budget)
+  - [Food logging](#food-logging)
+  - [AI (Gemini)](#ai-gemini)
+  - [Workouts & fueling](#workouts--fueling)
+  - [Coaching & insights](#coaching--insights)
+  - [Other tracking](#other-tracking)
+  - [Streak](#streak)
+  - [Stats](#stats)
+  - [Blood work (opt-in)](#blood-work-opt-in)
+  - [Integrations](#integrations)
+  - [Privacy, security & design](#privacy-security--design)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Getting started](#getting-started)
+
+---
+
+## Highlights
+
+- 🍽️ **AI food logging** — describe a meal, photograph a plate, or **paste a recipe link** and Gemini itemizes every ingredient with a full nutrition panel.
+- 📉 **Adaptive budget** — learns your real burn rate from intake vs. your weight trend, instead of trusting a textbook formula.
+- 🏋️ **Workout fueling** — carbs-per-hour, pre/post, and fluids for a session; training days add their burn back to the budget.
+- 🔒 **Local-first & private** — data lives in an App Group container; progress photos sit behind Face ID and never touch the Photos app unless you export them.
+- 🎨 **Themed everywhere** — five accent palettes, matching app icons, and widgets that follow your palette.
+
+---
 
 ## Features
 
-### Plan & engine
-- **Plan setup onboarding**: profile → TDEE (Mifflin-St Jeor) → goal weight + pace →
-  calorie budget preview → training days → hydration. Sex options include
-  "prefer not to say" (uses the male/female midpoint in the BMR math).
-- **Adaptive budget**: recomputes from your latest weight; goals (weight, pace,
-  protein, water) are editable anytime in Settings without breaking history.
-- **Adaptive TDEE** (on by default, Settings → Daily Targets): once there are
-  14+ food-logged days and weigh-ins spanning 14+ days in the last four weeks,
-  the engine compares what you actually ate against how the weight trend
-  actually moved (3,500 kcal/lb) and learns your real burn rate — blended with
-  the formula (trust grows with logging consistency, formula keeps a 20%
-  anchor, observed value clamped to sane bounds). Settings shows the learned
-  number vs the formula so the budget never changes silently.
-- **Weight trend**: EWMA-smoothed trend line over your actual daily
-  weigh-ins (each day a visible dot, threaded by a thin line), goal line
-  with its label above it, projected goal date. A **Hide goal line** toggle
-  on the chart re-fits the y-axis to just your data — useful while the goal
-  is still far away.
+### Plan & adaptive budget
 
-### Logging
-- **Food** — logged into **meals** (breakfast, morning snack, lunch, afternoon
-  snack, dinner, dessert; time-of-day default) with whole-day totals. The day
-  screen shows one row per meal — tap in for the foods, tap a food for its
-  full panel. Five ways in, **Gemini-first**: **describe your meal** is the
-  big gradient button (type or **dictate** plain text — Gemini itemizes every
-  component separately, never merging ingredients, with a per-item portion
-  assumption; every number is editable before logging), with **photo of food**
-  (Gemini vision) right below it at equal billing, then **Saved Meals** (name
-  any meal from its screen — "my usual breakfast" — and re-log the whole
-  thing in one tap), a **Quick Log** shelf of starred and recent foods,
-  **barcode scan** (crosshair reticle, only reads inside the frame),
-  **database search** (live Open Food Facts, ~3M products, US-market first,
-  re-ranked by relevance, outages retried + cached), and manual custom entry. Every logged food carries a **full nutrition panel** — carbs, fats
-  (sat/trans), cholesterol, sodium, fiber, sugars (incl. added), potassium,
-  calcium, iron — from Gemini or OFF. A **Nutrition Report** grades the day
-  Noom-style: macro split, FDA "keep under" limits (bars go red when blown),
-  "get enough" goals, calorie-density mix, per-meal breakdown; **Summarize My
-  Day** has Gemini review everything eaten and suggest concrete substitutions.
-  **Calorie-density colors** (green < 1 cal/g · orange 1–2.4 · red > 2.4) are
-  computed locally from kcal ÷ grams (not trusted from the model) and tag
-  foods everywhere. Gemini also fills gaps: missing protein on OFF results is
-  auto-estimated, "Not listed?" estimates a whole food from the search text,
-  and every estimate echoes what it assumed. Estimates run **grounded with
-  Google Search**: named restaurants, chains, and brands are looked up against
-  their published nutrition (say "Chipotle chicken bowl…" and it checks
-  Chipotle's numbers), falling back to a plain estimate if search is
-  unavailable. Meals delete cleanly: swipe a meal row, or use the Delete Meal
-  button inside the meal; every add/remove saves immediately.
-  Logged foods stay editable —
-  tap any food in a meal to fix its name, meal, portion, or any nutrient in
-  place. In-app copy stays AI-silent; Settings → **About Estimates** is the
-  one place that explains where Gemini is used (food names/photos go to
-  Google; progress photos never leave the device). The key loads from a
-  git-ignored `Secrets.plist` (a key pasted in Settings overrides it).
-- **Workouts**: bundled **exercise database** (873 exercises with instructions,
-  free-exercise-db), workout builder with per-exercise sets × reps × weight
-  targets, **set-by-set logging** with progressive-overload history charts,
-  starter templates (StrongLifts 5×5, Push/Pull/Legs, Couch-to-5K); as many
-  workouts per day as you want, scheduled or not; categorized; weekly schedule
-  built from your presets with **EventKit calendar sync** (local, no server).
-  The Workouts tab keeps its list one tap away in **All Workouts** —
-  alphabetized and searchable so a growing collection never clogs the page,
-  with same-named workouts showing when they were built — and the same
-  searchable picker backs preset selection in Log Workout and Add to
-  Schedule (no more giant inline picker menus).
-- **What Should I Eat?** (day view → Food): Gemini suggests three realistic
-  options that fit what's *left* of today's calories and steer at the protein
-  gap (lab-aware when Blood Work is on, skips what you already ate); each idea
-  carries a full nutrition panel and logs with one tap as a normal editable
-  food.
-- **Water** (bottle-size step), **weight**, **alcohol in standard drinks**
-  (~98 cal each, counted), **supplements** (daily or weekly, with reminders),
-  **body measurements** (waist/hips/chest/arm/thigh).
-- **Fasting window** (opt-in, Settings → Fasting): no extra logging — the last
-  logged food starts the clock, the first food of the day ends it. Dashboard
-  card with live elapsed time, target (12–23 h, default 16:8), and when the
-  goal lands; eating-window history charts under Stats → Food.
+- **Onboarding**: profile → TDEE (Mifflin-St Jeor) → goal weight + pace → budget preview → training days → hydration → optional AI key → photo privacy. ("Prefer not to say" uses the male/female midpoint in the BMR math.)
+- **Adaptive budget**: recomputes from your latest weight; goals (weight, pace, protein, water) are editable anytime without breaking history.
+- **Adaptive TDEE** *(on by default)*: after 14+ logged days and 14+ days of weigh-ins, it compares what you actually ate against how your weight trend moved (3,500 kcal/lb) and learns your real burn rate — blended with the formula (trust grows with logging; formula keeps a 20% anchor; observed value clamped to sane bounds). Settings shows learned vs. formula so the budget never changes silently.
+- **Weight trend**: EWMA-smoothed line over daily weigh-ins (each day a dot), goal line + label, projected goal date, and a *Hide goal line* toggle that re-fits the axis to your data.
+
+### Food logging
+
+Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day default) with whole-day totals. Six ways in — **Gemini-first**:
+
+| Path | What it does |
+|---|---|
+| **Describe Your Meal** | Type or **dictate**; Gemini itemizes every component separately, with a per-item portion assumption. |
+| **Photo of Food** | Reads a plate into separate items via Gemini vision. |
+| **Recipe from a Link** | Paste a recipe website or YouTube URL; reads the ingredients (and video description/comments) into items, with a **servings** stepper. |
+| **Barcode scan** | Crosshair reticle, reads only inside the frame. |
+| **Database search** | Live Open Food Facts (~3M products, US-first, relevance-ranked, retried + cached). |
+| **Saved Meals / Quick Log / Custom** | Re-log a whole saved combo, a starred/recent food, or enter numbers by hand. |
+
+- **Full nutrition panel** on every food — carbs, fats (sat/trans), cholesterol, sodium, fiber, sugars (incl. added), potassium, calcium, iron.
+- **Portion steppers** everywhere — scale a portion and every stat follows; no rebuilding the meal.
+- **Grounding badge** — estimates run with Google Search, so named restaurants/brands are checked against published nutrition; a green *Looked up* vs. orange *Best guess* badge shows which answered.
+- **Calorie-density colors** (🟢 <1 cal/g · 🟠 1–2.4 · 🔴 >2.4), computed locally from kcal ÷ grams — tag foods everywhere.
+- **Nutrition Report** grades the day Noom-style: macro split, FDA "keep under" limits, "get enough" goals, density mix, per-meal breakdown.
+- **Fully editable** — tap any logged food to fix its name, meal, portion, or any nutrient in place; swipe to delete; every change saves immediately.
+
+### AI (Gemini)
+
+- Powers Describe / Photo / Recipe logging, "Estimate Nutrition," missing-protein fill-in, *What Should I Eat?*, and *Summarize My Day*.
+- **Bring your own key (optional)** — a shared key is bundled so it works out of the box; add your own free key during onboarding or in **Settings → AI & Estimates**. A built-in guide links straight to Google AI Studio and walks through creating, formatting, and pasting a key.
+- **Transparent** — the AI settings screen lists exactly what's sent, and shows the verbatim prompt for every feature with your input rendered as `‹placeholders›`.
+- **Private** — only food text/photos and pasted links leave the device (to Google). Weight, progress photos, and everything else stay local.
+
+### Workouts & fueling
+
+- **Exercise database** (873 exercises with instructions, free-exercise-db), a workout builder with per-exercise sets × reps × weight targets, **set-by-set logging** with progressive-overload history, and starter templates (StrongLifts 5×5, PPL, Couch-to-5K).
+- **Weekly schedule** built from your presets, with **EventKit calendar sync** (local, no server). *All Workouts* keeps a searchable, alphabetized list one tap away.
+- **Fueling engine** *(local, no AI)* — from a workout's type, intensity, duration, and your weight it computes carbs/hr during, a pre-load, recovery carbs + protein, and fluids/sodium. Use the **Fuel Calculator** on demand, or let a **Today's Fuel** card surface it for scheduled workouts.
+- **Training-day nutrition** — a scheduled workout's estimated burn is added back to that day's calorie budget so eating the fuel doesn't read as "over."
+
+### Coaching & insights
+
+- **What Should I Eat?** — Gemini suggests three realistic options that fit what's *left* of today's calories and target the protein gap (lab-aware; skips what you already ate); each logs in one tap.
+- **Summarize My Day / Week in Review** — the coach reviews what you ate and suggests concrete substitutions (weekly version finds repeating patterns).
+- **Patterns** *(on-device)* — correlation mining over 90 days: drinks vs. next-morning scale, short sleep vs. appetite, salty days vs. water weight, workout-day eating, weekends vs. weekdays. Nothing leaves the device.
+- **Month in Review** — a Wrapped-style poster for any month, shareable as an image.
+
+### Other tracking
+
+- **Water** (bottle-size step), **weight**, **alcohol** in standard drinks (~98 cal each), **supplements** (daily/weekly with reminders), **body measurements** (waist/hips/chest/arm/thigh).
+- **Fasting window** *(opt-in)* — no extra logging; your last food starts the clock, the first food of the day ends it. Dashboard card + eating-window history.
 
 ### Streak
-- The dashboard flame counts **any day you log something** by default (food,
-  water, weight, a workout, a photo…). Prefer accountability? Switch to a
-  **strict streak** (requires meeting the day's goals) at onboarding or in
-  Settings → Goal. The widget streak and streak-at-risk reminder follow the
-  same style. The streak is recomputed from the data every time, so
-  **backfilling a missed day** (Calendar → that day → log anything)
-  reconnects it retroactively.
+
+- The dashboard flame counts **any day you log something** by default (food, water, weight, workout, photo). Switch to a **strict streak** (must meet the day's goals) at onboarding or in Settings.
+- Recomputed from data every time, so **backfilling a missed day** (Calendar → that day → log anything) reconnects it retroactively.
 
 ### Stats
-- Dedicated **Stats tab**, split into **Body** and **Food** sections, each with
-  Today / 7D / 30D / 90D / YTD / All / custom range.
-- **Body**: weight + trend + goal, water, workout minutes stacked by type,
-  steps (Health), sleep (Health), measurements.
-- **Food**: calories vs budget, protein, **calorie-density mix** (stacked
-  green/orange/red per day), fiber vs 28 g goal, sodium vs 2,300 mg limit,
-  alcohol, eating window (when fasting is on); tiles for avg
-  calories/protein/fiber/sodium. A **Week in Review** button has the coach
-  find repeating patterns across the last 7 days (lab-aware when Blood Work
-  is on).
-- **Patterns** (Body tab): on-device correlation mining over the last 90
-  days — drinks vs the next morning's scale, short sleep vs appetite, salty
-  days vs water weight, workout-day eating, weekends vs weekdays. Each
-  pattern only appears with 4+ days on both sides of the comparison and a
-  meaningful gap; nothing leaves the device.
-- **Month in Review** (Body tab): a Wrapped-style poster for any month —
-  trend change, days showed up, best streak, workouts, water, most-logged
-  food, average calories, photos, drinks — private by default, shareable as
-  an image.
+
+- **Body**: weight + trend + goal, water, workout minutes by type, steps & sleep (Health), measurements.
+- **Food**: calories vs. budget, protein, calorie-density mix, fiber vs. 28 g, sodium vs. 2,300 mg, alcohol, eating window.
+- Every series across **Today / 7D / 30D / 90D / YTD / All / custom range**.
 
 ### Blood work (opt-in)
-- Log a few numbers from a recent lab panel (LDL, HDL, triglycerides, fasting
-  glucose, A1C) at onboarding or anytime in Settings → Blood Work. With the
-  toggle on, day summaries weight their food swaps toward improving those
-  markers and the nutrition report tightens the relevant limits (sat fat,
-  cholesterol, fiber, added sugar) — always framed as prep for the doctor
-  conversation, never medical advice. Values stay on-device; only the bare
-  numbers (nothing identifying) steer the summary request. Panels chart over
-  time on the Food stats tab.
 
-### Milestones
-- Dashboard badges for streaks (3–75 days), pounds down (5–25), and days
-  tracked (7–100) — earned ones in color, the next few locked as motivation,
-  with a one-time confetti moment when a new badge lands.
+- Log LDL, HDL, triglycerides, fasting glucose, A1C. With the toggle on, day summaries weight swaps toward improving those markers and the nutrition report tightens the relevant limits — framed as prep for the doctor, **never medical advice**. Only the bare numbers (nothing identifying) steer requests; panels chart over time.
 
 ### Integrations
-- **Apple Health two-way**: writes weight/water/nutrition/workouts, reads steps,
-  sleep, and external weigh-ins (Garmin/Watch/smart scales flow in via Health —
-  that's the Garmin link).
-- **Workout import**: workouts recorded on an Apple Watch or in Garmin
-  Connect (or Strava, etc. — anything that writes to Health) import into the
-  day log automatically whenever the dashboard or Stats loads, mapped to the
-  app's categories with source in the name ("Running · Garmin Connect").
-  Each Health workout imports exactly once (UUID remembered) and counts
-  toward workout minutes and the streak.
-- **Widgets**: small/medium/large home screen + lock screen (circular, rectangular,
-  inline). Streak is front and center; medium/large have Food and Today
-  shortcuts plus one-tap water logging, in that order (Today deep-links into
-  the current day's log). Weight is deliberately never shown on widgets.
-  Widgets **follow the in-app accent palette** — pick Ocean in Settings and
-  the rings, gradients, and buttons on every widget match (palette mirrored
-  through the App Group; timelines reload on change).
-- **Siri shortcuts**: "log water in 75", "log a meal in 75" (speak the meal,
-  it's itemized and logged with totals read back), "open today in 75".
-- **Live Activity** (optional, Settings → Appearance): remaining calories,
-  protein, and water on the Lock Screen / Dynamic Island, refreshed whenever
-  the app runs.
-- **Notifications**: morning weigh-in, hydration nudges (times configurable, with
-  a log-water action), workout reminders (lead time configurable), smart
-  streak-at-risk guard (fires only when the streak is actually in danger;
-  time configurable), supplement reminders (daily/weekly).
 
-### Privacy & style
-- **Face ID protects progress photos** (app entry is open), with an optional
-  **backup PIN** (set during onboarding or in Settings; salted hash in the
-  Keychain) for when Face ID fails or isn't wanted; photos live in the
-  app's Documents, invisible to the Photos app unless you save/share them.
-- **Photo timelapse**: builds an MP4 from your progress photos on-device.
-- **Themes & brand**: five accent palettes + dark/light/system mode — applies
-  live, everywhere, no restart. The dashboard opens with the Steady trendline
-  mark, a time-of-day greeting, and a daily-rotating encouragement line built
-  from your actual numbers; every screen carries a subtle accent wash; cards
-  have per-domain icon chips and tints (water sky, food tangerine, weight
-  violet, alcohol amber…). **Matching app icons**: the descending-trendline
-  mark on each accent gradient (primary has dark + tinted variants), switchable
-  in Settings — alternates live in the asset catalog
-  (`ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES`), which generates the
-  iPhone *and* iPad plist entries the old loose-PNG setup was missing.
-  Floating **glass tab bar** (on by default) with a gradient pill you can tap,
-  swipe pages under, or grab and slide across the tabs. One continuous
-  position drives both surfaces — pages and pill track the finger
-  fractionally with no snapping, then spring-settle on release (a custom
-  pager replaced TabView's discrete paging). Settings → Appearance toggles
-  back to the classic bar.
-- **Backup export** as a single JSON (embedded photos). All data persists across
-  rebuilds/redeploys (same bundle ID) in the App Group container.
+- **Apple Health (two-way)** — writes weight/water/nutrition/workouts; reads steps, sleep, and external weigh-ins (Garmin / Watch / smart scales flow in via Health).
+- **Workout import** — anything written to Health (Watch, Garmin Connect, Strava…) imports into the day log once (UUID remembered), mapped to categories, counting toward minutes and the streak.
+- **Widgets** — small / medium / large home screen + lock-screen (circular, rectangular, inline). The large widget shows calories, protein, water, **weight, carbs, and workout**. Widgets follow the in-app accent palette and offer one-tap water logging.
+- **Siri shortcuts** — "log water," "log a meal" (spoken, itemized, totals read back), "open today."
+- **Live Activity** *(optional)* — remaining calories, protein, and water on the Lock Screen / Dynamic Island.
+- **Notifications** — morning weigh-in, hydration nudges (with a log-water action), workout reminders, a smart streak-at-risk guard, supplement reminders.
 
-## Tech
+### Privacy, security & design
 
-- iOS 18.5+, SwiftUI, SwiftData, WidgetKit, HealthKit, EventKit, Vision, AVFoundation
-- No required external dependencies
-- Store: App Group container `Fitness.store` (shared with widgets); photos in
-  `Documents/Photos`
+- **Face ID protects progress photos** (app entry is open) with an optional **backup PIN** (salted hash in the Keychain). Photos live in the app's Documents, invisible to the Photos app unless you export them.
+- **Themed launch & app-switcher cover** — branded Steady screens, not a lock screen.
+- **Photo timelapse** — builds an MP4 from progress photos on-device.
+- **Themes & brand** — five accent palettes + light/dark/system, applied live; matching app icons (light & dark per palette); per-domain card tints; a floating **glass tab bar** with a continuous swipe-or-slide pager.
+- **Micro-interactions** — colored shadows, spring-settling rings/bars, and haptics on key taps and confirmations.
+- **Backup export** — a single JSON with embedded photos. All data persists across rebuilds (same bundle ID) in the App Group container.
 
-## Project Structure
+---
+
+## Tech stack
+
+| Area | Choice |
+|---|---|
+| Min OS / UI | iOS 18.5+, SwiftUI |
+| Persistence | SwiftData in an App Group container (shared with widgets) |
+| Frameworks | WidgetKit, HealthKit, EventKit, AVFoundation, Vision, LocalAuthentication, AppIntents |
+| AI | Google Gemini (text + vision + `url_context`), Google Search grounding |
+| Dependencies | None required |
+| Photos | `Documents/Photos` (local, Face ID-gated) |
+
+---
+
+## Architecture
 
 ```
-Shared/        SwiftData models, CalorieEngine, Persistence — compiled into app + widget
+Shared/        SwiftData models, CalorieEngine, FuelingEngine, Persistence,
+               WidgetSnapshot — compiled into BOTH app + widget
 Widgets/       WidgetKit extension (home + lock screen, interactive logging)
 75/
-  App/         App entry, photo lock (Face ID + PIN), privacy shield, Theme
-  Resources/   Exercises.json (free-exercise-db extract),
-               Secrets.plist (API keys — git-ignored, create locally)
+  App/         Entry point, photo lock (Face ID + PIN), launch/privacy
+               screens, Theme (colors, cards, haptics, button styles)
+  Resources/   Exercises.json (free-exercise-db), Secrets.plist (git-ignored)
   Services/    Backup, FoodDatabase (Open Food Facts), ExerciseDatabase,
-               AIFoodEstimator (Gemini text + vision), HealthKit,
-               InsightsEngine (on-device pattern mining), Notifications,
-               CalendarSync, Timelapse
+               AIFoodEstimator (Gemini), HealthKit, InsightsEngine
+               (on-device patterns), Notifications, CalendarSync, Timelapse
   Views/
-    Onboarding/  Multi-step plan setup
-    Dashboard/   Rings, trend chart, streak, weekly insight (+ Settings sheet)
+    Onboarding/  Multi-step plan setup (incl. optional AI key step)
+    Dashboard/   Rings, trend chart, streak, fuel card, tab bar (+ Settings)
     Stats/       Time-range charts for every tracked series
     Day/         Day detail logging + workout form
-    Food/        Food search, portion picker, barcode + photo recognition
-    Calendar/    Day-by-day history — custom month grid, logged days
-                 dotted, today ringed, selected day filled
+    Food/        Search, portion picker, describe/photo/recipe, barcode
+    Calendar/    Custom month grid history
     Photos/      Gallery, viewer, compare, timelapse (Face ID gated)
-    Workouts/    Workout builder, exercise picker + history, templates,
-                 weekly schedule, calendar sync
-    Settings/    Goals, targets, supplements, notifications, Health,
-                 appearance, backup, erase
-docs/agents/   Agent config (issue tracker, triage labels, domain docs)
+    Workouts/    Builder, exercise picker + history, templates, schedule, fuel
+    Settings/    Goals, targets, AI & estimates, supplements, notifications,
+                 Health, appearance, backup, erase
 .scratch/      Local issue tracker: PRD + implementation issues
 ```
 
-## Getting Started
+> **Widget memory:** the widget target only compiles `Shared/` + `Widgets/` and never opens SwiftData at render — it reads a small precomputed `WidgetSnapshot` from the App Group, so it stays under the ~30 MB widget memory cap.
 
-1. Open `75.xcodeproj` in Xcode 16+.
-2. Create `75/Resources/Secrets.plist` (git-ignored) with a `GeminiAPIKey`
-   string entry — free key from aistudio.google.com. Without it, AI estimates
-   are unavailable until a key is pasted in Settings → AI Assist.
-3. First device build: let Xcode register the App Group + HealthKit capabilities
-   (automatic signing).
-4. Run on device (free provisioning = 7-day installs; paid Dev Program ≈ 12 months).
+---
+
+## Getting started
+
+1. **Open** `75.xcodeproj` in Xcode 16+.
+2. **Gemini key** *(optional)* — a shared key is bundled. To use your own, either paste one in **Settings → AI & Estimates** at runtime, or create `75/Resources/Secrets.plist` (git-ignored) with a `GeminiAPIKey` string. Free keys: [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+3. **First device build** — let Xcode register the App Group + HealthKit capabilities (automatic signing).
+4. **Run on device.** Free provisioning = 7-day installs; the paid Apple Developer Program ≈ 12-month installs and unlocks TestFlight.
+
+### TestFlight
+
+Set the destination to **Any iOS Device**, then **Product → Archive → Distribute → App Store Connect**. Testers install via the **TestFlight** app (email invite or a public link). See [`.scratch/fitness-tracker/testflight-what-to-test.md`](.scratch/fitness-tracker/testflight-what-to-test.md) for ready-to-paste beta notes.
