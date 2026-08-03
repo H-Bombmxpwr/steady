@@ -24,6 +24,12 @@ struct WidgetSnapshot: Codable {
     var waterOz = 0
     var dayDate: Date?
 
+    // Extra stats the large widget has room for.
+    var currentWeight: Double = 0    // latest logged weight (lb)
+    var startingWeight: Double = 0   // to show pounds lost
+    var carbs = 0                    // today's carbs (g)
+    var workoutMinutes = 0           // today's logged workout minutes
+
     static let key = "widget.snapshot"
 
     static func load() -> WidgetSnapshot? {
@@ -56,6 +62,10 @@ extension WidgetSnapshot {
         s.protein = today?.totalProtein ?? 0
         s.waterOz = today?.waterOunces ?? 0
         s.dayDate = Calendar.current.startOfDay(for: Date())
+        s.currentWeight = plan.currentWeight
+        s.startingWeight = plan.startingWeight
+        s.carbs = Int((today?.totalFacts.carbsGrams ?? 0).rounded())
+        s.workoutMinutes = today?.workouts.reduce(0) { $0 + $1.minutes } ?? 0
         return s
     }
 }

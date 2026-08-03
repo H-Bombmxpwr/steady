@@ -16,8 +16,13 @@ struct TodaySnapshot {
     var streak = 0
     var goalDate: Date?
     var hasPlan = false
+    var currentWeight: Double = 0
+    var startingWeight: Double = 0
+    var carbs = 0
+    var workoutMinutes = 0
 
     var caloriesLeft: Int { calorieBudget - caloriesEaten }
+    var weightLost: Double { max(0, startingWeight - currentWeight) }
 
     /// Everything comes from the WidgetSnapshot the app precomputed — the
     /// render path never opens SwiftData, which is what kept getting this
@@ -35,6 +40,8 @@ struct TodaySnapshot {
         snapshot.waterStep = max(1, cached.waterStep)
         snapshot.streak = cached.streak
         snapshot.goalDate = cached.goalDate
+        snapshot.currentWeight = cached.currentWeight
+        snapshot.startingWeight = cached.startingWeight
 
         // Trust today's live totals only if the cache is actually for today;
         // if the app hasn't run since midnight, show targets with zero
@@ -43,6 +50,8 @@ struct TodaySnapshot {
             snapshot.caloriesEaten = cached.caloriesEaten
             snapshot.protein = cached.protein
             snapshot.waterOz = cached.waterOz
+            snapshot.carbs = cached.carbs
+            snapshot.workoutMinutes = cached.workoutMinutes
         }
         return snapshot
     }
@@ -219,6 +228,35 @@ private struct RatioRow: View {
     }
 }
 
+/// A neutral stat row (no goal coloring) with an optional trailing note —
+/// for the large widget's extra stats like weight, carbs, and workout.
+private struct InfoRow: View {
+    let icon: String
+    let label: String
+    let value: String
+    var note: String? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if let note {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+            }
+            Text(value)
+                .font(.system(.subheadline, design: .rounded).bold())
+        }
+    }
+}
+
 // MARK: - Widget views
 
 struct TodayWidgetView: View {
@@ -357,13 +395,20 @@ struct TodayWidgetView: View {
                 }
             }
 
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 RatioRow(icon: "fork.knife", label: "Calories",
                          consumed: s.caloriesEaten, total: s.calorieBudget, overIsBad: true)
                 RatioRow(icon: "bolt.fill", label: "Protein",
                          consumed: s.protein, total: s.proteinTarget)
                 RatioRow(icon: "drop.fill", label: "Water",
                          consumed: s.waterOz, total: s.waterGoal)
+                Divider().overlay(.white.opacity(0.12))
+                InfoRow(icon: "scalemass.fill", label: "Weight",
+                        value: s.currentWeight > 0 ? "\(Int(s.currentWeight.rounded())) lb" : "—",
+                        note: s.weightLost >= 0.1 ? "↓\(String(format: "%.1f", s.weightLost)) lb" : nil)
+                InfoRow(icon: "laurel.leading", label: "Carbs", value: "\(s.carbs) g")
+                InfoRow(icon: "figure.run", label: "Workout",
+                        value: s.workoutMinutes > 0 ? "\(s.workoutMinutes) min" : "Rest")
             }
             .padding(12)
             .background(RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.06)))
