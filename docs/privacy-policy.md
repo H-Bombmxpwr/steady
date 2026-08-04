@@ -1,5 +1,6 @@
 ---
-title: Privacy Policy
+title: Privacy policy
+summary: Steady collects nothing. Here is exactly what that means, in detail.
 ---
 
 # Privacy Policy — Steady

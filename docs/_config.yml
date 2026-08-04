@@ -1,3 +1,9 @@
 title: Steady
 description: Private health logging for iPhone
-theme: jekyll-theme-minimal
+baseurl: "/steady"
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

@@ -6,6 +6,8 @@
 
 Steady started life as a 75 Hard tracker and grew into a general weight-loss app built on proven methods: an adaptive calorie budget, high-protein targets, real workout programming, and consistency mechanics — all on-device.
 
+📖 **[Full documentation →](https://h-bombmxpwr.github.io/steady/)** — feature guides, how the adaptive budget works, AI setup, and support.
+
 > The Xcode project is still named `75`, and the bundle ID / App Group are unchanged so existing data persists. Product scope and the work log live in [`.scratch/fitness-tracker/`](.scratch/fitness-tracker/).
 
 ---

@@ -94,19 +94,21 @@ struct AISettingsView: View {
     }
 
     /// A quick read on what's in the key field, so pasting a bad key is
-    /// obvious before an estimate ever fails. Real AI Studio keys start with
-    /// "AIza" and are ~39 characters of letters, digits, - and _.
+    /// obvious before an estimate ever fails. AI Studio has issued two key
+    /// formats — the long-standing "AIza…" and the newer "AQ.…" — so accept
+    /// either rather than flagging a perfectly good new key as broken.
     private var keyStatus: (text: String, icon: String, color: Color) {
         let trimmed = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return ("Using the built-in key — paste your own to override it.",
                     "checkmark.circle", .secondary)
         }
-        let looksValid = trimmed.hasPrefix("AIza") && trimmed.count >= 30
-            && trimmed.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        let knownPrefix = trimmed.hasPrefix("AIza") || trimmed.hasPrefix("AQ.")
+        let looksValid = knownPrefix && trimmed.count >= 30
+            && trimmed.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
         return looksValid
             ? ("Key looks valid.", "checkmark.seal.fill", .green)
-            : ("This doesn't look like a Gemini key — it should start with “AIza”. See “How to get a free key”.",
+            : ("This doesn't look like a Gemini key — it should start with “AIza” or “AQ.”. See “How to get a free key”.",
                "exclamationmark.triangle.fill", Theme.warn)
     }
 }
@@ -150,7 +152,7 @@ struct GeminiKeyGuideView: View {
 
                 AIzaSyD-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-                • It starts with “AIza” and is about 39 characters.
+                • It starts with “AIza” (or “AQ.” for newer keys) and is about 39 characters.
                 • Only letters, numbers, “-” and “_” — no spaces.
                 • Paste the key by itself. Don't add quotes, and don't paste a whole URL or “key=…”.
 

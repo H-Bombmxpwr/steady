@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% if page.title and page.url != "/" %}{{ page.title }} · {{ site.title }}{% else %}{{ site.title }} — {{ site.description }}{% endif %}</title>
+<meta name="description" content="{{ page.summary | default: site.description }}">
+<style>
+  :root {
+    --accent: #10a37f;
+    --accent-2: #0891b2;
+    --bg: #f2f4f7;
+    --surface: #ffffff;
+    --text: #10151c;
+    --text-dim: #5b6674;
+    --line: #dfe4ea;
+    --code-bg: #f4f6f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent: #34d399;
+      --accent-2: #22d3ee;
+      --bg: #0e1116;
+      --surface: #171c24;
+      --text: #e8edf3;
+      --text-dim: #97a3b2;
+      --line: #262f3b;
+      --code-bg: #10151c;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  .wrap {
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 44px;
+    align-items: start;
+  }
+
+  /* ---- sidebar ---- */
+  .side { padding: 34px 0 60px; position: sticky; top: 0; }
+  .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: inherit; }
+  .mark {
+    width: 38px; height: 38px; border-radius: 11px; flex: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: grid; place-items: center;
+  }
+  .mark svg { width: 21px; height: 21px; }
+  .brand-text b { display: block; font-size: 1.12rem; letter-spacing: -0.01em; color: var(--text); }
+  .brand-text em { display: block; font-style: normal; font-size: .74rem; color: var(--text-dim); }
+
+  nav { margin-top: 26px; }
+  nav a {
+    display: block; padding: 7px 11px; margin-bottom: 1px;
+    border-radius: 7px; text-decoration: none;
+    color: var(--text-dim); font-size: .905rem;
+  }
+  nav a:hover { background: var(--surface); color: var(--text); }
+  nav a.on { background: var(--surface); color: var(--accent); font-weight: 600; }
+
+  /* ---- content ---- */
+  main { padding: 34px 0 90px; min-width: 0; }
+  main > :first-child { margin-top: 0; }
+
+  h1 { font-size: 2.1rem; line-height: 1.2; letter-spacing: -0.022em; margin: 0 0 .3em; }
+  h2 {
+    font-size: 1.34rem; letter-spacing: -0.012em; margin: 2.4em 0 .7em;
+    padding-top: .85em; border-top: 1px solid var(--line);
+  }
+  h3 { font-size: 1.06rem; margin: 1.9em 0 .5em; }
+  p, ul, ol { margin: 0 0 1.05em; }
+  li { margin-bottom: .34em; }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+  .lede { font-size: 1.11rem; color: var(--text-dim); margin-bottom: 1.9em; }
+
+  code {
+    background: var(--code-bg); border: 1px solid var(--line);
+    padding: .1em .38em; border-radius: 5px;
+    font: .87em ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--line);
+    padding: 14px 16px; border-radius: 10px; overflow-x: auto;
+  }
+  pre code { background: none; border: 0; padding: 0; }
+
+  blockquote {
+    margin: 1.3em 0; padding: .1px 18px;
+    border-left: 3px solid var(--accent);
+    background: var(--surface); border-radius: 0 9px 9px 0;
+    color: var(--text-dim);
+  }
+
+  .table-scroll { overflow-x: auto; margin: 0 0 1.3em; }
+  table { border-collapse: collapse; width: 100%; font-size: .93rem; }
+  th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .78rem; text-transform: uppercase; letter-spacing: .045em; color: var(--text-dim); }
+  tbody tr:last-child td { border-bottom: 0; }
+  table code { white-space: nowrap; }
+
+  hr { border: 0; border-top: 1px solid var(--line); margin: 2.4em 0; }
+
+  .next {
+    margin-top: 3.4em; padding-top: 1.2em; border-top: 1px solid var(--line);
+    font-size: .92rem; color: var(--text-dim);
+  }
+  .foot { margin-top: 2.6em; font-size: .84rem; color: var(--text-dim); }
+
+  @media (max-width: 780px) {
+    .wrap { grid-template-columns: 1fr; gap: 0; }
+    .side { position: static; padding-bottom: 14px; }
+    nav { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 5px; }
+    nav a { padding: 6px 11px; background: var(--surface); font-size: .86rem; }
+    main { padding-top: 20px; }
+    h1 { font-size: 1.75rem; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <aside class="side">
+    <a class="brand" href="{{ '/' | relative_url }}">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 16.5 C 7 16.5, 8.5 7.5, 13 7.5 S 19 12, 21 12"/>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <b>{{ site.title }}</b>
+        <em>{{ site.description }}</em>
+      </span>
+    </a>
+
+    <nav>
+      {% for item in site.data.nav %}
+        {% assign active = false %}
+        {% if item.url == "/" %}
+          {% if page.url == "/" %}{% assign active = true %}{% endif %}
+        {% elsif page.url contains item.url %}
+          {% assign active = true %}
+        {% endif %}
+        <a href="{{ item.url | relative_url }}"{% if active %} class="on" aria-current="page"{% endif %}>{{ item.title }}</a>
+      {% endfor %}
+    </nav>
+  </aside>
+
+  <main>
+    {{ content }}
+
+    <p class="foot">
+      Steady is a personal project by Hunter Baisden ·
+      <a href="mailto:hunter.baisden@gmail.com">hunter.baisden@gmail.com</a><br>
+      Everything you log stays on your iPhone. Read the
+      <a href="{{ '/privacy-policy' | relative_url }}">privacy policy</a>.
+    </p>
+  </main>
+
+</div>
+
+<script>
+  // Tables get a horizontal scroll container so wide content never forces
+  // the page itself to scroll sideways on a phone.
+  document.querySelectorAll('main table').forEach(function (t) {
+    var box = document.createElement('div');
+    box.className = 'table-scroll';
+    t.parentNode.insertBefore(box, t);
+    box.appendChild(t);
+  });
+</script>
+</body>
+</html>

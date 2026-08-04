@@ -7,6 +7,7 @@ How to get **Steady** onto other people's phones with TestFlight, and what still
 ## Contents
 
 - [Is it ready?](#is-it-ready)
+- [Before you share widely: the bundled Gemini key](#before-you-share-widely-the-bundled-gemini-key)
 - [Publishing the privacy policy on GitHub Pages](#publishing-the-privacy-policy-on-github-pages)
 - [Is it safe to make the repo public?](#is-it-safe-to-make-the-repo-public)
 - [One-time setup](#one-time-setup)
@@ -98,7 +99,9 @@ The policy is written and sitting in `docs/` as a small Jekyll site. Once Pages 
 | **Privacy Policy URL** | `https://h-bombmxpwr.github.io/steady/privacy-policy` |
 | **Support URL** | `https://h-bombmxpwr.github.io/steady/` |
 
-Both are required — Support URL for the App Store listing, Privacy Policy URL before external TestFlight testing. `docs/index.md` doubles as the support page, with a short FAQ covering the Gemini key, Health permissions, and widgets.
+Both are required — Support URL for the App Store listing, Privacy Policy URL before external TestFlight testing.
+
+`docs/` is a full documentation site, not just a policy page: an overview, getting started, how the adaptive budget works, food logging, AI setup and exactly what it sends, workouts and fueling, tracking and stats, integrations, photos and data handling, and a support/FAQ page. Point testers at the site root and most "how does this work?" questions answer themselves.
 
 ### Turning it on
 
@@ -244,6 +247,24 @@ The API key comes from App Store Connect → **Users and Access → Integrations
 
 ---
 
+## Before you share widely: the bundled Gemini key
+
+`75/Resources/Secrets.plist` is git-ignored, but it is **not build-ignored** — it ships inside the app bundle, and the archive that went to App Store Connect contains a live Gemini API key in plaintext. `AIFoodEstimator.apiKey` falls back to it whenever a tester hasn't entered their own.
+
+Two consequences:
+
+1. **Every tester's AI usage bills to that one key.** Google's free tier is per-project, so a handful of people logging meals share the same rate limits. Enough concurrent testers and estimates start failing with quota errors — which reads to them as "the AI is broken." If that key's Google project has billing enabled, their usage costs you real money.
+2. **The key is recoverable from the app.** Only the executable is FairPlay-encrypted; resource files like `Secrets.plist` sit in the bundle as plaintext. Assume anyone sufficiently motivated can read it.
+
+This is fine for a handful of friends on internal testing. Before a public link, pick one:
+
+- **Ship without the key** — delete `Secrets.plist` before archiving. Everyone brings their own free key; the in-app guide already walks them through it in about a minute, and the docs site explains it. Safest, at the cost of one setup step per tester.
+- **Keep it, with a spend cap** — set a quota or budget limit on that Google Cloud project so the worst case is capped, and rotate the key if it leaks.
+
+Either way, **rotate the key before any public release**, since the current one is now in a build that left your machine.
+
+---
+
 ## Inviting testers
 
 Two tiers, and the difference matters:
@@ -285,6 +306,8 @@ Steady has two things a first-time tester will get stuck on. Put both in the bet
 > **Please allow Health access** when asked — steps, sleep, and weigh-ins come from there, including Garmin devices that sync to Apple Health.
 >
 > Things I'd love feedback on: does the calorie budget feel right after a few days? Do the widgets update? Anything confusing in onboarding?
+>
+> Full docs — how the adaptive budget works, every way to log food, fueling, privacy: **https://h-bombmxpwr.github.io/steady/**
 >
 > Report bugs with the **screenshot → share → TestFlight** flow, or shake the phone to send feedback.
 
