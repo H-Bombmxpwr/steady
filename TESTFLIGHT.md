@@ -78,8 +78,8 @@ The policy is written and sitting in `docs/` as a small Jekyll site. Once Pages 
 
 | Field in App Store Connect | URL |
 | --- | --- |
-| **Privacy Policy URL** | `https://h-bombmxpwr.github.io/75/privacy-policy` |
-| **Support URL** | `https://h-bombmxpwr.github.io/75/` |
+| **Privacy Policy URL** | `https://h-bombmxpwr.github.io/steady/privacy-policy` |
+| **Support URL** | `https://h-bombmxpwr.github.io/steady/` |
 
 Both are required — Support URL for the App Store listing, Privacy Policy URL before external TestFlight testing. `docs/index.md` doubles as the support page, with a short FAQ covering the Gemini key, Health permissions, and widgets.
 
@@ -161,8 +161,8 @@ If you'd rather over-declare: *Health & Fitness* → *Not linked to the user* �
 While you're here, fill in **App Information** on the same screen:
 
 - **Subtitle:** `Private health logging`
-- **Privacy Policy URL:** `https://h-bombmxpwr.github.io/75/privacy-policy`
-- **Support URL:** `https://h-bombmxpwr.github.io/75/`
+- **Privacy Policy URL:** `https://h-bombmxpwr.github.io/steady/privacy-policy`
+- **Support URL:** `https://h-bombmxpwr.github.io/steady/`
 
 ---
 

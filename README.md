@@ -2,11 +2,11 @@
 
 **A private, local-first iOS weight-loss & fitness tracker built around an adaptive calorie budget and AI food logging.**
 
-`iOS 18.5+` · `SwiftUI` · `SwiftData` · `WidgetKit` · `HealthKit` · `Local-first` · `No external dependencies`
+`iOS 18.0+` · `SwiftUI` · `SwiftData` · `WidgetKit` · `HealthKit` · `Local-first` · `No external dependencies`
 
 Steady started life as a 75 Hard tracker and grew into a general weight-loss app built on proven methods: an adaptive calorie budget, high-protein targets, real workout programming, and consistency mechanics — all on-device.
 
-> The Xcode project and repo are still named `75`, and the bundle ID / App Group are unchanged so existing data persists. Product scope and the work log live in [`.scratch/fitness-tracker/`](.scratch/fitness-tracker/).
+> The Xcode project is still named `75`, and the bundle ID / App Group are unchanged so existing data persists. Product scope and the work log live in [`.scratch/fitness-tracker/`](.scratch/fitness-tracker/).
 
 ---
 
@@ -135,7 +135,7 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 
 | Area | Choice |
 |---|---|
-| Min OS / UI | iOS 18.5+, SwiftUI |
+| Min OS / UI | iOS 18.0+, SwiftUI |
 | Persistence | SwiftData in an App Group container (shared with widgets) |
 | Frameworks | WidgetKit, HealthKit, EventKit, AVFoundation, Vision, LocalAuthentication, AppIntents |
 | AI | Google Gemini (text + vision + `url_context`), Google Search grounding |
