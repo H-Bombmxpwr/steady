@@ -42,8 +42,10 @@ How to get **Steady** onto other people's phones with TestFlight, and what still
 | Privacy policy | ✅ — written, needs GitHub Pages turned on |
 | Shared Xcode schemes | ✅ |
 | iPhone only, iOS 18.0+ | ✅ |
+| Valid `CFBundleDocumentTypes` | ✅ — empty entry removed |
+| Built with the iOS 26 SDK | ❌ **needs Xcode 26 — see [Step 0](#step-0--upgrade-to-xcode-26)** |
 
-Nothing is blocking the upload. What remains is App Store Connect paperwork, covered below.
+The project itself is ready. The one remaining blocker is your toolchain: Apple refuses any upload built with an SDK older than iOS 26, and Xcode 16.4 tops out at iOS 18.5. Upgrade Xcode, re-archive, and the upload goes through. Everything else below is App Store Connect paperwork.
 
 ### What changed
 
@@ -60,6 +62,8 @@ No file-timestamp declaration is needed: no app code touches those APIs, and whi
 **iPad support dropped** — `TARGETED_DEVICE_FAMILY` is now `1`, and the iPad orientation keys are gone. The built `Info.plist` reports `UIDeviceFamily = [1]`. This means a beta reviewer will never open it on an iPad and reject iPhone-shaped layout.
 
 **Deployment target lowered to iOS 18.0** from 18.5 — builds clean, widens the tester pool. The built `Info.plist` reports `MinimumOSVersion = 18.0`.
+
+**Empty `CFBundleDocumentTypes` removed** — `-5-Info.plist` declared the key with a single empty `<dict/>` inside, a leftover from the project template that fails App Store validation ("each dictionary [must contain] at least the `CFBundleTypeName` key"). The app opens no documents, so the key is gone rather than filled in.
 
 ### App name
 
@@ -116,6 +120,21 @@ One caveat worth knowing: making a repo public is not fully reversible in the se
 ---
 
 ## One-time setup
+
+### Step 0 — Upgrade to Xcode 26
+
+**Apple rejects uploads built with anything older than the iOS 26 SDK.** A build made with Xcode 16.4 (iOS 18.5 SDK) fails validation with:
+
+> SDK version issue. This app was built with the iOS 18.5 SDK. All iOS and iPadOS apps must be built with the iOS 26 SDK or later…
+
+This is about the **SDK you build against**, not your deployment target — iOS 18.0 minimum stays exactly as it is. Two steps:
+
+1. **Update macOS.** Xcode 26 needs macOS 15.6 or later. `softwareupdate -l` will show what's on offer; the smallest hop that clears the bar is Sequoia 15.7.x. Tahoe 26.x works too and is the more future-proof choice, but it's a full OS upgrade.
+2. **Install Xcode 26** from [developer.apple.com/download/all](https://developer.apple.com/download/all). Prefer that over the Mac App Store, which only offers the newest Xcode — and the newest may require macOS 26. The downloads page lets you pick a version that matches the OS you're on.
+
+Budget ~40 GB of free disk for the download and install.
+
+**Expect the UI to change.** Building against the iOS 26 SDK opts the app into the Liquid Glass design system. For a heavily custom UI this can restyle materials, toolbars, and navigation in ways you didn't ask for. Rebuild and look at every screen before uploading. If it needs to wait, `UIDesignRequiresCompatibility` in the Info.plist is a temporary opt-out that restores the legacy appearance — treat it as a stopgap, not a fix, since Apple retires these opt-outs after a release or two.
 
 ### Step 1 — Confirm your account is active
 
@@ -290,6 +309,12 @@ Requires **iOS 18.0 or later**, iPhone only. Worth stating up front so nobody in
 **Health data empty for testers** — they denied the permission prompt, or they're on a device with no Health data. Both are real bugs to watch for: make sure the app degrades gracefully.
 
 **Build stuck "Processing" over an hour** — usually a bad binary. Check your email; Apple sends the reason.
+
+**"This app was built with the iOS 18.5 SDK…"** — your Xcode is too old. See [Step 0](#step-0--upgrade-to-xcode-26). Nothing in the project causes this.
+
+**"The value of the CFBundleDocumentTypes key … must be an array of dictionaries, with each dictionary containing at least the CFBundleTypeName key"** — fixed. `-5-Info.plist` contained a `CFBundleDocumentTypes` array holding one empty `<dict/>`, left over from the project template. The app declares no document types and has no file importer, so the key was removed outright. If you ever add "open this file in Steady" support, add it back properly with `CFBundleTypeName` and `LSItemContentTypes` on each entry.
+
+**Disk full during the Xcode upgrade** — `~/Library/Developer/Xcode/iOS DeviceSupport` grows without bound (one symbol cache per device per OS build, several GB each) and is the usual culprit. Deleting it and `DerivedData` is safe; both regenerate, at the cost of one slow device reconnect and one slow build.
 
 ---
 
