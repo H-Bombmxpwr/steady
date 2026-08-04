@@ -43,17 +43,18 @@ How to get **Steady** onto other people's phones with TestFlight, and what still
 | Shared Xcode schemes | ✅ |
 | iPhone only, iOS 18.0+ | ✅ |
 | Valid `CFBundleDocumentTypes` | ✅ — empty entry removed |
-| Built with the iOS 26 SDK | ❌ **needs Xcode 26 — see [Step 0](#step-0--upgrade-to-xcode-26)** |
+| Built with the iOS 26 SDK | ✅ — Xcode 26.6 on macOS Tahoe, iOS 26.5 SDK |
+| Native Liquid Glass | ✅ — custom glass tab bar removed; the system `TabView` provides it |
 
-The project itself is ready. The one remaining blocker is your toolchain: Apple refuses any upload built with an SDK older than iOS 26, and Xcode 16.4 tops out at iOS 18.5. Upgrade Xcode, re-archive, and the upload goes through. Everything else below is App Store Connect paperwork.
+Nothing is blocking the upload. What remains is App Store Connect paperwork, covered below.
 
 ### What changed
 
 **Privacy manifests added** — `75/PrivacyInfo.xcprivacy` and `Widgets/PrivacyInfo.xcprivacy`. The app and widget both read and write App Group `UserDefaults` (`Shared/WidgetSnapshot.swift`, `75/App/Theme.swift`, `Widgets/FitnessWidgets.swift`), which is a "required reason API" — undeclared, the upload gets flagged with ITMS-91053. Both declare `NSPrivacyAccessedAPICategoryUserDefaults` with reason `CA92.1` ("access info from the app itself or an app group of the same team"), which is exactly what Steady does. `NSPrivacyCollectedDataTypes` is empty because nothing is collected: there is no server, and the Gemini traffic goes from the user's device to the user's own API key.
 
-Verified in the built archive — `PrivacyInfo.xcprivacy` is present in both `75.app/` and `75.app/PlugIns/WidgetsExtension.appex/`. The project uses Xcode 16 synchronized folder groups, so the files were picked up by target membership automatically.
+Verified in the built archive — `PrivacyInfo.xcprivacy` is present in both `75.app/` and `75.app/PlugIns/WidgetsExtension.appex/`. The project uses synchronized folder groups, so the files were picked up by target membership automatically.
 
-No file-timestamp declaration is needed: no app code touches those APIs, and while ZIPFoundation (the one SPM dependency) does, it is **not imported anywhere in the project** and gets dead-stripped — `nm` finds zero ZIPFoundation symbols in the shipped binary. Worth removing that dependency at some point; it's dead weight and the README already claims no external dependencies.
+No file-timestamp declaration is needed: no app code touches those APIs. ZIPFoundation, an SPM dependency that was linked but never imported anywhere, has been removed from the project entirely — the app now genuinely has zero external dependencies.
 
 **Privacy policy written** — `docs/privacy-policy.md`, ready to publish. See the next section.
 
@@ -64,6 +65,18 @@ No file-timestamp declaration is needed: no app code touches those APIs, and whi
 **Deployment target lowered to iOS 18.0** from 18.5 — builds clean, widens the tester pool. The built `Info.plist` reports `MinimumOSVersion = 18.0`.
 
 **Empty `CFBundleDocumentTypes` removed** — `-5-Info.plist` declared the key with a single empty `<dict/>` inside, a leftover from the project template that fails App Store validation ("each dictionary [must contain] at least the `CFBundleTypeName` key"). The app opens no documents, so the key is gone rather than filled in.
+
+**Native Liquid Glass adopted** — the custom-built "glass" tab bar (hand-rolled pager, drag gestures, and `ultraThinMaterial` capsule) was deleted in favor of the standard SwiftUI `TabView`, which renders Apple's real Liquid Glass on iOS 26 and the classic bar on iOS 18 — lighter, accessible, and future-proof. The Settings toggle for it is gone, and the UI tests were rewritten against the system bar (`75UITests/TabBarUITests.swift`).
+
+**Fueling made day-aware and comprehensive** — training-day targets now raise the water goal by the sessions' fluid guidance alongside the calorie add-back; every day's detail page shows a Fueling section for that date's scheduled sessions (not just today's dashboard card); and a new **Week's Fuel** screen in the Workouts tab maps the next seven days of training nutrition. All local math in `Shared/FuelingEngine.swift` — no network, no AI.
+
+### Verified state (last checked with Xcode 26.6)
+
+- `** ARCHIVE SUCCEEDED **` against the iOS 26.5 SDK; built `Info.plist` reports `DTSDKName = iphoneos26.5`, `MinimumOSVersion = 18.0`, `UIDeviceFamily = [1]`.
+- Privacy manifests present in both `75.app` and the widget `.appex`.
+- `CFBundleDocumentTypes` absent from the built plist.
+- No third-party code in the bundle (no `Frameworks/` directory).
+- UI test suite passes on the iOS 26.5 simulator (`** TEST SUCCEEDED **`).
 
 ### App name
 
@@ -121,20 +134,13 @@ One caveat worth knowing: making a repo public is not fully reversible in the se
 
 ## One-time setup
 
-### Step 0 — Upgrade to Xcode 26
+### Step 0 — Xcode 26 ✅ (done)
 
-**Apple rejects uploads built with anything older than the iOS 26 SDK.** A build made with Xcode 16.4 (iOS 18.5 SDK) fails validation with:
+**Apple rejects uploads built with anything older than the iOS 26 SDK**, so this machine now runs macOS Tahoe with Xcode 26.6 (iOS 26.5 SDK). The deployment target is unaffected — the app still runs on iOS 18.0+.
 
-> SDK version issue. This app was built with the iOS 18.5 SDK. All iOS and iPadOS apps must be built with the iOS 26 SDK or later…
+Building against the iOS 26 SDK opts the app into the Liquid Glass design system. Steady adopts it natively: the old custom glass tab bar was deleted in favor of the system `TabView`, which renders real Liquid Glass on iOS 26 and a classic bar on iOS 18. No `UIDesignRequiresCompatibility` opt-out is used — walk the screens after big SDK bumps to confirm nothing restyles badly.
 
-This is about the **SDK you build against**, not your deployment target — iOS 18.0 minimum stays exactly as it is. Two steps:
-
-1. **Update macOS.** Xcode 26 needs macOS 15.6 or later. `softwareupdate -l` will show what's on offer; the smallest hop that clears the bar is Sequoia 15.7.x. Tahoe 26.x works too and is the more future-proof choice, but it's a full OS upgrade.
-2. **Install Xcode 26** from [developer.apple.com/download/all](https://developer.apple.com/download/all). Prefer that over the Mac App Store, which only offers the newest Xcode — and the newest may require macOS 26. The downloads page lets you pick a version that matches the OS you're on.
-
-Budget ~40 GB of free disk for the download and install.
-
-**Expect the UI to change.** Building against the iOS 26 SDK opts the app into the Liquid Glass design system. For a heavily custom UI this can restyle materials, toolbars, and navigation in ways you didn't ask for. Rebuild and look at every screen before uploading. If it needs to wait, `UIDesignRequiresCompatibility` in the Info.plist is a temporary opt-out that restores the legacy appearance — treat it as a stopgap, not a fix, since Apple retires these opt-outs after a release or two.
+One toolchain quirk worth remembering: if a build fails with *"No simulator runtime version … available to use with iphonesimulator SDK"*, the iOS Simulator platform isn't installed or mounted — run `xcodebuild -downloadPlatform iOS`, and if the SDK build and runtime build differ (e.g. SDK 23F81a vs runtime 23F77), pin it with `xcrun simctl runtime match set iphoneos26.5 <runtimeBuild>`. The asset-catalog compiler needs that runtime even for device-only archives.
 
 ### Step 1 — Confirm your account is active
 
@@ -336,7 +342,7 @@ Everything below was read from `75.xcodeproj/project.pbxproj` and the entitlemen
 | Entitlements | HealthKit (app), App Groups (app + widget) |
 | Category | Lifestyle |
 | URL scheme | `seventyfive://` |
-| Dependency | ZIPFoundation 0.9.19 (SPM) — linked but never imported; dead-stripped from the binary |
+| Dependencies | None — ZIPFoundation was linked but never imported, and has been removed |
 | Targets | `75`, `WidgetsExtension`, `75Tests`, `75UITests` |
 
 Note: Live Activities are started locally via `ActivityKit` (`75/Services/LiveActivityManager.swift`), so no push-notification entitlement is needed. Notifications are local too — no APNs setup required.

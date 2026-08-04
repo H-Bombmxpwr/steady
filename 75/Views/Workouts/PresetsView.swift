@@ -162,8 +162,22 @@ struct WorkoutsView: View {
                     Text("Type and intensity size the fueling plan — carbs per hour during, plus what to eat before and after. Cardio and sports longer than an hour are where mid-workout carbs start to matter.")
                 }
 
-                // --- Fuel calculator (works without touching the schedule)
+                // --- Fueling: the week ahead, and the on-demand calculator
                 Section {
+                    NavigationLink {
+                        WeekFuelView(plan: plan)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Week's Fuel")
+                                Text("Day-by-day nutrition for the next 7 days of training")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "calendar.badge.clock").foregroundStyle(Theme.foodTint)
+                        }
+                    }
+                    .disabled(plan.schedule.isEmpty)
                     NavigationLink {
                         FuelCalculatorView(plan: plan)
                     } label: {
@@ -176,6 +190,10 @@ struct WorkoutsView: View {
                         } icon: {
                             Image(systemName: "bolt.fill").foregroundStyle(Theme.foodTint)
                         }
+                    }
+                } footer: {
+                    if plan.schedule.isEmpty {
+                        Text("Schedule a workout above and Week's Fuel maps the next seven days of eating around your training.")
                     }
                 }
 

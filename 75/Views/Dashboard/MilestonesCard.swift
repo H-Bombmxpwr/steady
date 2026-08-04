@@ -83,9 +83,6 @@ struct MilestonesCard: View {
                 }
                 .padding(.vertical, 2)
             }
-            // Own horizontal drags so swiping the badges scrolls them
-            // instead of flipping to the next tab in glass mode.
-            .claimsHorizontalDrag()
         }
     }
 }

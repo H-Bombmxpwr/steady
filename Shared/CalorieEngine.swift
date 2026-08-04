@@ -296,9 +296,18 @@ enum CalorieEngine {
         fuelingPlans(plan: plan, on: date).reduce(0) { $0 + $1.burnCalories }
     }
 
+    /// Extra water the day's scheduled training calls for, from each
+    /// session's fluid guidance (oz/hr × duration).
+    static func trainingFluidOunces(plan: Plan, on date: Date) -> Int {
+        fuelingPlans(plan: plan, on: date).reduce(0) {
+            $0 + Int((Double($1.fluidOzPerHour) * Double($1.minutes) / 60.0).rounded())
+        }
+    }
+
     /// Targets for a specific day. When training-day fueling is on and a
     /// workout is scheduled, the session's burn is added back to the calorie
-    /// budget so eating the fuel doesn't read as going "over."
+    /// budget so eating the fuel doesn't read as going "over," and the water
+    /// target grows by the sessions' fluid guidance.
     static func targets(profile: UserProfile, plan: Plan, on date: Date) -> DailyTargets {
         let base = targets(profile: profile, plan: plan)
         guard plan.fuelTrainingDays else { return base }
@@ -306,6 +315,7 @@ enum CalorieEngine {
         guard bump > 0 else { return base }
         return DailyTargets(calories: base.calories + bump,
                             proteinGrams: base.proteinGrams,
-                            waterOunces: base.waterOunces)
+                            waterOunces: base.waterOunces
+                                + trainingFluidOunces(plan: plan, on: date))
     }
 }

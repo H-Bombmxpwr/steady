@@ -25,7 +25,6 @@ struct SettingsView: View {
 
     // Appearance — bound to the observable store so the change applies live
     @Bindable private var theme = ThemeStore.shared
-    @AppStorage("ui.glassBar") private var glassBar = true
 
     // Apple Health
     @AppStorage(HealthKitService.enabledKey) private var healthEnabled = false
@@ -329,7 +328,6 @@ struct SettingsView: View {
                     if let iconMessage {
                         Text(iconMessage).font(.footnote).foregroundStyle(.secondary)
                     }
-                    Toggle("Glass tab bar", isOn: $glassBar)
                     Toggle("Live Activity", isOn: $liveActivity)
                         .onChange(of: liveActivity) { on in
                             if on {
@@ -341,7 +339,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Appearance")
                 } footer: {
-                    Text("App icon: pick any palette in light (color background, white line) or dark (black background, color line), or “Match appearance” to follow the system. Glass tab bar floats over the content and lets you swipe left/right between tabs. Live Activity keeps today's remaining calories, protein, and water on the Lock Screen and Dynamic Island — it refreshes whenever the app runs.")
+                    Text("App icon: pick any palette in light (color background, white line) or dark (black background, color line), or “Match appearance” to follow the system. Live Activity keeps today's remaining calories, protein, and water on the Lock Screen and Dynamic Island — it refreshes whenever the app runs.")
                 }
 
                 // --- Notifications

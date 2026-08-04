@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		5A4B209B2E6A67560082C3F0 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = 5A4B209A2E6A67560082C3F0 /* ZIPFoundation */; };
 		AA000000000000000000000D /* WidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* WidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -97,7 +96,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5A4B209B2E6A67560082C3F0 /* ZIPFoundation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -170,7 +168,6 @@
 			);
 			name = 75;
 			packageProductDependencies = (
-				5A4B209A2E6A67560082C3F0 /* ZIPFoundation */,
 			);
 			productName = 75;
 			productReference = 5A4B20532E6A64870082C3F0 /* 75.app */;
@@ -275,7 +272,6 @@
 			mainGroup = 5A4B204A2E6A64870082C3F0;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				5A4B20992E6A67560082C3F0 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 5A4B20542E6A64870082C3F0 /* Products */;
@@ -743,25 +739,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		5A4B20992E6A67560082C3F0 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.9.19;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		5A4B209A2E6A67560082C3F0 /* ZIPFoundation */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 5A4B20992E6A67560082C3F0 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
-			productName = ZIPFoundation;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 5A4B204B2E6A64870082C3F0 /* Project object */;
 }

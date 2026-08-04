@@ -59,7 +59,9 @@ struct DayDetailView: View {
         return intPart + (seenDot ? "." : "") + fracPart
     }
 
-    private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
+    /// Date-aware: training days fold the scheduled sessions' burn and
+    /// fluids into the budget, matching the dashboard's Today card.
+    private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan, on: date) }
     private var workoutScheduled: Bool { plan.isWorkoutScheduled(on: date) }
 
     private func statusDot(_ ok: Bool) -> some View {
@@ -306,6 +308,12 @@ struct DayDetailView: View {
                 SectionHeader(icon: "figure.strengthtraining.traditional", title: "Workouts", tint: Theme.workoutTint)
             }
 
+            // ===== Fueling — nutrition guidance for this day's scheduled
+            // sessions, any day on the calendar (not just today).
+            if !plan.scheduledWorkouts(on: date).isEmpty {
+                DayFuelSection(plan: plan, date: date)
+            }
+
             // ===== Photos (Face ID gated)
             Section {
                 if !day.photos.isEmpty && !appLock.photosUnlocked {
@@ -327,11 +335,6 @@ struct DayDetailView: View {
                         }
                         .padding(.vertical, 4)
                     }
-                    // The tab-level bottom content margin is for vertical
-                    // scrollers; don't let it stretch this photo strip.
-                    .contentMargins(.bottom, 0, for: .scrollContent)
-                    // Own horizontal drags so swiping photos doesn't flip tabs.
-                    .claimsHorizontalDrag()
                 }
                 HStack(spacing: 12) {
                     Button {

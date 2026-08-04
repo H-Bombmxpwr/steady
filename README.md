@@ -82,7 +82,8 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 - **Exercise database** (873 exercises with instructions, free-exercise-db), a workout builder with per-exercise sets × reps × weight targets, **set-by-set logging** with progressive-overload history, and starter templates (StrongLifts 5×5, PPL, Couch-to-5K).
 - **Weekly schedule** built from your presets, with **EventKit calendar sync** (local, no server). *All Workouts* keeps a searchable, alphabetized list one tap away.
 - **Fueling engine** *(local, no AI)* — from a workout's type, intensity, duration, and your weight it computes carbs/hr during, a pre-load, recovery carbs + protein, and fluids/sodium. Use the **Fuel Calculator** on demand, or let a **Today's Fuel** card surface it for scheduled workouts.
-- **Training-day nutrition** — a scheduled workout's estimated burn is added back to that day's calorie budget so eating the fuel doesn't read as "over."
+- **Training-day nutrition** — a scheduled workout's estimated burn is added back to that day's calorie budget, and the sessions' fluid guidance is added to the water target, so eating and drinking the fuel doesn't read as "over."
+- **Week's Fuel** — a day-by-day map of the next seven days from the training schedule: what's planned, carbs during long sessions, recovery protein, and each day's budget adjustments. The same guidance appears on any day's detail page, so eating can be planned from the calendar.
 
 ### Coaching & insights
 
@@ -125,7 +126,7 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 - **Face ID protects progress photos** (app entry is open) with an optional **backup PIN** (salted hash in the Keychain). Photos live in the app's Documents, invisible to the Photos app unless you export them.
 - **Themed launch & app-switcher cover** — branded Steady screens, not a lock screen.
 - **Photo timelapse** — builds an MP4 from progress photos on-device.
-- **Themes & brand** — five accent palettes + light/dark/system, applied live; matching app icons (light & dark per palette); per-domain card tints; a floating **glass tab bar** with a continuous swipe-or-slide pager.
+- **Themes & brand** — five accent palettes + light/dark/system, applied live; matching app icons (light & dark per palette); per-domain card tints; the native Liquid Glass tab bar on iOS 26.
 - **Micro-interactions** — colored shadows, spring-settling rings/bars, and haptics on key taps and confirmations.
 - **Backup export** — a single JSON with embedded photos. All data persists across rebuilds (same bundle ID) in the App Group container.
 
