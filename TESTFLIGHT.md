@@ -33,7 +33,7 @@ How to get **Steady** onto other people's phones with TestFlight, and what still
 | Real bundle ID (`com.hunter.seventyfivehard`) | ✅ |
 | Development team set (`U3PXY283T3`), automatic signing | ✅ |
 | App icon (1024 + 10 alternate icons) | ✅ |
-| Version / build number (`1.0 (2)`) | ✅ |
+| Version / build number (`1.0 (6.7)`) | ✅ |
 | Every permission has a usage string (Health, Camera, Mic, Speech, Face ID, Photos, Calendar) | ✅ |
 | Export compliance pre-answered (`ITSAppUsesNonExemptEncryption = NO`) | ✅ — no export question on every upload |
 | App category set (Lifestyle) | ✅ |
@@ -317,7 +317,7 @@ Requires **iOS 18.0 or later**, iPhone only. Worth stating up front so nobody in
 
 ## Shipping updates
 
-- **Every upload needs a higher build number.** You're at `1.0 (2)`, so the next one is `1.0 (3)`. Bump `CURRENT_PROJECT_VERSION` in build settings, or let Xcode's "Manage version and build number" do it during distribution. Reusing a build number is rejected instantly.
+- **Every upload needs a higher build number.** You're at `1.0 (6.7)`, so the next one is `1.0 (6.8)`. Bump `CURRENT_PROJECT_VERSION` in build settings, or let Xcode's "Manage version and build number" do it during distribution. Reusing a build number is rejected instantly.
 - `MARKETING_VERSION` (`1.0`) only needs bumping for a user-visible release.
 - **Builds expire after 90 days.** Testers get cut off when that happens, so plan on uploading something at least quarterly during a long beta.
 - Subsequent external builds usually skip review unless you change something significant — but Apple decides, not you.
@@ -358,7 +358,7 @@ Everything below was read from `75.xcodeproj/project.pbxproj` and the entitlemen
 | Widget bundle ID | `com.hunter.seventyfivehard.widgets` |
 | App Group | `group.com.hunter.seventyfivehard` |
 | Display name | Steady (target/product is still named `75`) |
-| Version | `1.0` build `2` |
+| Version | `1.0` build `6.7` |
 | Deployment target | iOS 18.0 |
 | Devices | iPhone only (`1`) |
 | Signing | Automatic |
