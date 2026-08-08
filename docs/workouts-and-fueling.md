@@ -48,6 +48,35 @@ Everything scales with your bodyweight and the specific session. A 45-minute eas
 
 > It's guidance, not a prescription. Dial it to how you feel — the app says as much on the screen.
 
+## Your own sweat rate
+
+*Athlete mode.* The fluid numbers above are population averages, and population averages are wrong for most people by a lot: measured sweat rates span roughly **0.3 to 2.4 litres an hour** between people doing the same session. One test replaces the guess.
+
+**The protocol** takes one session and a scale:
+
+1. Weigh yourself right before — dry, minimal kit, after the bathroom.
+2. Train as normal. Twenty minutes minimum; an hour is better.
+3. Track everything you drink. This is the number people forget, and it's half the calculation.
+4. Towel off and weigh again, in the same clothes.
+
+The mass you're missing, plus everything you drank, is what you sweated. Steady divides by the duration and that's your rate.
+
+Log it under **Hydration → Sweat rate**. From then on your fluid and sodium targets come from your own numbers instead of a table. Steady weights recent tests more heavily, scales between session types (a rate measured on a hard ride isn't applied whole to a stretching session), and quietly ignores a test whose arithmetic is impossible — a mistyped weight can't skew your average.
+
+It also flags **how salty your sweat is** from the white-crust-on-your-kit question. Sweat sodium runs from roughly 200 to 2000 mg per litre, and across a long hot day that difference is several grams.
+
+Do a second test in genuinely different weather. Knowing your rate in both February and August is what makes the summer advice trustworthy.
+
+## Heat and humidity
+
+*Athlete mode.* The same ride in April and in July are not the same hydration problem. With weather-aware fueling on, Steady works out the **heat index** — apparent temperature, once humidity stops sweat evaporating — and scales your fluid and sodium with it.
+
+Carbs don't move with the weather; only what you drink does.
+
+In real heat you'll also get told so plainly, because no fueling plan makes a dangerous heat index safe — moving the session earlier is the actual answer. In the cold you get the opposite reminder: thirst drops but fluid loss doesn't, so drink on a schedule rather than on thirst.
+
+Fluid advice is capped at what a person can actually absorb — about 34 oz an hour. If your losses run higher than that, Steady says so and tells you to make the rest up afterwards, rather than setting a target you'd have to drown to hit.
+
 ## Where fueling shows up
 
 **Today's Fuel card** appears on the dashboard on days with a scheduled workout. It shows carbs-per-hour at a glance for each session; tap one for the full before/during/after breakdown.

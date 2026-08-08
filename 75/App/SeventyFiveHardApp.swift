@@ -22,15 +22,38 @@ struct SeventyFiveHardApp: App {
         UNUserNotificationCenter.current().delegate = Self.notificationDelegate
         NotificationManager.registerCategories()
         #if DEBUG
-        // Simulator/UI-test hook: `-seedDemo` fills an empty store with a
-        // month of plausible data so screens render without onboarding.
+        // Simulator/UI-test hooks: `-seedDemo` fills an empty store with a
+        // month of plausible weight-loss data, `-seedAthlete` does the same
+        // for athlete mode, so screens render without walking onboarding.
+        // Both no-op on a non-empty store, so `-resetStore` clears it first —
+        // UI tests share one container and would otherwise inherit whichever
+        // mode the previous test seeded.
+        if CommandLine.arguments.contains("-resetStore") {
+            Self.resetStore()
+        }
         if CommandLine.arguments.contains("-seedDemo") {
             Self.seedDemoData()
+        }
+        if CommandLine.arguments.contains("-seedAthlete") {
+            Self.seedAthleteData()
         }
         #endif
     }
 
     #if DEBUG
+    /// Wipe every plan and profile. The cascade rules take the days, foods,
+    /// workouts, sweat tests, and cycles with them.
+    private static func resetStore() {
+        let context = ModelContext(PersistenceController.shared.container)
+        for plan in (try? context.fetch(FetchDescriptor<Plan>())) ?? [] {
+            context.delete(plan)
+        }
+        for profile in (try? context.fetch(FetchDescriptor<UserProfile>())) ?? [] {
+            context.delete(profile)
+        }
+        try? context.save()
+    }
+
     private static func seedDemoData() {
         let context = ModelContext(PersistenceController.shared.container)
         guard ((try? context.fetch(FetchDescriptor<Plan>())) ?? []).isEmpty else { return }
@@ -64,6 +87,104 @@ struct SeventyFiveHardApp: App {
         }
         try? context.save()
     }
+
+    /// An athlete mid-training-block: a dated plan for the week, a couple of
+    /// sweat tests, and cycle history — enough for every athlete-mode card to
+    /// render with real numbers.
+    private static func seedAthleteData() {
+        let context = ModelContext(PersistenceController.shared.container)
+        guard ((try? context.fetch(FetchDescriptor<Plan>())) ?? []).isEmpty else { return }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+
+        let profile = UserProfile(birthDate: cal.date(byAdding: .year, value: -34, to: Date())!,
+                                  heightInches: 68, sex: .female, activityLevel: .moderate,
+                                  mode: .athlete, generalHealth: true)
+        profile.cycleTracking = true
+        profile.cycleTrackingOffered = true
+
+        let plan = Plan(startDate: cal.date(byAdding: .day, value: -29, to: today)!,
+                        startingWeight: 142, goalWeight: 142, paceLbsPerWeek: 0,
+                        proteinTargetGrams: 115)
+        plan.eatAtMaintenance = true
+        context.insert(profile)
+        context.insert(plan)
+
+        // A month of logging, with weight holding steady the way it should
+        // during a block that's fuelled properly.
+        for i in 0..<30 {
+            let date = cal.date(byAdding: .day, value: i - 29, to: today)!
+            let day = DayLog(date: date)
+            day.weight = ((142 + sin(Double(i) / 3) * 0.7) * 10).rounded() / 10
+            day.waterOunces = 80 + (i % 3) * 16
+            day.foods.append(FoodLog(name: "Oats, banana, peanut butter", calories: 620,
+                                     proteinGrams: 20, grams: 380, source: "custom",
+                                     meal: .breakfast,
+                                     facts: NutritionFacts(carbsGrams: 92, fatGrams: 18,
+                                                           fiberGrams: 11, sugarGrams: 22)))
+            day.foods.append(FoodLog(name: "Chicken, rice, greens", calories: 780,
+                                     proteinGrams: 52, grams: 520, source: "custom",
+                                     meal: .dinner,
+                                     facts: NutritionFacts(carbsGrams: 96, fatGrams: 18,
+                                                           sodiumMg: 780, fiberGrams: 8)))
+            if i % 7 != 0 {
+                day.workouts.append(WorkoutLog(name: "Endurance ride", minutes: 75,
+                                               category: .cardio))
+            }
+            plan.days.append(day)
+        }
+
+        // This week's plan — the shape of a real block: a big weekend ride,
+        // intervals midweek, a lifting day, and a genuine rest day.
+        let week: [(offset: Int, name: String, minutes: Int, category: WorkoutCategory,
+                    intensity: WorkoutIntensity, tss: Double?, hour: Int)] = [
+            (0, "Threshold 3x12", 90, .cardio, .hard, 95, 6),
+            (0, "Core & Mobility", 25, .mobility, .easy, nil, 19),
+            (1, "Recovery Spin", 45, .cardio, .easy, 28, 7),
+            (2, "Strength — Lower", 60, .strength, .moderate, nil, 17),
+            (3, "Endurance Ride", 150, .cardio, .moderate, 130, 6),
+            (5, "Long Ride", 240, .cardio, .moderate, 210, 7),
+            (6, "Brick — Ride + Run", 120, .cardio, .hard, 140, 8)
+        ]
+        for entry in week {
+            plan.plannedWorkouts.append(
+                PlannedWorkout(date: cal.date(byAdding: .day, value: entry.offset, to: today)!,
+                               name: entry.name,
+                               minutes: entry.minutes,
+                               hour: entry.hour,
+                               category: entry.category,
+                               intensity: entry.intensity,
+                               details: "Seeded demo session.",
+                               source: "trainingpeaks",
+                               externalID: "demo-\(entry.offset)-\(entry.name)",
+                               tss: entry.tss))
+        }
+        plan.trainingPeaksFeedURL = "https://www.trainingpeaks.com/ical/DEMO.ics"
+        plan.trainingPeaksLastSync = Date()
+
+        // Two sweat tests in different conditions.
+        plan.sweatTests.append(SweatTest(date: cal.date(byAdding: .day, value: -21, to: today)!,
+                                         preWeightLbs: 142.4, postWeightLbs: 140.9,
+                                         fluidOunces: 20, minutes: 75,
+                                         category: .cardio, intensity: .moderate,
+                                         tempF: 58, humidityPercent: 60))
+        plan.sweatTests.append(SweatTest(date: cal.date(byAdding: .day, value: -6, to: today)!,
+                                         preWeightLbs: 142.1, postWeightLbs: 140.0,
+                                         fluidOunces: 26, minutes: 80,
+                                         category: .cardio, intensity: .hard,
+                                         tempF: 81, humidityPercent: 55))
+
+        // Three cycles of history, currently mid-luteal.
+        for offset in [58, 30, 2] {
+            let start = cal.date(byAdding: .day, value: -offset - 18, to: today)!
+            let entry = CycleEntry(startDate: start,
+                                   endDate: cal.date(byAdding: .day, value: 4, to: start)!)
+            entry.symptoms = ["Cramps", "Fatigue"]
+            plan.cycles.append(entry)
+        }
+
+        try? context.save()
+    }
     #endif
 
     var body: some Scene {
@@ -91,12 +212,12 @@ struct SeventyFiveHardApp: App {
                     case .inactive, .background:
                         // Don't cover the launch screen before the first activation.
                         if hasBecomeActive { showPrivacyShield = true }
-                        appLock.lockPhotos()   // photos require Face ID again on return
+                        appLock.lockAll()      // photos and cycle log re-lock on return
                         refreshStreakGuard()   // also caches the widget snapshot…
                         WidgetCenter.shared.reloadAllTimelines()   // …which this reload reads
                     @unknown default:
                         if hasBecomeActive { showPrivacyShield = true }
-                        appLock.lockPhotos()
+                        appLock.lockAll()
                     }
                 }
         }

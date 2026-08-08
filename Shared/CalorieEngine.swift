@@ -1,10 +1,17 @@
 import Foundation
 
 /// Daily targets derived from the user's profile and plan.
+///
+/// Carbs and fat are only filled in by athlete mode, which periodizes macros
+/// against the day's training load; weight-loss mode leaves them nil and keeps
+/// the original calories/protein/water contract untouched.
 struct DailyTargets {
     let calories: Int
     let proteinGrams: Int
     let waterOunces: Int
+    var carbGrams: Int? = nil
+    var fatGrams: Int? = nil
+    var trainingLoad: TrainingLoad? = nil
 }
 
 /// A smoothed weight sample.
@@ -122,11 +129,65 @@ enum CalorieEngine {
                             loggedDays: logged.count, spanDays: spanDays)
     }
 
+    // MARK: - Maintenance
+
+    /// Average calories the last 28 days of *logged* training actually cost,
+    /// per day. Used to strip training out of a learned TDEE so athlete mode
+    /// can add each day's own session back without counting it twice.
+    static func averageLoggedTrainingBurn(plan: Plan, days: Int = 28) -> Double {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        guard let start = cal.date(byAdding: .day, value: -days, to: today) else { return 0 }
+        let window = plan.days.filter { $0.date >= start && $0.date < today }
+        guard !window.isEmpty else { return 0 }
+
+        let total = window.reduce(0.0) { sum, day in
+            sum + day.workouts.reduce(0.0) { inner, workout in
+                inner + Double(FuelingEngine.plan(category: workout.category,
+                                                  intensity: .moderate,
+                                                  minutes: workout.minutes,
+                                                  bodyweightLbs: plan.currentWeight).burnCalories)
+            }
+        }
+        return total / Double(days)
+    }
+
+    /// What the body costs *before* today's session — everything except the
+    /// planned training, which athlete mode adds back per day.
+    ///
+    /// This is the piece that stops the double count. `ActivityLevel.factor`
+    /// already bakes in "exercise 3–5 days a week", and a learned TDEE
+    /// contains whatever training actually happened. Adding a session burn on
+    /// top of either would feed an athlete their hardest day twice.
+    static func maintenanceTDEE(profile: UserProfile, plan: Plan) -> Double {
+        if plan.adaptiveBudget, let adaptive = adaptiveTDEE(profile: profile, plan: plan) {
+            // The learned number is total burn including training. Subtract
+            // the training it saw to get the everything-else baseline.
+            let baseline = adaptive.blended - averageLoggedTrainingBurn(plan: plan)
+            // Never let the subtraction fall below resting metabolism.
+            let floor = bmr(sex: profile.sex, weightLbs: plan.currentWeight,
+                            heightInches: profile.heightInches, ageYears: profile.ageYears)
+            return max(floor * 1.15, baseline)
+        }
+        // Formula path: use the non-exercise multiplier, since the sessions
+        // are counted individually.
+        return bmr(sex: profile.sex, weightLbs: plan.currentWeight,
+                   heightInches: profile.heightInches, ageYears: profile.ageYears)
+            * profile.activityLevel.nonExerciseFactor
+    }
+
     /// Today's targets. TDEE tracks the current (latest logged) weight so the
     /// budget adjusts as weight comes down; when adaptive budgeting is on and
     /// there's enough history, the learned TDEE replaces the formula. A
     /// manual override wins over both.
     static func targets(profile: UserProfile, plan: Plan) -> DailyTargets {
+        // Athlete mode's whole target set is a function of the day's training,
+        // so "today" is the only sensible answer to an undated question.
+        if profile.mode == .athlete {
+            return targets(profile: profile, plan: plan,
+                           on: Calendar.current.startOfDay(for: Date()))
+        }
+
         var t = tdee(sex: profile.sex,
                      weightLbs: plan.currentWeight,
                      heightInches: profile.heightInches,
@@ -279,43 +340,88 @@ enum CalorieEngine {
 
     // MARK: - Training-day fueling
 
-    /// Fueling plans for every workout scheduled on `date`, sized to the
-    /// user's current weight.
-    static func fuelingPlans(plan: Plan, on date: Date) -> [FuelingPlan] {
-        plan.scheduledWorkouts(on: date).map {
-            FuelingEngine.plan(category: $0.category,
-                               intensity: $0.intensity,
-                               minutes: $0.minutes,
-                               bodyweightLbs: plan.currentWeight)
+    /// Fueling plans for every session planned on `date`, sized to the user's
+    /// current weight and sharpened by their sweat tests, the weather, and
+    /// (when tracked) the cycle phase.
+    ///
+    /// Reads `plan.sessions(on:)`, so an imported TrainingPeaks plan overrides
+    /// the standing weekly schedule rather than double-counting with it.
+    static func fuelingPlans(plan: Plan,
+                             on date: Date,
+                             weather: WeatherContext? = nil,
+                             cyclePhase: CyclePhase? = nil) -> [FuelingPlan] {
+        let sweat = plan.sweatProfile()
+        return plan.sessions(on: date).map {
+            FuelingEngine.plan(for: $0,
+                               bodyweightLbs: plan.currentWeight,
+                               sweat: sweat,
+                               weather: plan.weatherAwareFueling ? weather : nil,
+                               cyclePhase: cyclePhase)
         }
     }
 
-    /// Estimated calories the day's scheduled training burns — the amount to
+    /// Estimated calories the day's planned training burns — the amount to
     /// add back to the budget on a training day.
     static func trainingBurn(plan: Plan, on date: Date) -> Int {
         fuelingPlans(plan: plan, on: date).reduce(0) { $0 + $1.burnCalories }
     }
 
-    /// Extra water the day's scheduled training calls for, from each
-    /// session's fluid guidance (oz/hr × duration).
+    /// Extra water the day's planned training calls for, from each session's
+    /// fluid guidance (oz/hr × duration).
     static func trainingFluidOunces(plan: Plan, on date: Date) -> Int {
-        fuelingPlans(plan: plan, on: date).reduce(0) {
-            $0 + Int((Double($1.fluidOzPerHour) * Double($1.minutes) / 60.0).rounded())
-        }
+        fuelingPlans(plan: plan, on: date).reduce(0) { $0 + $1.totalFluidOz }
     }
 
-    /// Targets for a specific day. When training-day fueling is on and a
-    /// workout is scheduled, the session's burn is added back to the calorie
-    /// budget so eating the fuel doesn't read as going "over," and the water
-    /// target grows by the sessions' fluid guidance.
-    static func targets(profile: UserProfile, plan: Plan, on date: Date) -> DailyTargets {
+    /// Targets for a specific day.
+    ///
+    /// In weight-loss mode this is the base budget plus the day's training
+    /// burn, so eating the fuel doesn't read as going "over". In athlete mode
+    /// the whole calculation is different — maintenance plus training, with
+    /// carbs periodized to the load — and `AthleteEngine` owns it.
+    static func targets(profile: UserProfile,
+                        plan: Plan,
+                        on date: Date,
+                        weather: WeatherContext? = nil,
+                        cyclePhase: CyclePhase? = nil) -> DailyTargets {
+        if profile.mode == .athlete {
+            let a = AthleteEngine.targets(profile: profile,
+                                          plan: plan,
+                                          maintenanceTDEE: maintenanceTDEE(profile: profile, plan: plan),
+                                          sessions: plan.sessions(on: date),
+                                          weather: weather,
+                                          cyclePhase: cyclePhase)
+            // A manual override still wins — but only over the calorie total;
+            // the macro split stays keyed to the day's training load.
+            return DailyTargets(calories: plan.calorieBudgetOverride ?? a.calories,
+                                proteinGrams: a.proteinGrams,
+                                waterOunces: a.waterOunces,
+                                carbGrams: a.carbGrams,
+                                fatGrams: a.fatGrams,
+                                trainingLoad: a.load)
+        }
+
         let base = targets(profile: profile, plan: plan)
         guard plan.fuelTrainingDays else { return base }
-        let bump = trainingBurn(plan: plan, on: date)
+        let plans = fuelingPlans(plan: plan, on: date, weather: weather, cyclePhase: cyclePhase)
+        let bump = plans.reduce(0) { $0 + $1.burnCalories }
         guard bump > 0 else { return base }
         return DailyTargets(calories: base.calories + bump,
                             proteinGrams: base.proteinGrams,
                             waterOunces: base.waterOunces
-                                + trainingFluidOunces(plan: plan, on: date))
+                                + plans.reduce(0) { $0 + $1.totalFluidOz })
+    }
+
+    /// Athlete-mode day targets with the full picture attached.
+    static func athleteTargets(profile: UserProfile,
+                               plan: Plan,
+                               on date: Date,
+                               weather: WeatherContext? = nil,
+                               cyclePhase: CyclePhase? = nil) -> AthleteTargets {
+        AthleteEngine.targets(profile: profile,
+                              plan: plan,
+                              maintenanceTDEE: maintenanceTDEE(profile: profile, plan: plan),
+                              sessions: plan.sessions(on: date),
+                              weather: weather,
+                              cyclePhase: cyclePhase)
     }
 }

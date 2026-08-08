@@ -5,7 +5,7 @@ summary: Steady collects nothing. Here is exactly what that means, in detail.
 
 # Privacy Policy — Steady
 
-**Effective 3 August 2026**
+**Effective 8 August 2026**
 
 Steady ("the app") is a personal health and fitness tracker for iPhone. It is built to be local-first: your data lives on your device, and there is no Steady account, server, or backend to sign in to.
 
@@ -15,8 +15,9 @@ Steady ("the app") is a personal health and fitness tracker for iPhone. It is bu
 
 - **We do not collect your data.** There is no Steady server. Nothing you log is transmitted to the developer.
 - **No accounts, no analytics, no advertising, no tracking**, and no third-party analytics or ad SDKs are embedded in the app.
-- Two optional features talk to outside services, and **only when you use them** — see [Optional network features](#optional-network-features).
+- A handful of optional features talk to outside services, and **only when you turn them on** — see [Optional network features](#optional-network-features).
 - Your Health data is never used for advertising and is never sold or shared.
+- **Cycle tracking never leaves your device at all** — not to us, not to Apple Health, not to any AI feature. See [Cycle tracking](#cycle-tracking).
 
 ---
 
@@ -59,6 +60,39 @@ If — and only if — you supply your own Google Gemini API key in Settings, de
 
 Scanning a barcode sends the numeric barcode — and nothing else — to the [Open Food Facts](https://world.openfoodfacts.org/) public database to retrieve nutrition information for that product. No personal information, device identifier, or account is attached to the request.
 
+### Training plan import (TrainingPeaks)
+
+If you connect a TrainingPeaks calendar in athlete mode, Steady fetches that URL over HTTPS to read your planned sessions.
+
+- The link is the private iCalendar feed **you** generate in TrainingPeaks (Account Settings → Calendar Sync). It is stored on your device and sent only to TrainingPeaks, as the address of the request.
+- The request is a plain read. **Nothing you log in Steady is ever uploaded to TrainingPeaks**, and there is no account linking, no OAuth, and no token held by us.
+- Steady refreshes at most once an hour while you're using it, plus whenever you tap Sync.
+- Revoking access is entirely in your hands: disconnect it in Steady, or regenerate the link in TrainingPeaks so the old one stops working.
+- You can skip the network path entirely by importing a downloaded `.ics` file instead.
+
+### Weather (Apple WeatherKit)
+
+In athlete mode, if you leave weather-aware fueling on, Steady looks up the current temperature and humidity so your fluid and sodium targets match the conditions you're actually training in.
+
+- The lookup goes to **Apple's** WeatherKit using a coarse (kilometre-accuracy) coordinate. Apple's handling of it is governed by the [Apple Privacy Policy](https://www.apple.com/legal/privacy/).
+- Your location is used for that request and nothing else. It is **not stored** by the app, not attached to anything you log, and never sent to us or to any other party.
+- Steady never asks for location in the background, and never asks at all until you switch weather on.
+- Turn it off and you can type the temperature and humidity yourself — the sweat and hydration maths is identical.
+
+---
+
+## Cycle tracking
+
+If you turn cycle tracking on, everything it records — the dates, flow, symptoms, and notes — is held to a stricter standard than the rest of the app:
+
+- It is stored **only in the on-device container**. It is never transmitted anywhere, by any feature, for any reason.
+- It is **not written to Apple Health**, even when Health sync is switched on.
+- It is **never included** in anything sent to Google Gemini for a nutrition estimate, and never appears in a day summary sent off-device.
+- It is **locked behind Face ID** (with your backup PIN as the fallback), alongside your progress photos, and re-locks every time the app leaves the foreground. Locked means locked: the dashboard card shows nothing but the word "Locked" until you unlock it.
+- You can switch tracking off at any time in Settings, and erase every logged cycle permanently with one action.
+
+Steady only offers cycle tracking when your profile makes it relevant, and asks rather than assumes when your profile says "prefer not to say".
+
 ---
 
 ## Permissions the app asks for, and why
@@ -68,9 +102,10 @@ Scanning a barcode sends the numeric barcode — and nothing else — to the [Op
 | Apple Health | Read steps, sleep, and weigh-ins; write your logged weight, water, nutrition, and workouts |
 | Camera | Progress photos, food photos for AI estimates, and barcode scanning |
 | Microphone & Speech Recognition | Dictating a meal description so it can be turned into text for an AI estimate |
-| Face ID | Unlocking your private progress photos |
+| Face ID | Unlocking your private progress photos and, if you use it, your cycle log |
 | Photos (add only) | Saving a progress photo to your library when you choose to export one |
 | Calendar (write only) | Adding your planned workouts to your calendar as repeating events |
+| Location (while using the app) | Looking up local temperature and humidity for athlete-mode hydration targets. Never in the background, never stored |
 | Notifications | Local reminders you schedule yourself; no push notifications are sent from any server |
 
 Every one of these is optional. Denying any of them disables that feature and nothing else.

@@ -89,6 +89,11 @@
 			path = 75UITests;
 			sourceTree = "<group>";
 		};
+		AA0000000000000000000021 /* 75Tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = 75Tests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -129,6 +134,7 @@
 				5A4B20552E6A64870082C3F0 /* 75 */,
 				AA0000000000000000000001 /* Shared */,
 				AA0000000000000000000002 /* Widgets */,
+				AA0000000000000000000021 /* 75Tests */,
 				AA0000000000000000000020 /* 75UITests */,
 				5A4B20542E6A64870082C3F0 /* Products */,
 			);
@@ -185,6 +191,9 @@
 			);
 			dependencies = (
 				5A4B20622E6A64890082C3F0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000021 /* 75Tests */,
 			);
 			name = 75Tests;
 			packageProductDependencies = (

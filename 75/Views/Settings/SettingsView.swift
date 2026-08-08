@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
@@ -46,6 +47,20 @@ struct SettingsView: View {
     @AppStorage(Fasting.enabledKey) private var fastingEnabled = false
     @AppStorage(Fasting.targetHoursKey) private var fastingTarget = 16
 
+    // TrainingPeaks (athlete mode)
+    @State private var tpFeedURL = ""
+    @State private var tpMessage: String?
+    @State private var isSyncingTP = false
+    @State private var showICSImporter = false
+
+    // Weather (athlete mode)
+    @AppStorage(WeatherService.useAutomaticKey) private var automaticWeather = true
+    @State private var manualTemp = ""
+    @State private var manualHumidity = ""
+
+    // Cycle tracking
+    @State private var showCycleEraseConfirm = false
+
     // Backup PIN for the photo lock
     @State private var pinIsSet = PinStore.isSet
     @State private var pinCurrent = ""
@@ -66,6 +81,28 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // --- Mode
+                Section {
+                    Picker("Mode", selection: Binding(get: { profile.mode },
+                                                      set: { setMode($0) })) {
+                        ForEach(AppMode.allCases) { m in
+                            Label(m.label, systemImage: m.icon).tag(m)
+                        }
+                    }
+                    Text(profile.mode.pitch)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle("Track general health", isOn: $profile.generalHealth)
+                } header: {
+                    Text("Mode")
+                } footer: {
+                    Text("Switching modes changes your dashboard and how your targets are worked out. Nothing you've logged is lost either way. General health adds fiber, sodium, and added sugar to your day, alongside blood work.")
+                }
+
+                if profile.mode == .athlete {
+                    athleteSections
+                }
+
                 // --- Goal
                 Section("Goal") {
                     HStack { Text("Started"); Spacer(); Text(plan.startDate, style: .date).foregroundStyle(.secondary) }
@@ -79,9 +116,23 @@ struct SettingsView: View {
                             .focused($fieldFocused)
                         Text("lb").foregroundStyle(.secondary)
                     }
-                    Picker("Pace", selection: $plan.paceLbsPerWeek) {
-                        ForEach(paces, id: \.self) { p in
-                            Text(String(format: "%.1f lb / week", p)).tag(p)
+                    if profile.mode == .athlete {
+                        Toggle("Eat at maintenance", isOn: $plan.eatAtMaintenance)
+                        if !plan.eatAtMaintenance {
+                            Picker("Pace", selection: $plan.paceLbsPerWeek) {
+                                ForEach([0.5, 1.0], id: \.self) { p in
+                                    Text(String(format: "%.1f lb / week", p)).tag(p)
+                                }
+                            }
+                            Text("Capped at 1 lb/week in athlete mode — steeper than that and performance goes before fat does.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Picker("Pace", selection: $plan.paceLbsPerWeek) {
+                            ForEach(paces, id: \.self) { p in
+                                Text(String(format: "%.1f lb / week", p)).tag(p)
+                            }
                         }
                     }
                     Picker("Streak counts when", selection: $plan.strictStreak) {
@@ -245,6 +296,11 @@ struct SettingsView: View {
                     Text("Apple Health")
                 } footer: {
                     Text("Garmin, Apple Watch, and smart scales that write to Apple Health flow in automatically — this is the Garmin link. Workouts recorded on a watch or in Garmin Connect import into the day log (each one only once) and count toward minutes and the streak.")
+                }
+
+                // --- Cycle tracking (opt-in, locked, device-only)
+                if profile.cycleTrackingRelevant || profile.cycleTracking {
+                    cycleSection
                 }
 
                 // --- Fasting (opt-in eating-window tracking)
@@ -414,7 +470,10 @@ struct SettingsView: View {
 
                 // --- Security
                 Section {
-                    Label("Face ID protects your progress photos", systemImage: "faceid")
+                    Label(profile.cycleTracking
+                          ? "Face ID protects your progress photos and cycle log"
+                          : "Face ID protects your progress photos",
+                          systemImage: "faceid")
                         .foregroundStyle(.secondary)
                     if pinIsSet {
                         SecureField("Current PIN", text: $pinCurrent)
@@ -490,8 +549,285 @@ struct SettingsView: View {
                     Button("Done") { fieldFocused = false }
                 }
             }
+            .onAppear(perform: loadAthleteFields)
         }
         .themedRoot()
+    }
+
+    /// Seed the editable athlete fields from what's stored, so the form opens
+    /// showing the current state rather than empty boxes.
+    private func loadAthleteFields() {
+        if tpFeedURL.isEmpty { tpFeedURL = plan.trainingPeaksFeedURL ?? "" }
+        if let manual = WeatherService.manual {
+            if manualTemp.isEmpty { manualTemp = String(Int(manual.tempF.rounded())) }
+            if manualHumidity.isEmpty {
+                manualHumidity = String(Int(manual.humidityPercent.rounded()))
+            }
+        }
+    }
+
+    // MARK: Athlete sections
+
+    /// TrainingPeaks, sweat rate, and weather — only meaningful in athlete
+    /// mode, so they don't clutter the weight-loss settings at all.
+    @ViewBuilder
+    private var athleteSections: some View {
+        Section {
+            if plan.trainingPeaksConnected {
+                HStack {
+                    Label("Connected", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.accent)
+                    Spacer()
+                    if let last = plan.trainingPeaksLastSync {
+                        Text(last.formatted(.relative(presentation: .named)))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Button {
+                    Task { await syncTrainingPeaks() }
+                } label: {
+                    HStack {
+                        Label("Sync Now", systemImage: "arrow.clockwise")
+                        if isSyncingTP {
+                            Spacer()
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                }
+                .disabled(isSyncingTP)
+                Button(role: .destructive) {
+                    disconnectTrainingPeaks()
+                } label: {
+                    Label("Disconnect", systemImage: "xmark.circle")
+                }
+            } else {
+                TextField("Calendar URL from TrainingPeaks", text: $tpFeedURL)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .font(.system(.caption, design: .monospaced))
+                    .focused($fieldFocused)
+                Button {
+                    connectTrainingPeaks()
+                } label: {
+                    Label("Connect", systemImage: "link")
+                }
+                .disabled(tpFeedURL.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            NavigationLink {
+                TrainingPeaksGuideView()
+            } label: {
+                Label("Where to find your link", systemImage: "questionmark.circle")
+            }
+
+            Button {
+                showICSImporter = true
+            } label: {
+                Label("Import a .ics File", systemImage: "square.and.arrow.down")
+            }
+
+            if let tpMessage {
+                Text(tpMessage).font(.footnote).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("TrainingPeaks")
+        } footer: {
+            Text("Steady reads your planned sessions over HTTPS from the private calendar link TrainingPeaks gives you, and works out each one's type and intensity for the fueling math. Nothing is ever sent the other way. An imported plan overrides your weekly workout days for any day it covers.")
+        }
+        .fileImporter(isPresented: $showICSImporter,
+                      allowedContentTypes: [UTType(filenameExtension: "ics") ?? .data, .data],
+                      allowsMultipleSelection: false) { result in
+            importICS(result)
+        }
+
+        Section {
+            NavigationLink {
+                SweatTestView(plan: plan)
+            } label: {
+                HStack {
+                    Label("Sweat Rate", systemImage: "drop.fill")
+                    Spacer()
+                    if let sweat = plan.sweatProfile() {
+                        Text("\(Int(sweat.ouncesPerHour.rounded())) oz/hr")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Not measured").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Toggle("Weather-aware fueling", isOn: $plan.weatherAwareFueling)
+            if plan.weatherAwareFueling {
+                Toggle("Use my location", isOn: $automaticWeather)
+                    .onChange(of: automaticWeather) { on in
+                        if on { Task { await WeatherService.shared.refresh() } }
+                    }
+                if !automaticWeather {
+                    manualWeatherFields
+                } else if let error = WeatherService.shared.lastError {
+                    Text(error).font(.caption).foregroundStyle(Theme.warn)
+                } else if let current = WeatherService.shared.effective {
+                    HStack {
+                        Text("Right now")
+                        Spacer()
+                        Text("\(Int(current.tempF.rounded()))°F · \(Int(current.humidityPercent.rounded()))% RH")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Sweat & Weather")
+        } footer: {
+            Text("Heat and humidity drive sweat loss harder than anything but intensity, so your fluid and sodium targets scale with the conditions. Location is used for the weather lookup through Apple's WeatherKit and never stored or sent anywhere else.")
+        }
+    }
+
+    private var manualWeatherFields: some View {
+        Group {
+            HStack {
+                Text("Temperature")
+                Spacer()
+                TextField("°F", text: $manualTemp)
+                    .keyboardType(.numbersAndPunctuation)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 70)
+                    .focused($fieldFocused)
+                Text("°F").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Humidity")
+                Spacer()
+                TextField("%", text: $manualHumidity)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 70)
+                    .focused($fieldFocused)
+                Text("%").font(.caption).foregroundStyle(.secondary)
+            }
+            Button("Save Conditions") {
+                if let t = Double(manualTemp) {
+                    WeatherService.setManual(tempF: t,
+                                             humidityPercent: Double(manualHumidity) ?? 50)
+                    Haptics.success()
+                }
+            }
+            .disabled(Double(manualTemp) == nil)
+        }
+    }
+
+    // MARK: Cycle tracking
+
+    @ViewBuilder
+    private var cycleSection: some View {
+        Section {
+            Toggle("Cycle tracking", isOn: Binding(
+                get: { profile.cycleTracking },
+                set: { on in
+                    profile.cycleTracking = on
+                    profile.cycleTrackingOffered = true
+                    try? context.save()
+                }
+            ))
+            if profile.cycleTracking {
+                NavigationLink {
+                    CycleLogView(plan: plan)
+                } label: {
+                    Label("Open Cycle Log", systemImage: "drop.fill")
+                }
+                if !plan.cycles.isEmpty {
+                    Button(role: .destructive) { showCycleEraseConfirm = true } label: {
+                        Label("Erase Cycle Data", systemImage: "trash")
+                    }
+                    .confirmationDialog(
+                        "Erase all \(plan.cycles.count) logged cycle\(plan.cycles.count == 1 ? "" : "s")? This can't be undone.",
+                        isPresented: $showCycleEraseConfirm,
+                        titleVisibility: .visible) {
+                        Button("Erase Cycle Data", role: .destructive) { eraseCycleData() }
+                        Button("Cancel", role: .cancel) {}
+                    }
+                }
+            }
+        } header: {
+            Text("Cycle Tracking")
+        } footer: {
+            Text("Logs your period and shows which phase you're in, with the context behind scale jumps and a small hydration bump in the luteal phase. It's locked behind Face ID with your progress photos, stored only on this device, never written to Apple Health, and never part of anything sent for a nutrition estimate. Switching it off hides it; erasing removes it for good.")
+        }
+    }
+
+    // MARK: Athlete actions
+
+    private func setMode(_ new: AppMode) {
+        guard new != profile.mode else { return }
+        profile.mode = new
+        // An athlete switching in shouldn't inherit an aggressive deficit, and
+        // someone switching out to lose weight needs a real pace again.
+        if new == .athlete {
+            plan.eatAtMaintenance = true
+        } else if plan.paceLbsPerWeek <= 0 {
+            plan.paceLbsPerWeek = 1.0
+        }
+        try? context.save()
+        Haptics.success()
+    }
+
+    private func connectTrainingPeaks() {
+        let trimmed = tpFeedURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard TrainingPeaksSync.normalize(trimmed) != nil else {
+            tpMessage = "That doesn't look like a calendar link — it should start with https:// or webcal:// and end in .ics."
+            return
+        }
+        plan.trainingPeaksFeedURL = trimmed
+        try? context.save()
+        Task { await syncTrainingPeaks() }
+    }
+
+    private func syncTrainingPeaks() async {
+        guard !isSyncingTP else { return }
+        isSyncingTP = true
+        defer { isSyncingTP = false }
+        do {
+            let result = try await TrainingPeaksSync.sync(plan: plan)
+            try? context.save()
+            tpMessage = result.summary
+            Haptics.success()
+        } catch {
+            tpMessage = error.localizedDescription
+        }
+    }
+
+    private func disconnectTrainingPeaks() {
+        // Leave the imported sessions in place — they're the athlete's plan,
+        // and silently deleting a training block because a link was removed
+        // would be a nasty surprise.
+        plan.trainingPeaksFeedURL = nil
+        plan.trainingPeaksLastSync = nil
+        tpFeedURL = ""
+        tpMessage = "Disconnected. Sessions already imported are still here — delete them individually if you don't want them."
+        try? context.save()
+    }
+
+    private func importICS(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            do {
+                let outcome = try TrainingPeaksSync.importFile(at: url, into: plan)
+                try? context.save()
+                tpMessage = outcome.summary
+                Haptics.success()
+            } catch {
+                tpMessage = error.localizedDescription
+            }
+        case .failure(let error):
+            tpMessage = error.localizedDescription
+        }
+    }
+
+    private func eraseCycleData() {
+        plan.cycles.forEach { context.delete($0) }
+        plan.cycles.removeAll()
+        try? context.save()
+        Haptics.success()
     }
 
     // MARK: App icon picker

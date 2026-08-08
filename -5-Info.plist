@@ -19,6 +19,8 @@
 	<string>To read steps, sleep, and weigh-ins from your devices (including Garmin via Apple Health) for your stats and trends.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>To save your logged weight, water, nutrition, and workouts to Apple Health.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>To check the temperature and humidity where you're training, so your hydration and sodium targets match the conditions. Your location is used for the weather lookup only — never stored, never shared.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>To dictate your meal so AI can estimate its calories and protein.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

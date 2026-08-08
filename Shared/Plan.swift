@@ -24,12 +24,28 @@ final class Plan {
     /// carb/fluid fueling guidance (Settings → Daily Targets).
     var fuelTrainingDays: Bool = true
 
+    // MARK: Athlete mode (all additive, all defaulted for clean migration)
+
+    /// The private iCalendar feed from TrainingPeaks → Settings → Calendar
+    /// Sync. Empty until connected.
+    var trainingPeaksFeedURL: String?
+    var trainingPeaksLastSync: Date?
+    /// Fold local heat and humidity into the hydration and sodium guidance.
+    var weatherAwareFueling: Bool = true
+    /// Athlete mode: eat at maintenance plus training rather than in a
+    /// deficit. Turning this off lets an athlete run a deliberate (small)
+    /// deficit for a body-composition block using `paceLbsPerWeek`.
+    var eatAtMaintenance: Bool = true
+
     @Relationship(deleteRule: .cascade) var days: [DayLog]
     @Relationship(deleteRule: .cascade) var presets: [WorkoutPreset]
     @Relationship(deleteRule: .cascade) var schedule: [WorkoutScheduleEntry]
     @Relationship(deleteRule: .cascade) var supplements: [Supplement]
     @Relationship(deleteRule: .cascade) var measurements: [MeasurementLog]
     @Relationship(deleteRule: .cascade) var labs: [LabResult] = []
+    @Relationship(deleteRule: .cascade) var plannedWorkouts: [PlannedWorkout] = []
+    @Relationship(deleteRule: .cascade) var sweatTests: [SweatTest] = []
+    @Relationship(deleteRule: .cascade) var cycles: [CycleEntry] = []
 
     init(startDate: Date,
          startingWeight: Double,
@@ -72,15 +88,54 @@ final class Plan {
         return Calendar.current.date(byAdding: .day, value: Int(weeks * 7), to: Date())
     }
 
-    /// Is a workout planned for this date's weekday?
+    /// Is any training planned for this date — from a dated plan or from the
+    /// recurring weekly schedule? Drives whether a workout counts against the
+    /// day's goals, so it has to see an imported plan too.
     func isWorkoutScheduled(on date: Date) -> Bool {
-        let weekday = Calendar.current.component(.weekday, from: date)
-        return schedule.contains { $0.weekday == weekday }
+        !sessions(on: date).isEmpty
     }
 
     func scheduledWorkouts(on date: Date) -> [WorkoutScheduleEntry] {
         let weekday = Calendar.current.component(.weekday, from: date)
         return schedule.filter { $0.weekday == weekday }
+    }
+
+    // MARK: - Sessions
+
+    func plannedWorkouts(on date: Date) -> [PlannedWorkout] {
+        let day = Calendar.current.startOfDay(for: date)
+        return plannedWorkouts
+            .filter { Calendar.current.isDate($0.date, inSameDayAs: day) }
+            .sorted { ($0.hour, $0.minute) < ($1.hour, $1.minute) }
+    }
+
+    /// Everything planned for a date, from whichever source has it.
+    ///
+    /// A dated plan wins outright over the recurring weekday slot: once
+    /// TrainingPeaks says Tuesday is a rest day, the standing "Tuesday: Gym,
+    /// 45 min" entry must not keep adding phantom calories to the budget.
+    /// Only when no dated session exists does the weekly schedule stand in.
+    func sessions(on date: Date) -> [TrainingSession] {
+        let dated = plannedWorkouts(on: date)
+        if !dated.isEmpty { return dated.map(TrainingSession.init) }
+        return scheduledWorkouts(on: date).map(TrainingSession.init)
+    }
+
+    /// True once any dated plan exists at all — the signal that this person
+    /// drives their week from a training plan rather than a weekly habit grid.
+    var usesDatedPlan: Bool { !plannedWorkouts.isEmpty }
+
+    var trainingPeaksConnected: Bool {
+        !(trainingPeaksFeedURL ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// The learned sweat profile, or nil until a plausible test exists.
+    func sweatProfile(matching category: WorkoutCategory? = nil,
+                      intensity: WorkoutIntensity? = nil) -> SweatProfile? {
+        let salt = SaltLoss(rawValue: UserDefaults.standard.string(forKey: SaltLoss.storageKey) ?? "")
+            ?? .typical
+        return SweatEngine.profile(tests: sweatTests, saltLoss: salt,
+                                   matching: category, intensity: intensity)
     }
 }
 
@@ -104,6 +159,20 @@ enum WorkoutCategory: String, Codable, CaseIterable, Identifiable {
         case .mobility: return "figure.cooldown"
         case .sports: return "sportscourt.fill"
         case .other: return "figure.mixed.cardio"
+        }
+    }
+
+    /// Metabolic equivalent for a moderate effort of this type — the energy
+    /// cost, and therefore the heat produced, relative to sitting still.
+    /// Drives both the calorie burn estimate and how a measured sweat rate is
+    /// rescaled between session types.
+    var metEstimate: Double {
+        switch self {
+        case .cardio:   return 8.5
+        case .sports:   return 7.5
+        case .strength: return 5.0
+        case .mobility: return 2.8
+        case .other:    return 6.0
         }
     }
 }

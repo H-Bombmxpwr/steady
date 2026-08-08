@@ -25,7 +25,15 @@ struct MainTabView: View {
     @ViewBuilder
     private func screen(_ index: Int) -> some View {
         switch index {
-        case 0: DashboardView(plan: plan, profile: profile)
+        // The mode picks the dashboard; every other tab is shared. An athlete
+        // and someone in a deficit want the same stats, calendar, and photos —
+        // they just want a different thing to open on.
+        case 0:
+            if profile.mode == .athlete {
+                AthleteDashboardView(plan: plan, profile: profile)
+            } else {
+                DashboardView(plan: plan, profile: profile)
+            }
         case 1: StatsView(plan: plan, profile: profile)
         case 2: CalendarScreen(plan: plan, profile: profile)
         case 3: PhotosGalleryView(plan: plan)
@@ -131,8 +139,12 @@ struct DashboardView: View {
 
                     TodayCard(day: todayLog, targets: todayTargets, plan: plan)
 
-                    if !plan.scheduledWorkouts(on: today).isEmpty {
+                    if !plan.sessions(on: today).isEmpty {
                         FuelCard(plan: plan)
+                    }
+
+                    if profile.cycleTracking {
+                        CycleCard(plan: plan)
                     }
 
                     if fastingEnabled {
@@ -414,7 +426,7 @@ private struct TodayCard: View {
     }
 
     private var workoutRow: some View {
-        let scheduled = plan.scheduledWorkouts(on: day.date)
+        let scheduled = plan.sessions(on: day.date)
         let done = !day.workouts.isEmpty
         let text: String
         if !scheduled.isEmpty {

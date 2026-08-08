@@ -10,12 +10,16 @@ struct FuelCard: View {
     @State private var detail: FuelingPlan?
 
     private var today: Date { Calendar.current.startOfDay(for: Date()) }
-    private var workouts: [WorkoutScheduleEntry] {
-        plan.scheduledWorkouts(on: today).sorted { $0.minutes > $1.minutes }
+    private var workouts: [TrainingSession] {
+        plan.sessions(on: today).sorted { $0.minutes > $1.minutes }
     }
-    private func fuel(for entry: WorkoutScheduleEntry) -> FuelingPlan {
-        FuelingEngine.plan(category: entry.category, intensity: entry.intensity,
-                           minutes: entry.minutes, bodyweightLbs: plan.currentWeight)
+    private func fuel(for entry: TrainingSession) -> FuelingPlan {
+        FuelingEngine.plan(for: entry,
+                           bodyweightLbs: plan.currentWeight,
+                           sweat: plan.sweatProfile(matching: entry.category,
+                                                    intensity: entry.intensity),
+                           weather: plan.weatherAwareFueling
+                               ? WeatherService.shared.effective : nil)
     }
     private var totalBurn: Int {
         workouts.reduce(0) { $0 + fuel(for: $1).burnCalories }
@@ -23,7 +27,7 @@ struct FuelCard: View {
 
     var body: some View {
         Card(title: "Today's Fuel", icon: "bolt.fill", tint: Theme.foodTint) {
-            ForEach(workouts, id: \.persistentModelID) { entry in
+            ForEach(workouts) { entry in
                 let fp = fuel(for: entry)
                 Button { detail = fp } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -95,17 +99,21 @@ struct DayFuelSection: View {
     let date: Date
     @State private var detail: FuelingPlan?
 
-    private var workouts: [WorkoutScheduleEntry] {
-        plan.scheduledWorkouts(on: date).sorted { $0.minutes > $1.minutes }
+    private var workouts: [TrainingSession] {
+        plan.sessions(on: date).sorted { $0.minutes > $1.minutes }
     }
-    private func fuel(for entry: WorkoutScheduleEntry) -> FuelingPlan {
-        FuelingEngine.plan(category: entry.category, intensity: entry.intensity,
-                           minutes: entry.minutes, bodyweightLbs: plan.currentWeight)
+    private func fuel(for entry: TrainingSession) -> FuelingPlan {
+        FuelingEngine.plan(for: entry,
+                           bodyweightLbs: plan.currentWeight,
+                           sweat: plan.sweatProfile(matching: entry.category,
+                                                    intensity: entry.intensity),
+                           weather: plan.weatherAwareFueling
+                               ? WeatherService.shared.effective : nil)
     }
 
     var body: some View {
         Section {
-            ForEach(workouts, id: \.persistentModelID) { entry in
+            ForEach(workouts) { entry in
                 let fp = fuel(for: entry)
                 Button { detail = fp } label: {
                     VStack(alignment: .leading, spacing: 3) {
@@ -184,7 +192,7 @@ struct WeekFuelView: View {
 
     @ViewBuilder
     private func daySection(_ day: Date) -> some View {
-        let entries = plan.scheduledWorkouts(on: day).sorted { $0.minutes > $1.minutes }
+        let entries = plan.sessions(on: day).sorted { $0.minutes > $1.minutes }
         let isToday = Calendar.current.isDateInToday(day)
         let title = (isToday ? "Today · " : "")
             + day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
@@ -195,11 +203,14 @@ struct WeekFuelView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(entries, id: \.persistentModelID) { entry in
-                    let fp = FuelingEngine.plan(category: entry.category,
-                                                intensity: entry.intensity,
-                                                minutes: entry.minutes,
-                                                bodyweightLbs: plan.currentWeight)
+                ForEach(entries) { entry in
+                    let fp = FuelingEngine.plan(
+                        for: entry,
+                        bodyweightLbs: plan.currentWeight,
+                        sweat: plan.sweatProfile(matching: entry.category,
+                                                 intensity: entry.intensity),
+                        weather: plan.weatherAwareFueling
+                            ? WeatherService.shared.effective : nil)
                     Button { detail = fp } label: {
                         HStack(alignment: .firstTextBaseline) {
                             VStack(alignment: .leading, spacing: 2) {

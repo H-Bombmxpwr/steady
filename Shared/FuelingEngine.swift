@@ -7,6 +7,12 @@ import Foundation
 /// (ACSM / ISSN): ~30–60 g carb/hr for 1–2.5 h, up to ~90 g/hr beyond that,
 /// 0.4–0.8 L fluid/hr, ~300–700 mg sodium/hr, and 1 g/kg carb + ~0.3 g/kg
 /// protein for recovery. It's guidance, not a prescription.
+///
+/// Two inputs sharpen it when they exist. A measured sweat rate replaces the
+/// generic fluid table outright — published rates span 0.3–2.4 L/hr for the
+/// same session, so a personal number beats any average. Local heat and
+/// humidity then scale both fluid and sodium, because the identical ride in
+/// April and July are not the same hydration problem.
 struct FuelingPlan: Identifiable {
     let id = UUID()
     let category: WorkoutCategory
@@ -22,8 +28,21 @@ struct FuelingPlan: Identifiable {
     let recoveryProtein: Int      // after, for repair
     let burnCalories: Int         // estimated session energy cost
 
+    /// True when the fluid and sodium numbers came from this athlete's own
+    /// sweat tests rather than the generic table.
+    let fluidIsMeasured: Bool
+    /// The conditions folded into the numbers, when weather was available.
+    let weather: WeatherContext?
+    /// Anything worth saying out loud — heat warnings, sweat-test nudges.
+    let advisories: [String]
+
     /// Endurance sessions long enough to need carbs mid-workout.
     var needsInWorkoutFuel: Bool { carbsPerHour > 0 }
+
+    /// Total fluid across the session.
+    var totalFluidOz: Int {
+        Int((Double(fluidOzPerHour) * Double(minutes) / 60.0).rounded())
+    }
 
     var headline: String {
         if needsInWorkoutFuel {
@@ -34,9 +53,33 @@ struct FuelingPlan: Identifiable {
         }
         return "Fuel is mostly before and after — protein for recovery matters most."
     }
+
+    /// Why the carbs are what they are — the reasoning, in one line, keyed to
+    /// the type of workout rather than a generic number.
+    var carbRationale: String {
+        switch category {
+        case .cardio, .sports:
+            if needsInWorkoutFuel {
+                return "Endurance work past an hour outruns stored glycogen, so carbs go in during the session — not just around it."
+            }
+            return "Under an hour, stored glycogen covers it. Eating during would be fuel you don't need."
+        case .strength:
+            return "Lifting is powered by glycogen but spends it slowly. Carbs before to train hard, carbs and protein after to rebuild."
+        case .mobility:
+            return "Low demand — no special fueling. Normal meals cover this."
+        case .other:
+            return "Fueled as a moderate mixed session: something before, protein and carbs after."
+        }
+    }
 }
 
 enum FuelingEngine {
+    /// The practical ceiling on drinking during exercise. Beyond roughly a
+    /// liter an hour most people can't absorb it, and pushing past sweat
+    /// losses is how hyponatremia happens — this caps the advice even when a
+    /// measured sweat rate is higher.
+    static let maxFluidOzPerHour = 34
+
     /// Which workout types burn glycogen fast enough that mid-session carbs
     /// help. Strength/mobility get pre/post guidance only.
     private static func isEndurance(_ c: WorkoutCategory) -> Bool {
@@ -57,7 +100,10 @@ enum FuelingEngine {
     static func plan(category: WorkoutCategory,
                      intensity: WorkoutIntensity,
                      minutes: Int,
-                     bodyweightLbs: Double) -> FuelingPlan {
+                     bodyweightLbs: Double,
+                     sweat: SweatProfile? = nil,
+                     weather: WeatherContext? = nil,
+                     cyclePhase: CyclePhase? = nil) -> FuelingPlan {
         let kg = max(30, bodyweightLbs * 0.45359237)
         let hours = Double(max(0, minutes)) / 60.0
 
@@ -84,20 +130,71 @@ enum FuelingEngine {
         }
         let duringCarbs = Int((Double(perHour) * hours).rounded())
 
-        // --- Fluids & sodium (matter most on long or hard endurance days)
+        // --- Fluids & sodium
         let longEnough = isEndurance(category) && hours >= 1.0
-        let fluidOzPerHour: Int
-        let sodiumMgPerHour: Int
-        if isEndurance(category) {
-            switch intensity {
-            case .easy:     fluidOzPerHour = 16; sodiumMgPerHour = longEnough ? 300 : 0
-            case .moderate: fluidOzPerHour = 20; sodiumMgPerHour = longEnough ? 500 : 200
-            case .hard:     fluidOzPerHour = 24; sodiumMgPerHour = longEnough ? 700 : 300
+        var fluidOzPerHour: Double
+        var sodiumMgPerHour: Double
+        var advisories: [String] = []
+
+        if let sweat {
+            // Rescale the measured rate for this session's metabolic demand
+            // before anything else. A rate measured on a hard ride would
+            // otherwise hand a 25-minute mobility session a cyclist's
+            // hydration plan.
+            let scaled = sweat.litersPerHour(forMET: baseMET(category) * intensity.burnFactor)
+            // Replace ~80% of measured losses. Full replacement is rarely
+            // achievable mid-session and isn't the target anyway — staying
+            // inside about 2% body-mass loss is.
+            fluidOzPerHour = scaled * 33.814 * 0.8
+            sodiumMgPerHour = scaled * sweat.saltLoss.sodiumMgPerLiter
+            // A rate measured in the cold, applied on a hot day, would
+            // under-call it. Scale from the test conditions, not from 70°F.
+            if let weather, let baseline = sweat.baselineTempF {
+                let baselineContext = WeatherContext(tempF: baseline, humidityPercent: 50)
+                let ratio = weather.fluidMultiplier / baselineContext.fluidMultiplier
+                fluidOzPerHour *= ratio
+                sodiumMgPerHour *= ratio
             }
         } else {
-            fluidOzPerHour = 12
-            sodiumMgPerHour = 0
+            if isEndurance(category) {
+                switch intensity {
+                case .easy:     fluidOzPerHour = 16; sodiumMgPerHour = longEnough ? 300 : 0
+                case .moderate: fluidOzPerHour = 20; sodiumMgPerHour = longEnough ? 500 : 200
+                case .hard:     fluidOzPerHour = 24; sodiumMgPerHour = longEnough ? 700 : 300
+                }
+            } else {
+                fluidOzPerHour = 12
+                sodiumMgPerHour = 0
+            }
+            if let weather {
+                fluidOzPerHour *= weather.fluidMultiplier
+                sodiumMgPerHour *= weather.sodiumMultiplier
+            }
+            if hours >= 1.0 && isEndurance(category) {
+                advisories.append("These fluid numbers are population averages. One sweat test replaces them with yours — sweat rates vary several-fold between people.")
+            }
         }
+
+        // Slightly higher core temperature in the luteal phase means sweating
+        // starts sooner. Small, but it's the one phase effect with a number.
+        if let cyclePhase {
+            fluidOzPerHour *= cyclePhase.fluidMultiplier
+            sodiumMgPerHour *= cyclePhase.fluidMultiplier
+        }
+
+        if let advisory = weather?.advisory { advisories.insert(advisory, at: 0) }
+
+        let cappedFluid = min(Double(maxFluidOzPerHour), fluidOzPerHour)
+        if fluidOzPerHour > Double(maxFluidOzPerHour) {
+            // Sodium rides along with the fluid: a target you can't drink
+            // isn't a target. The shortfall is real, which is what the
+            // advisory is for — make it up at the table, not mid-session.
+            sodiumMgPerHour *= cappedFluid / fluidOzPerHour
+            advisories.append("Your losses run higher than most people can absorb mid-session — capped at \(maxFluidOzPerHour) oz/hr here. Start fully topped up, expect to finish down a little, and make up the rest of the fluid and salt afterwards.")
+        }
+        // Sodium guidance is meaningless on a session that barely raises a
+        // sweat; it just makes the card look busy.
+        if minutes < 30 && !isEndurance(category) { sodiumMgPerHour = 0 }
 
         // --- Pre-load: a light carb top-up before endurance work
         var preCarbs = 0
@@ -126,11 +223,30 @@ enum FuelingEngine {
                            minutes: minutes,
                            carbsPerHour: perHour,
                            duringCarbs: duringCarbs,
-                           fluidOzPerHour: fluidOzPerHour,
-                           sodiumMgPerHour: sodiumMgPerHour,
+                           fluidOzPerHour: Int(cappedFluid.rounded()),
+                           sodiumMgPerHour: Int(sodiumMgPerHour.rounded()),
                            preCarbs: preCarbs,
                            recoveryCarbs: recoveryCarbs,
                            recoveryProtein: recoveryProtein,
-                           burnCalories: Int(burn.rounded()))
+                           burnCalories: Int(burn.rounded()),
+                           fluidIsMeasured: sweat != nil,
+                           weather: weather,
+                           advisories: advisories)
+    }
+
+    /// The plan for a session, wired to everything the app knows: the
+    /// athlete's sweat tests, today's weather, and the cycle phase.
+    static func plan(for session: TrainingSession,
+                     bodyweightLbs: Double,
+                     sweat: SweatProfile? = nil,
+                     weather: WeatherContext? = nil,
+                     cyclePhase: CyclePhase? = nil) -> FuelingPlan {
+        plan(category: session.category,
+             intensity: session.intensity,
+             minutes: session.minutes,
+             bodyweightLbs: bodyweightLbs,
+             sweat: sweat,
+             weather: weather,
+             cyclePhase: cyclePhase)
     }
 }

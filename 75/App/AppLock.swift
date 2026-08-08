@@ -4,9 +4,13 @@ import LocalAuthentication
 import CryptoKit
 import Security
 
-/// Backup PIN for the photo lock, for when Face ID fails or the user would
-/// rather not use it. Only a salted SHA-256 digest is kept, in the Keychain
-/// (this-device-only, never in backups).
+/// Backup PIN for the private areas of the app, for when Face ID fails or the
+/// user would rather not use it. Only a salted SHA-256 digest is kept, in the
+/// Keychain (this-device-only, never in backups).
+///
+/// The keychain account and salt still say "photos" because that's what this
+/// PIN originally guarded — renaming them would silently invalidate every
+/// PIN already set on a device.
 enum PinStore {
     private static let service = "com.hunter.seventyfivehard"
     private static let account = "photos.pin"
@@ -51,43 +55,86 @@ enum PinStore {
     }
 }
 
-/// Face ID (with the PIN as backup) guards only the progress photos, not app
-/// entry. Photos re-lock whenever the app leaves the foreground.
+/// The parts of the app that stay locked until Face ID (or the backup PIN)
+/// says otherwise. Not app entry — just the things you'd rather a person
+/// holding your unlocked phone couldn't scroll past.
+enum ProtectedArea: String, CaseIterable, Identifiable {
+    case photos
+    case cycle
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .photos: return "Photos Locked"
+        case .cycle: return "Cycle Log Locked"
+        }
+    }
+
+    /// Shown by the system in the Face ID prompt.
+    var reason: String {
+        switch self {
+        case .photos: return "Unlock to view your progress photos"
+        case .cycle: return "Unlock to view your cycle log"
+        }
+    }
+}
+
+/// Face ID (with the PIN as backup) guards the private areas listed in
+/// `ProtectedArea` — not app entry. Everything re-locks whenever the app
+/// leaves the foreground, so handing someone your phone doesn't hand them
+/// your photos or your cycle history.
 final class AppLockManager: ObservableObject {
-    @Published var photosUnlocked: Bool = false
+    @Published private(set) var unlockedAreas: Set<ProtectedArea> = []
 
     var biometricsAvailable: Bool {
         LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
     }
 
-    func lockPhotos() { photosUnlocked = false }
+    func isUnlocked(_ area: ProtectedArea) -> Bool { unlockedAreas.contains(area) }
 
-    func unlockPhotos() {
-        guard !photosUnlocked else { return }
+    func lock(_ area: ProtectedArea) { unlockedAreas.remove(area) }
+
+    func lockAll() { unlockedAreas.removeAll() }
+
+    func unlock(_ area: ProtectedArea) {
+        guard !isUnlocked(area) else { return }
         let context = LAContext()
         var error: NSError?
-        let reason = "Unlock to view your progress photos"
 
         if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
-            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
-                DispatchQueue.main.async { self.photosUnlocked = success }
+            context.evaluatePolicy(.deviceOwnerAuthentication,
+                                   localizedReason: area.reason) { success, _ in
+                DispatchQueue.main.async {
+                    if success { self.unlockedAreas.insert(area) }
+                }
             }
-        } else {
-            DispatchQueue.main.async { self.photosUnlocked = false }
         }
     }
 
     @discardableResult
-    func unlockWithPIN(_ pin: String) -> Bool {
+    func unlockWithPIN(_ pin: String, for area: ProtectedArea) -> Bool {
         guard PinStore.verify(pin) else { return false }
-        photosUnlocked = true
+        unlockedAreas.insert(area)
         return true
     }
+
+    // MARK: Photo-flavored shorthands, kept so the photo screens read the
+    // way they always did.
+
+    var photosUnlocked: Bool { isUnlocked(.photos) }
+    func lockPhotos() { lock(.photos) }
+    func unlockPhotos() { unlock(.photos) }
+
+    @discardableResult
+    func unlockWithPIN(_ pin: String) -> Bool { unlockWithPIN(pin, for: .photos) }
 }
 
-/// Placeholder shown wherever photos live until Face ID or the PIN unlocks them.
-struct PhotoLockGate: View {
+/// Placeholder shown wherever a protected area lives until Face ID or the PIN
+/// unlocks it.
+struct LockGate: View {
     @EnvironmentObject private var appLock: AppLockManager
+    var area: ProtectedArea = .photos
     var compact = false
 
     @State private var pin = ""
@@ -100,10 +147,10 @@ struct PhotoLockGate: View {
                 .font(.system(size: compact ? 32 : 64))
                 .foregroundStyle(Theme.gradient)
             if !compact {
-                Text("Photos Locked").font(.title3.bold())
+                Text(area.title).font(.title3.bold())
             }
             if appLock.biometricsAvailable {
-                Button(action: { appLock.unlockPhotos() }) {
+                Button(action: { appLock.unlock(area) }) {
                     Label("Unlock with Face ID", systemImage: "faceid")
                 }
                 .buttonStyle(.borderedProminent)
@@ -116,7 +163,7 @@ struct PhotoLockGate: View {
                         .focused($pinFocused)
                         .frame(maxWidth: 160)
                     Button("Unlock") {
-                        if appLock.unlockWithPIN(pin) {
+                        if appLock.unlockWithPIN(pin, for: area) {
                             pin = ""
                             wrongPin = false
                         } else {
@@ -143,4 +190,10 @@ struct PhotoLockGate: View {
         .frame(maxWidth: .infinity)
         .padding(compact ? 12 : 40)
     }
+}
+
+/// The photo-specific gate, unchanged at every call site.
+struct PhotoLockGate: View {
+    var compact = false
+    var body: some View { LockGate(area: .photos, compact: compact) }
 }

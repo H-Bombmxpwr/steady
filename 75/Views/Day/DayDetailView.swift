@@ -273,7 +273,7 @@ struct DayDetailView: View {
             // ===== Workouts
             Section {
                 if workoutScheduled && day.workouts.isEmpty {
-                    let planned = plan.scheduledWorkouts(on: date)
+                    let planned = plan.sessions(on: date)
                     ForEach(planned) { entry in
                         HStack {
                             Image(systemName: "calendar.badge.clock").foregroundStyle(Theme.warn)
@@ -310,7 +310,7 @@ struct DayDetailView: View {
 
             // ===== Fueling — nutrition guidance for this day's scheduled
             // sessions, any day on the calendar (not just today).
-            if !plan.scheduledWorkouts(on: date).isEmpty {
+            if !plan.sessions(on: date).isEmpty {
                 DayFuelSection(plan: plan, date: date)
             }
 
