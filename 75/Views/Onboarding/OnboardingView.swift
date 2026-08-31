@@ -3,18 +3,19 @@ import SwiftData
 
 /// Multi-step plan setup.
 ///
-/// The first question is which app this is going to be — losing weight or
-/// training for something — because almost every later question depends on the
-/// answer. An athlete gets asked about their training plan and their sweat
-/// rate; someone in a deficit gets asked about a goal weight and a pace.
-/// Neither has to wade through the other's questions.
+/// The first question is which app this is going to be — losing weight,
+/// training for something, or just keeping an eye on your health — because
+/// almost every later question depends on the answer. An athlete gets asked
+/// about their training plan and their sweat rate; someone in a deficit gets
+/// asked about a goal weight and a pace; someone tracking general health gets
+/// asked neither. Nobody has to wade through the others' questions.
 struct OnboardingView: View {
     @Environment(\.modelContext) private var context
 
     /// The steps that apply to the chosen mode, in order. Rebuilt whenever the
     /// mode changes, so the flow has no dead branches in it.
     private enum Step: Hashable {
-        case mode, profile, goal, budget, training, trainingPeaks, schedule
+        case mode, profile, goal, budget, baseline, training, trainingPeaks, schedule
         case sweat, hydration, cycle, labs, ai, privacy
 
         var title: String {
@@ -23,6 +24,7 @@ struct OnboardingView: View {
             case .profile: return "About You"
             case .goal: return "Your Goal"
             case .budget: return "Your Budget"
+            case .baseline: return "Where You're At"
             case .training: return "Your Training"
             case .trainingPeaks: return "TrainingPeaks"
             case .schedule: return "Workout Days"
@@ -116,6 +118,8 @@ struct OnboardingView: View {
             steps += [.goal, .budget, .schedule, .hydration]
         case .athlete:
             steps += [.training, .trainingPeaks, .schedule, .sweat, .hydration]
+        case .generalHealth:
+            steps += [.baseline, .schedule, .hydration]
         }
         if cycleRelevant { steps.append(.cycle) }
         steps += [.labs, .ai, .privacy]
@@ -124,10 +128,22 @@ struct OnboardingView: View {
 
     private var step: Step { steps[min(stepIndex, steps.count - 1)] }
 
+    /// The deficit the plan starts with. Weight loss always has one; an
+    /// athlete only during a body-composition block; general health never.
+    private var plannedPace: Double {
+        switch mode {
+        case .weightLoss: return pace
+        case .athlete: return eatAtMaintenance ? 0 : pace
+        case .generalHealth: return 0
+        }
+    }
+
     private var goalsValid: Bool {
         guard let c = currentWeight else { return false }
         guard c > 50 && c < 800 else { return false }
-        // An athlete at maintenance never needs a goal weight.
+        // An athlete at maintenance never needs a goal weight, and general
+        // health isn't aiming at one at all.
+        if mode == .generalHealth { return true }
         if mode == .athlete && eatAtMaintenance { return true }
         guard let g = goalWeight else { return false }
         return g > 50 && g <= c
@@ -141,6 +157,7 @@ struct OnboardingView: View {
                 case .profile: profileStep
                 case .goal: goalsStep
                 case .budget: budgetStep
+                case .baseline: baselineStep
                 case .training: trainingStep
                 case .trainingPeaks: trainingPeaksStep
                 case .schedule: scheduleStep
@@ -184,7 +201,7 @@ struct OnboardingView: View {
                         withAnimation(.easeOut(duration: 0.2)) { mode = option }
                         // An athlete at maintenance has no pace; someone in a
                         // deficit does. Keep the two consistent.
-                        eatAtMaintenance = option == .athlete
+                        eatAtMaintenance = option != .weightLoss
                         Haptics.selection()
                     } label: {
                         HStack(alignment: .top, spacing: 12) {
@@ -210,10 +227,15 @@ struct OnboardingView: View {
                 Text(mode.detail + "\n\nYou can switch modes later in Settings without losing anything you've logged.")
             }
 
-            Section {
-                Toggle("Also track general health", isOn: $generalHealth)
-            } footer: {
-                Text("Adds fiber, sodium, and added sugar to your day, and turns on blood-work tracking. Useful if you care about more than the number on the scale or the stopwatch.")
+            // The health metrics are the whole of general-health mode, so
+            // there's nothing to opt into there — only the other two modes
+            // get the add-on question.
+            if !mode.includesGeneralHealth {
+                Section {
+                    Toggle("Also track general health", isOn: $generalHealth)
+                } footer: {
+                    Text("Adds fiber, sodium, and added sugar to your day, and turns on blood-work tracking. Useful if you care about more than the number on the scale or the stopwatch.")
+                }
             }
 
             Section {
@@ -335,6 +357,50 @@ struct OnboardingView: View {
                 Section {
                     Button("Looks Good") { advance() }
                 }
+            }
+        }
+    }
+
+    // MARK: Baseline (general health)
+
+    private var baselineStep: some View {
+        Form {
+            Section {
+                TextField("Current weight (lb)", text: $currentWeightText)
+                    .keyboardType(.decimalPad)
+                    .focused($weightFocused)
+            } header: {
+                Text("Weight")
+            } footer: {
+                Text("Only used to work out what maintenance looks like for you. There's no goal weight in this mode and nothing counts down.")
+            }
+
+            if let c = currentWeight, c > 50, c < 800 {
+                let age = Calendar.current.dateComponents([.year], from: birthDate, to: Date()).year ?? 30
+                let tdee = CalorieEngine.tdee(sex: sex, weightLbs: c, heightInches: totalHeightInches,
+                                              ageYears: age, activity: activity)
+                Section("Daily Targets") {
+                    row("Maintenance (TDEE)", "\(Int(tdee.rounded())) cal")
+                    row("Calorie target", "\(Int(tdee.rounded())) cal")
+                    row("Protein target", "\(CalorieEngine.proteinTargetGrams(goalWeightLbs: c)) g")
+                }
+            }
+
+            Section {
+                Picker("Streak counts when", selection: $strictStreak) {
+                    Text("I log anything").tag(false)
+                    Text("I hit my goals").tag(true)
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Streak Style")
+            } footer: {
+                Text("Relaxed keeps the flame alive any day you log something — food, water, weight, a workout, a photo. Strict requires meeting the day's goals. Changeable anytime in Settings.")
+            }
+
+            Section {
+                Button("Continue") { advance() }
+                    .disabled(!goalsValid)
             }
         }
     }
@@ -681,8 +747,9 @@ struct OnboardingView: View {
             PinStore.set(pin)
         }
         guard let c = currentWeight else { return }
-        // An athlete at maintenance has no goal weight; the plan still needs a
-        // number, and their current weight is the honest one.
+        // An athlete at maintenance — or anyone in general-health mode — has
+        // no goal weight; the plan still needs a number, and their current
+        // weight is the honest one.
         let g = goalWeight ?? c
 
         let profile = UserProfile(birthDate: birthDate,
@@ -697,7 +764,7 @@ struct OnboardingView: View {
         let plan = Plan(startDate: Date(),
                         startingWeight: c,
                         goalWeight: g,
-                        paceLbsPerWeek: mode == .athlete && eatAtMaintenance ? 0 : pace,
+                        paceLbsPerWeek: plannedPace,
                         waterGoalOunces: waterGoal,
                         waterStepOunces: waterStep,
                         proteinTargetGrams: CalorieEngine.proteinTargetGrams(goalWeightLbs: g))
@@ -708,7 +775,7 @@ struct OnboardingView: View {
         if mode == .athlete, !trimmedFeed.isEmpty {
             plan.trainingPeaksFeedURL = trimmedFeed
         }
-        if generalHealth { labsEnabled = true }
+        if profile.showsGeneralHealth { labsEnabled = true }
 
         let comps = Calendar.current.dateComponents([.hour, .minute], from: workoutTime)
         let name = workoutName.trimmingCharacters(in: .whitespacesAndNewlines)

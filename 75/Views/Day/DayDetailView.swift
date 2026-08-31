@@ -208,6 +208,12 @@ struct DayDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                // The stepper writes straight through the binding, so there's
+                // no mutation function to hang the widget refresh off of.
+                .onChange(of: day.waterOunces) {
+                    try? context.save()
+                    WidgetSnapshot.refreshTotals(from: day)
+                }
             } header: {
                 SectionHeader(icon: "drop.fill", title: "Hydration", tint: Theme.waterTint)
             }

@@ -384,3 +384,56 @@ final class CycleEngineTests: XCTestCase {
         XCTAssertEqual(CycleEngine.averageCycleLength(sparse).length, 28)
     }
 }
+
+// MARK: - Modes
+
+/// The three experiences differ in exactly one place in the engine: whether a
+/// deficit applies. These pin that down, since it's the difference between
+/// "eat at maintenance" and quietly cutting 750 calories a day.
+final class AppModeTests: XCTestCase {
+
+    private func profile(_ mode: AppMode) -> UserProfile {
+        UserProfile(birthDate: Calendar.current.date(byAdding: .year, value: -40, to: Date())!,
+                    heightInches: 66, sex: .female, activityLevel: .light, mode: mode)
+    }
+
+    private func plan(pace: Double) -> Plan {
+        Plan(startDate: Date(), startingWeight: 158, goalWeight: 140,
+             paceLbsPerWeek: pace, proteinTargetGrams: 126)
+    }
+
+    func testGeneralHealthEatsAtMaintenance() {
+        let p = profile(.generalHealth)
+        let maintenance = CalorieEngine.tdee(sex: .female, weightLbs: 158, heightInches: 66,
+                                             ageYears: p.ageYears, activity: .light)
+        let targets = CalorieEngine.targets(profile: p, plan: plan(pace: 0))
+        XCTAssertEqual(Double(targets.calories), maintenance.rounded(), accuracy: 1)
+    }
+
+    /// Switching in from weight loss leaves a pace on the plan. It must not
+    /// keep cutting calories in a mode that isn't trying to lose weight.
+    func testStalePaceDoesNotCreateADeficit() {
+        // 1 lb/week, which for this profile clears the 1200-calorie floor —
+        // a steeper pace would hit it and hide the effect being tested.
+        let general = CalorieEngine.targets(profile: profile(.generalHealth), plan: plan(pace: 1.0))
+        let losing = CalorieEngine.targets(profile: profile(.weightLoss), plan: plan(pace: 1.0))
+        XCTAssertGreaterThan(general.calories, losing.calories)
+        XCTAssertEqual(general.calories - losing.calories, Int((3500.0 / 7).rounded()),
+                       accuracy: 2, "the whole difference should be the missing deficit")
+    }
+
+    func testHealthMetricsAreImpliedByTheModeAndOptionalElsewhere() {
+        XCTAssertTrue(profile(.generalHealth).showsGeneralHealth)
+        XCTAssertFalse(profile(.weightLoss).showsGeneralHealth)
+        let optedIn = profile(.athlete)
+        optedIn.generalHealth = true
+        XCTAssertTrue(optedIn.showsGeneralHealth)
+    }
+
+    func testOnlyWeightLossAimsAtAGoalWeight() {
+        XCTAssertTrue(AppMode.weightLoss.tracksGoalWeight)
+        XCTAssertFalse(AppMode.athlete.tracksGoalWeight)
+        XCTAssertFalse(AppMode.generalHealth.tracksGoalWeight)
+        XCTAssertFalse(AppMode.generalHealth.deficitByDefault)
+    }
+}

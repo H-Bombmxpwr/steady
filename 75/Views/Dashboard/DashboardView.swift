@@ -25,14 +25,15 @@ struct MainTabView: View {
     @ViewBuilder
     private func screen(_ index: Int) -> some View {
         switch index {
-        // The mode picks the dashboard; every other tab is shared. An athlete
-        // and someone in a deficit want the same stats, calendar, and photos —
-        // they just want a different thing to open on.
+        // The mode picks the dashboard; every other tab is shared. An athlete,
+        // someone in a deficit, and someone just keeping an eye on things all
+        // want the same stats, calendar, and photos — they just want a
+        // different thing to open on.
         case 0:
-            if profile.mode == .athlete {
-                AthleteDashboardView(plan: plan, profile: profile)
-            } else {
-                DashboardView(plan: plan, profile: profile)
+            switch profile.mode {
+            case .athlete: AthleteDashboardView(plan: plan, profile: profile)
+            case .generalHealth: GeneralHealthDashboardView(plan: plan, profile: profile)
+            case .weightLoss: DashboardView(plan: plan, profile: profile)
             }
         case 1: StatsView(plan: plan, profile: profile)
         case 2: CalendarScreen(plan: plan, profile: profile)
@@ -145,6 +146,10 @@ struct DashboardView: View {
 
                     if profile.cycleTracking {
                         CycleCard(plan: plan)
+                    }
+
+                    if profile.showsGeneralHealth {
+                        GeneralHealthCard(plan: plan, day: todayLog)
                     }
 
                     if fastingEnabled {
@@ -373,7 +378,7 @@ private struct WeightCard: View {
 
 // MARK: - Today rings
 
-private struct TodayCard: View {
+struct TodayCard: View {
     let day: DayLog
     let targets: DailyTargets
     let plan: Plan
@@ -468,7 +473,7 @@ private struct TodayCard: View {
 
 // MARK: - Streak
 
-private struct StreakCard: View {
+struct StreakCard: View {
     let stats: StreakStats
 
     var body: some View {
@@ -522,7 +527,7 @@ private struct ProjectionCard: View {
 
 // MARK: - Weekly insight
 
-private struct InsightCard: View {
+struct InsightCard: View {
     let insight: WeeklyInsight
 
     var body: some View {

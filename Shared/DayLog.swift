@@ -166,12 +166,14 @@ final class DayLog {
         if let meal { log.meal = meal }
         foods.append(log)
         try? modelContext?.save()
+        WidgetSnapshot.refreshTotals(from: self)
     }
 
     func removeFood(_ log: FoodLog) {
         foods.removeAll { $0.persistentModelID == log.persistentModelID }
         log.modelContext?.delete(log)
         try? modelContext?.save()
+        WidgetSnapshot.refreshTotals(from: self)
     }
 
     /// Deletes everything logged under one meal (nil = the "Other" group).
@@ -181,6 +183,7 @@ final class DayLog {
         foods.removeAll { doomedIDs.contains($0.persistentModelID) }
         doomed.forEach { $0.modelContext?.delete($0) }
         try? modelContext?.save()
+        WidgetSnapshot.refreshTotals(from: self)
     }
 }
 

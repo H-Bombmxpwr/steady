@@ -1,6 +1,6 @@
 ---
 title: Overview
-summary: Steady is a private, on-device weight-loss and athlete nutrition tracker for iPhone.
+summary: Steady is a private, on-device nutrition tracker for iPhone — for losing weight, training, or just keeping an eye on your health.
 ---
 
 # Steady
@@ -11,7 +11,7 @@ Most tracking apps ask you to weigh every gram and trust a textbook formula for 
 
 ## What makes it different
 
-**It knows why you're here.** Setup asks whether you're losing weight or training for something, and you get a genuinely different app either way — a budget and a trend line, or today's session with the fuel built around it. See [Modes](modes).
+**It knows why you're here.** Setup asks whether you're losing weight, training for something, or just keeping an eye on your health, and you get a genuinely different app for each — a budget and a trend line, today's session with the fuel built around it, or a day scored on what you actually ate and how much you moved. See [Modes](modes).
 
 **The budget adapts to you.** After a couple of weeks of logging, Steady compares what you actually ate against how your weight trend moved and works out what you're really burning — instead of trusting the equation it started with. See [Your calorie budget](calorie-budget).
 
@@ -25,7 +25,7 @@ Most tracking apps ask you to weigh every gram and trust a textbook formula for 
 
 | If you want to… | Read |
 |---|---|
-| Pick between weight loss and athlete mode | [Modes](modes) |
+| Pick between weight loss, athlete, and general health | [Modes](modes) |
 | Install it and set up your plan | [Getting started](getting-started) |
 | Understand where your calorie number comes from | [Your calorie budget](calorie-budget) |
 | Learn every way to log a meal | [Food logging](food-logging) |
@@ -37,7 +37,7 @@ Most tracking apps ask you to weigh every gram and trust a textbook formula for 
 
 ## The short feature list
 
-- **Two modes** — weight loss or athlete — with their own dashboards and their own target maths
+- **Three modes** — weight loss, athlete, or general health — with their own dashboards and their own target maths
 - **Adaptive calorie budget** that learns your real TDEE from intake versus weight trend
 - **Six ways to log food** — describe, photograph, paste a recipe link, scan a barcode, search a 3M-product database, or re-log a saved meal
 - **Full nutrition panel** on every food, with calorie-density colors and a daily nutrition report

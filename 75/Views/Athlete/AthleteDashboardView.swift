@@ -66,9 +66,9 @@ struct AthleteDashboardView: View {
 
                     WeekLoadCard(plan: plan, profile: profile)
 
-                    AthleteWeightCard(plan: plan)
+                    WeightTrendCard(plan: plan)
 
-                    if profile.generalHealth {
+                    if profile.showsGeneralHealth {
                         GeneralHealthCard(plan: plan, day: todayLog)
                     }
 
@@ -580,11 +580,12 @@ struct WeekLoadCard: View {
     }
 }
 
-// MARK: - Weight, athlete framing
+// MARK: - Weight, as a reading rather than a score
 
-/// Weight still matters to an athlete — it's just not the score. Smaller, no
-/// goal line, framed as a trend to watch for under-fuelling.
-struct AthleteWeightCard: View {
+/// Weight still matters when you're not dieting — it's just not the score.
+/// Smaller, no goal line, framed as a trend to watch: under-fuelling for an
+/// athlete, drift for someone tracking general health.
+struct WeightTrendCard: View {
     let plan: Plan
 
     var body: some View {
@@ -650,44 +651,5 @@ struct AthleteWeightCard: View {
               let earlier = trend.last(where: { $0.date <= weekAgo })
         else { return nil }
         return last.trend - earlier.trend
-    }
-}
-
-// MARK: - General health add-on
-
-/// The optional general-health layer: the nutrition-quality numbers that
-/// neither a deficit nor a training plan will surface on their own.
-struct GeneralHealthCard: View {
-    let plan: Plan
-    let day: DayLog
-
-    var body: some View {
-        Card(title: "General Health", icon: "heart.text.square.fill", tint: Theme.supplementTint) {
-            let facts = day.totalFacts
-            HStack(spacing: 14) {
-                metric("Fiber", "\(Int(facts.fiberGrams.rounded()))g", target: "30g",
-                       good: facts.fiberGrams >= 25)
-                metric("Sodium", "\(Int(facts.sodiumMg.rounded()))mg", target: "2300mg",
-                       good: facts.sodiumMg <= 2300)
-                metric("Added sugar", "\(Int(facts.addedSugarGrams.rounded()))g", target: "<36g",
-                       good: facts.addedSugarGrams <= 36)
-            }
-            if let labs = plan.latestLabs {
-                Text("Last panel \(labs.date.formatted(.dateTime.month(.abbreviated).day().year()))")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.textDim)
-            }
-        }
-    }
-
-    private func metric(_ label: String, _ value: String, target: String, good: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.system(.subheadline, design: .rounded).bold())
-                .foregroundStyle(good ? Theme.accent : Theme.warn)
-            Text(label).font(.caption2).foregroundStyle(Theme.textDim)
-            Text(target).font(.caption2).foregroundStyle(Theme.textDim.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

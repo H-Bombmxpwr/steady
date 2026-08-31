@@ -21,19 +21,21 @@ You need **iOS 18 or later** on an iPhone. TestFlight builds expire after 90 day
 
 The first launch walks through a short setup. Nothing here is permanent — every value can be changed later in **Settings**, and changing a goal never breaks your logged history.
 
-**1 · About you.** Age, height, current weight, and biological sex. These feed the Mifflin-St Jeor equation that estimates your starting metabolic rate. Choosing *Prefer not to say* uses the midpoint between the male and female formulas.
+**1 · How you'll use it.** Weight loss, athlete, or general health. This is the first question because it decides your dashboard, how your targets are worked out, and which of the questions below you're even asked. See [Modes](modes).
 
-**2 · Activity level.** Roughly how much you move outside of workouts. This multiplies your BMR into a starting daily burn estimate. Don't agonize over it — the app corrects this number itself once you've logged for a couple of weeks.
+**2 · About you.** Age, height, current weight, and biological sex. These feed the Mifflin-St Jeor equation that estimates your starting metabolic rate. Choosing *Prefer not to say* uses the midpoint between the male and female formulas.
 
-**3 · Your goal.** Target weight and how fast you want to get there, in pounds per week. Steady shows the resulting daily calorie budget immediately, so you can see the trade-off between pace and how much you get to eat before committing.
+**3 · Activity level.** Roughly how much you move outside of workouts. This multiplies your BMR into a starting daily burn estimate. Don't agonize over it — the app corrects this number itself once you've logged for a couple of weeks.
 
-**4 · Training days.** Which days you plan to work out. This seeds your weekly schedule — you can build real workouts later in the [Workouts tab](workouts-and-fueling).
+**4 · Your goal.** Target weight and how fast you want to get there, in pounds per week. Steady shows the resulting daily calorie budget immediately, so you can see the trade-off between pace and how much you get to eat before committing. *Athlete mode* asks about your training and your sweat rate instead, and *general health* asks only for your current weight — neither has a goal weight.
 
-**5 · Hydration.** Your daily water goal and the size of the bottle or glass you usually drink from, so logging water is one tap rather than typing an amount.
+**5 · Training days.** Which days you plan to work out. This seeds your weekly schedule — you can build real workouts later in the [Workouts tab](workouts-and-fueling).
 
-**6 · AI key** *(optional)*. Steady's AI food logging works out of the box. If you'd rather use your own free Google Gemini key, you can add it here or later. See [AI features](ai-features).
+**6 · Hydration.** Your daily water goal and the size of the bottle or glass you usually drink from, so logging water is one tap rather than typing an amount.
 
-**7 · Photo privacy.** Whether progress photos require Face ID to view. Recommended on — see [Photos & your data](photos-and-data).
+**7 · AI key** *(optional)*. Steady's AI food logging works out of the box. If you'd rather use your own free Google Gemini key, you can add it here or later. See [AI features](ai-features).
+
+**8 · Photo privacy.** Whether progress photos require Face ID to view. Recommended on — see [Photos & your data](photos-and-data).
 
 ## Permissions
 

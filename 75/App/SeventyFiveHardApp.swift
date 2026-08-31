@@ -23,8 +23,9 @@ struct SeventyFiveHardApp: App {
         NotificationManager.registerCategories()
         #if DEBUG
         // Simulator/UI-test hooks: `-seedDemo` fills an empty store with a
-        // month of plausible weight-loss data, `-seedAthlete` does the same
-        // for athlete mode, so screens render without walking onboarding.
+        // month of plausible weight-loss data, `-seedAthlete` and
+        // `-seedHealth` do the same for the other two modes, so screens
+        // render without walking onboarding.
         // Both no-op on a non-empty store, so `-resetStore` clears it first —
         // UI tests share one container and would otherwise inherit whichever
         // mode the previous test seeded.
@@ -36,6 +37,9 @@ struct SeventyFiveHardApp: App {
         }
         if CommandLine.arguments.contains("-seedAthlete") {
             Self.seedAthleteData()
+        }
+        if CommandLine.arguments.contains("-seedHealth") {
+            Self.seedGeneralHealthData()
         }
         #endif
     }
@@ -185,7 +189,84 @@ struct SeventyFiveHardApp: App {
 
         try? context.save()
     }
+
+    /// Someone tracking general health: no deficit, no training plan, a bit of
+    /// walking and lifting, cycle tracking on, and a lab panel on file.
+    private static func seedGeneralHealthData() {
+        let context = ModelContext(PersistenceController.shared.container)
+        guard ((try? context.fetch(FetchDescriptor<Plan>())) ?? []).isEmpty else { return }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+
+        let profile = UserProfile(birthDate: cal.date(byAdding: .year, value: -41, to: Date())!,
+                                  heightInches: 66, sex: .female, activityLevel: .light,
+                                  mode: .generalHealth)
+        profile.cycleTracking = true
+        profile.cycleTrackingOffered = true
+
+        let plan = Plan(startDate: cal.date(byAdding: .day, value: -29, to: today)!,
+                        startingWeight: 158, goalWeight: 158, paceLbsPerWeek: 0,
+                        proteinTargetGrams: 126)
+        plan.eatAtMaintenance = true
+        context.insert(profile)
+        context.insert(plan)
+
+        for i in 0..<30 {
+            let date = cal.date(byAdding: .day, value: i - 29, to: today)!
+            let day = DayLog(date: date)
+            day.weight = ((158 + sin(Double(i) / 4) * 0.9) * 10).rounded() / 10
+            day.waterOunces = 96 + (i % 3) * 8
+            day.foods.append(FoodLog(name: "Greek yogurt, berries, walnuts", calories: 380,
+                                     proteinGrams: 24, grams: 300, source: "custom",
+                                     meal: .breakfast,
+                                     facts: NutritionFacts(carbsGrams: 34, fatGrams: 16,
+                                                           sodiumMg: 110, fiberGrams: 7,
+                                                           sugarGrams: 18)))
+            day.foods.append(FoodLog(name: "Lentil soup and bread", calories: 540,
+                                     proteinGrams: 30, grams: 480, source: "custom",
+                                     meal: .lunch,
+                                     facts: NutritionFacts(carbsGrams: 72, fatGrams: 12,
+                                                           sodiumMg: 940, fiberGrams: 14)))
+            day.foods.append(FoodLog(name: "Cottage cheese and fruit", calories: 240,
+                                     proteinGrams: 28, grams: 220, source: "custom",
+                                     meal: .afternoonSnack,
+                                     facts: NutritionFacts(carbsGrams: 22, fatGrams: 5,
+                                                           sodiumMg: 380, fiberGrams: 3,
+                                                           sugarGrams: 14)))
+            day.foods.append(FoodLog(name: "Salmon, potatoes, salad", calories: 660,
+                                     proteinGrams: 46, grams: 520, source: "custom",
+                                     meal: .dinner,
+                                     facts: NutritionFacts(carbsGrams: 54, fatGrams: 26,
+                                                           sodiumMg: 620, fiberGrams: 9)))
+            // Moves most days, nothing that looks like a training plan.
+            if i % 3 != 2 {
+                day.workouts.append(WorkoutLog(name: i % 6 == 0 ? "Strength" : "Walk",
+                                               minutes: i % 6 == 0 ? 40 : 35,
+                                               category: i % 6 == 0 ? .strength : .cardio))
+            }
+            plan.days.append(day)
+        }
+
+        let labs = LabResult(date: cal.date(byAdding: .day, value: -40, to: today)!)
+        labs.ldl = 108
+        labs.hdl = 62
+        labs.triglycerides = 94
+        labs.fastingGlucose = 91
+        labs.a1c = 5.3
+        plan.labs.append(labs)
+
+        for offset in [56, 28, 1] {
+            let start = cal.date(byAdding: .day, value: -offset - 16, to: today)!
+            let entry = CycleEntry(startDate: start,
+                                   endDate: cal.date(byAdding: .day, value: 4, to: start)!)
+            entry.symptoms = ["Cramps"]
+            plan.cycles.append(entry)
+        }
+
+        try? context.save()
+    }
     #endif
+
 
     var body: some Scene {
         WindowGroup {
@@ -209,10 +290,17 @@ struct SeventyFiveHardApp: App {
                     case .active:
                         hasBecomeActive = true
                         showPrivacyShield = false
-                    case .inactive, .background:
-                        // Don't cover the launch screen before the first activation.
+                    case .inactive:
+                        // Fires constantly — app switcher peeks, Control Center,
+                        // an incoming banner. Cheap work only; rebuilding the
+                        // widget cache here walked the whole plan for the streak
+                        // and spent a refresh from WidgetKit's daily budget every
+                        // time, which is what starved the reloads that mattered.
                         if hasBecomeActive { showPrivacyShield = true }
                         appLock.lockAll()      // photos and cycle log re-lock on return
+                    case .background:
+                        if hasBecomeActive { showPrivacyShield = true }
+                        appLock.lockAll()
                         refreshStreakGuard()   // also caches the widget snapshot…
                         WidgetCenter.shared.reloadAllTimelines()   // …which this reload reads
                     @unknown default:

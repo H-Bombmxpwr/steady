@@ -1,4 +1,5 @@
 import Foundation
+import WidgetKit
 
 /// The precomputed numbers the widget needs but must not compute itself.
 /// Widget extensions live under a ~30 MB memory cap; opening the SwiftData
@@ -45,6 +46,42 @@ struct WidgetSnapshot: Codable {
 }
 
 extension WidgetSnapshot {
+    /// A copy of this snapshot advanced to `date` with the day's progress
+    /// cleared. The timeline uses it for a future-dated midnight entry so the
+    /// widget rolls over on its own — targets and streak survive, today's
+    /// totals reset — even when no reload lands before morning.
+    func rolledOver(to date: Date) -> WidgetSnapshot {
+        var s = self
+        s.caloriesEaten = 0
+        s.protein = 0
+        s.waterOz = 0
+        s.carbs = 0
+        s.workoutMinutes = 0
+        s.dayDate = Calendar.current.startOfDay(for: date)
+        return s
+    }
+
+    /// Updates just today's live totals in the cached snapshot, then reloads
+    /// timelines. Cheap by construction: it reads only the day row it is
+    /// handed and never walks `plan.days`, so mutation points can call it on
+    /// every edit. Targets, streak, and weight keep whatever the last full
+    /// `build` wrote — those change rarely and are refreshed on launch and
+    /// on background.
+    static func refreshTotals(from day: DayLog) {
+        guard var cached = load(), cached.hasPlan else { return }
+        let today = Calendar.current.startOfDay(for: Date())
+        // Editing a past day must not overwrite today's cached numbers.
+        guard Calendar.current.isDate(day.date, inSameDayAs: today) else { return }
+        cached.caloriesEaten = day.totalCalories
+        cached.protein = day.totalProtein
+        cached.waterOz = day.waterOunces
+        cached.carbs = Int(day.totalFacts.carbsGrams.rounded())
+        cached.workoutMinutes = day.workouts.reduce(0) { $0 + $1.minutes }
+        cached.dayDate = today
+        cached.save()
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
     /// Build the full cache the widget reads — targets, streak, and today's
     /// live totals. This walks history for the streak, so it must run in the
     /// APP process only; the widget just calls `load()`.

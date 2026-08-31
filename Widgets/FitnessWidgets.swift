@@ -30,7 +30,12 @@ struct TodaySnapshot {
     /// especially with a grown WAL, spikes memory). The app rewrites the
     /// cache on every launch/background, and the water button below keeps it
     /// in sync, so today's numbers stay current without a fetch here.
-    static func load() -> TodaySnapshot {
+    /// - Parameter asOf: the moment the resulting entry will be *rendered*,
+    ///   not the moment it is built. The timeline emits entries ahead of time,
+    ///   so "is this cache still for today?" has to be asked about the entry's
+    ///   own date — asking it at build time bakes the answer in and is why a
+    ///   6 PM entry kept showing yesterday's totals the next morning.
+    static func load(asOf: Date = Date()) -> TodaySnapshot {
         var snapshot = TodaySnapshot()
         guard let cached = WidgetSnapshot.load(), cached.hasPlan else { return snapshot }
         snapshot.hasPlan = true
@@ -43,10 +48,10 @@ struct TodaySnapshot {
         snapshot.currentWeight = cached.currentWeight
         snapshot.startingWeight = cached.startingWeight
 
-        // Trust today's live totals only if the cache is actually for today;
-        // if the app hasn't run since midnight, show targets with zero
-        // progress rather than yesterday's numbers.
-        if let day = cached.dayDate, Calendar.current.isDateInToday(day) {
+        // Trust the cached totals only if the cache belongs to the same day
+        // this entry renders on; if the app hasn't run since midnight, show
+        // targets with zero progress rather than yesterday's numbers.
+        if let day = cached.dayDate, Calendar.current.isDate(day, inSameDayAs: asOf) {
             snapshot.caloriesEaten = cached.caloriesEaten
             snapshot.protein = cached.protein
             snapshot.waterOz = cached.waterOz
@@ -96,16 +101,10 @@ struct LogWaterIntent: AppIntent {
         try? context.save()
 
         // Keep the render cache in sync so the widget shows the new total
-        // without opening the DB. Refresh all three of today's numbers from
+        // without opening the DB. Refreshes every one of today's numbers from
         // the row (cheap — today only) so a first-tap after midnight can't
         // leave yesterday's calories showing under today's date.
-        cached.caloriesEaten = day.totalCalories
-        cached.protein = day.totalProtein
-        cached.waterOz = day.waterOunces
-        cached.dayDate = Calendar.current.startOfDay(for: Date())
-        cached.save()
-
-        WidgetCenter.shared.reloadAllTimelines()
+        WidgetSnapshot.refreshTotals(from: day)
         return .result()
     }
 }
@@ -126,10 +125,29 @@ struct TodayProvider: TimelineProvider {
         completion(TodayTimelineEntry(date: Date(), snapshot: TodaySnapshot.load()))
     }
 
+    /// Two entries, then wait for midnight.
+    ///
+    /// The widget renders from a cache only the *app* can write, so polling
+    /// cannot discover new data — a 30-minute refresh policy re-read the same
+    /// bytes 48 times a day and exhausted WidgetKit's daily refresh budget.
+    /// Once that budget is gone the system drops the reloads that do carry new
+    /// numbers (the ones fired after you actually log something), and the
+    /// widget freezes on whatever it last got. So: ask for the one reload that
+    /// is genuinely needed, and cover the only unattended change — the date
+    /// rolling over — with a future-dated entry instead of a refresh.
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayTimelineEntry>) -> Void) {
-        let entry = TodayTimelineEntry(date: Date(), snapshot: TodaySnapshot.load())
-        let refresh = Calendar.current.date(byAdding: .minute, value: 30, to: Date())!
-        completion(Timeline(entries: [entry], policy: .after(refresh)))
+        let now = Date()
+        let cal = Calendar.current
+        let midnight = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: now) ?? now)
+
+        let entries = [
+            TodayTimelineEntry(date: now, snapshot: .load(asOf: now)),
+            // Renders itself with progress zeroed: `load(asOf:)` sees the
+            // cache's dayDate no longer matches, so the day resets on time
+            // with no reload required.
+            TodayTimelineEntry(date: midnight, snapshot: .load(asOf: midnight)),
+        ]
+        completion(Timeline(entries: entries, policy: .after(midnight)))
     }
 }
 

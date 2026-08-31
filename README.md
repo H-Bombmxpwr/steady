@@ -4,7 +4,7 @@
 
 `iOS 18.0+` · `SwiftUI` · `SwiftData` · `WidgetKit` · `HealthKit` · `WeatherKit` · `Local-first` · `No external dependencies`
 
-Steady started life as a 75 Hard tracker and grew into a general weight-loss app built on proven methods: an adaptive calorie budget, high-protein targets, real workout programming, and consistency mechanics — all on-device. It now ships **two modes**: the original weight-loss experience, and an **athlete mode** built around imported training plans, carb periodization, and sweat-rate hydration.
+Steady started life as a 75 Hard tracker and grew into a general weight-loss app built on proven methods: an adaptive calorie budget, high-protein targets, real workout programming, and consistency mechanics — all on-device. It now ships **three modes**: the original weight-loss experience, an **athlete mode** built around imported training plans, carb periodization, and sweat-rate hydration, and a **general-health mode** for people tracking food quality, movement, and blood work without chasing a number in either direction.
 
 📖 **[Full documentation →](https://h-bombmxpwr.github.io/steady/)** — feature guides, how the adaptive budget works, AI setup, and support.
 
@@ -51,21 +51,22 @@ Steady started life as a 75 Hard tracker and grew into a general weight-loss app
 
 ### Modes
 
-Setup's first question is **Weight Loss or Athlete**, because almost everything downstream depends on the answer — the dashboard (`DashboardView` vs `AthleteDashboardView`), how targets are computed, and which steps onboarding even shows. Stored on `UserProfile.mode`; switchable in Settings without losing history.
+Setup's first question is **Weight Loss, Athlete, or General Health**, because almost everything downstream depends on the answer — the dashboard (`DashboardView` / `AthleteDashboardView` / `GeneralHealthDashboardView`), how targets are computed, and which steps onboarding even shows. Stored on `UserProfile.mode`; switchable in Settings without losing history.
 
-| | Weight Loss | Athlete |
-|---|---|---|
-| Dashboard leads with | Weight trend + today's budget | Today's session + its fuel |
-| Calories | Maintenance − deficit from pace | Maintenance **+** the day's training |
-| Macros | Protein target only | Carbs/protein/fat periodized to load |
-| Hydration | Flat daily goal | Measured sweat rate × heat index |
-| Plan shape | Weekly weekday grid | Dated sessions (imported or manual) |
+| | Weight Loss | Athlete | General Health |
+|---|---|---|---|
+| Dashboard leads with | Weight trend + today's budget | Today's session + its fuel | Today + how well you ate it |
+| Calories | Maintenance − deficit from pace | Maintenance **+** the day's training | Maintenance (+ training-day fuel) |
+| Macros | Protein target only | Carbs/protein/fat periodized to load | Protein target only |
+| Hydration | Flat daily goal | Measured sweat rate × heat index | Flat daily goal |
+| Plan shape | Weekly weekday grid | Dated sessions (imported or manual) | Weekly weekday grid |
+| Health metrics | Add-on toggle | Add-on toggle | Built in |
 
-**General health** is a separate add-on toggle rather than a third mode: it surfaces fiber / sodium / added sugar and blood work on whichever dashboard you picked.
+**General health is both**: a mode of its own, and an add-on toggle (`UserProfile.generalHealth`) that surfaces fiber / sodium / added sugar and blood work on the other two dashboards. `UserProfile.showsGeneralHealth` is the one thing the views ask. Only weight-loss mode runs a deficit — `CalorieEngine.targets` zeroes the pace for anything else, so a pace left behind by a mode switch can't quietly keep cutting.
 
 ### Plan & adaptive budget
 
-- **Onboarding** branches on the mode. Weight loss: mode → profile → goal weight + pace → budget preview → training days → hydration → *(cycle)* → blood work → AI key → privacy. Athlete: mode → profile → training + maintenance → TrainingPeaks → training days → sweat & weather → hydration → *(cycle)* → blood work → AI key → privacy. The cycle step appears only when the profile makes it relevant. ("Prefer not to say" uses the male/female midpoint in the BMR math.)
+- **Onboarding** branches on the mode. Weight loss: mode → profile → goal weight + pace → budget preview → training days → hydration → *(cycle)* → blood work → AI key → privacy. Athlete: mode → profile → training + maintenance → TrainingPeaks → training days → sweat & weather → hydration → *(cycle)* → blood work → AI key → privacy. General health: mode → profile → baseline weight + streak style → training days → hydration → *(cycle)* → blood work → AI key → privacy. The cycle step appears only when the profile makes it relevant. ("Prefer not to say" uses the male/female midpoint in the BMR math.)
 - **Adaptive budget**: recomputes from your latest weight; goals (weight, pace, protein, water) are editable anytime without breaking history.
 - **Adaptive TDEE** *(on by default)*: after 14+ logged days and 14+ days of weigh-ins, it compares what you actually ate against how your weight trend moved (3,500 kcal/lb) and learns your real burn rate — blended with the formula (trust grows with logging; formula keeps a 20% anchor; observed value clamped to sane bounds). Settings shows learned vs. formula so the budget never changes silently.
 - **Weight trend**: EWMA-smoothed line over daily weigh-ins (each day a dot), goal line + label, projected goal date, and a *Hide goal line* toggle that re-fits the axis to your data.
@@ -113,6 +114,12 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 - **Weather-aware hydration** *(WeatherKit)* — NWS heat index drives a fluid and sodium multiplier; carbs never move with the weather. Capped at 34 oz/hr (absorbable ceiling), with the shortfall called out. Manual temp/humidity entry when location is off. Location is requested only on explicit opt-in, never from a view's `.task`.
 - **Carb periodization** — the day's `TrainingLoad` (rest → extreme, from TSS or duration × intensity) sets carbs at 3.5–9 g/kg and protein at 1.6–2.0 g/kg; fat takes the remainder above a 0.7 g/kg floor.
 - **Maintenance-plus-training calories, without double-counting** — `CalorieEngine.maintenanceTDEE` strips training out of the baseline (subtracting observed training burn from the learned TDEE, or using `ActivityLevel.nonExerciseFactor` on the formula path) before each day's sessions are added back. A body-composition block is capped at 1 lb/week.
+
+### General health mode
+
+- **No deficit, by construction** — the calorie target is maintenance (adaptive TDEE included), with training-day fuel added on top the same way weight-loss mode does it. Setup never asks for a goal weight, and Settings replaces the pace picker with a note.
+- **Dashboard** — today's rings, then the health metrics (fiber / sodium / added sugar + latest panel), a **Movement** card (minutes today, minutes and active days over 7, against the 150-min/week guideline as context rather than a target), cycle and fasting if enabled, then weight as a trend and the streak.
+- **Everything else is shared** — stats, calendar, photos, and workouts are the same tabs, and `-seedHealth` fills an empty store with a month of plausible data for it.
 
 ### Cycle tracking *(opt-in, locked, device-only)*
 

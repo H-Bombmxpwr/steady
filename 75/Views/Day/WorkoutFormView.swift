@@ -162,6 +162,8 @@ struct WorkoutFormView: View {
             }
         }
         day.workouts.append(log)
+        try? day.modelContext?.save()
+        WidgetSnapshot.refreshTotals(from: day)
         let date = day.date
         Task { await HealthKitService.shared.saveWorkout(log, on: date) }
         dismiss()

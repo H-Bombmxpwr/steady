@@ -82,8 +82,9 @@ final class UserProfile {
 
     /// Which experience this person picked at setup — see `AppMode`.
     var modeRaw: String = AppMode.weightLoss.rawValue
-    /// The general-health add-on: labs, sleep, steps, and nutrition quality
-    /// surface on whichever dashboard the mode chose. Off unless asked for.
+    /// The general-health add-on: labs and nutrition quality surface on
+    /// whichever dashboard the mode chose. Off unless asked for — and implied
+    /// by `AppMode.generalHealth`, which is built around them.
     var generalHealth: Bool = false
     /// Cycle tracking. Offered at setup when it's relevant, switchable any
     /// time in Settings, and stored only on this device.
@@ -112,6 +113,11 @@ final class UserProfile {
         get { AppMode(rawValue: modeRaw) ?? .weightLoss }
         set { modeRaw = newValue.rawValue }
     }
+
+    /// Whether the health metrics — fiber, sodium, added sugar, blood work —
+    /// belong on screen. They're the whole point of general-health mode, and
+    /// an opt-in extra in the other two.
+    var showsGeneralHealth: Bool { mode.includesGeneralHealth || generalHealth }
 
     /// Whether to raise cycle tracking at all. Offered outright when the
     /// profile says female; asked as a question when it says prefer-not-to-say,

@@ -92,7 +92,17 @@ struct SettingsView: View {
                     Text(profile.mode.pitch)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Toggle("Track general health", isOn: $profile.generalHealth)
+                    // Nothing to toggle in general-health mode — the metrics
+                    // are the mode.
+                    if profile.mode.includesGeneralHealth {
+                        HStack {
+                            Text("Track general health")
+                            Spacer()
+                            Text("Always on").foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Toggle("Track general health", isOn: $profile.generalHealth)
+                    }
                 } header: {
                     Text("Mode")
                 } footer: {
@@ -104,19 +114,25 @@ struct SettingsView: View {
                 }
 
                 // --- Goal
-                Section("Goal") {
+                Section(profile.mode.includesGeneralHealth ? "Baseline" : "Goal") {
                     HStack { Text("Started"); Spacer(); Text(plan.startDate, style: .date).foregroundStyle(.secondary) }
-                    HStack {
-                        Text("Goal weight")
-                        Spacer()
-                        TextField("lb", value: $plan.goalWeight, format: .number)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 90)
-                            .focused($fieldFocused)
-                        Text("lb").foregroundStyle(.secondary)
+                    if !profile.mode.includesGeneralHealth {
+                        HStack {
+                            Text("Goal weight")
+                            Spacer()
+                            TextField("lb", value: $plan.goalWeight, format: .number)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 90)
+                                .focused($fieldFocused)
+                            Text("lb").foregroundStyle(.secondary)
+                        }
                     }
-                    if profile.mode == .athlete {
+                    if profile.mode.includesGeneralHealth {
+                        Text("No deficit in this mode — your calorie target sits at maintenance, with training-day fuel added on top.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if profile.mode == .athlete {
                         Toggle("Eat at maintenance", isOn: $plan.eatAtMaintenance)
                         if !plan.eatAtMaintenance {
                             Picker("Pace", selection: $plan.paceLbsPerWeek) {
@@ -759,12 +775,19 @@ struct SettingsView: View {
     private func setMode(_ new: AppMode) {
         guard new != profile.mode else { return }
         profile.mode = new
-        // An athlete switching in shouldn't inherit an aggressive deficit, and
-        // someone switching out to lose weight needs a real pace again.
-        if new == .athlete {
+        // An athlete switching in shouldn't inherit an aggressive deficit,
+        // general health shouldn't have one at all, and someone switching out
+        // to lose weight needs a real pace again.
+        switch new {
+        case .athlete:
             plan.eatAtMaintenance = true
-        } else if plan.paceLbsPerWeek <= 0 {
-            plan.paceLbsPerWeek = 1.0
+        case .generalHealth:
+            // Maintenance by definition — drop whatever deficit came with the
+            // previous mode so the budget isn't quietly still cutting.
+            plan.eatAtMaintenance = true
+            plan.paceLbsPerWeek = 0
+        case .weightLoss:
+            if plan.paceLbsPerWeek <= 0 { plan.paceLbsPerWeek = 1.0 }
         }
         try? context.save()
         Haptics.success()

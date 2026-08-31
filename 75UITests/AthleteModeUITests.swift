@@ -1,8 +1,9 @@
 import XCTest
 
-/// The mode split: an athlete profile must land on the athlete dashboard, and
-/// a weight-loss profile on the original one. These are the two experiences
-/// the whole feature rests on, so a regression here is worth catching loudly.
+/// The mode split: an athlete profile must land on the athlete dashboard, a
+/// general-health profile on its own, and a weight-loss profile on the
+/// original one. These are the three experiences the whole feature rests on,
+/// so a regression here is worth catching loudly.
 final class AthleteModeUITests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -92,6 +93,71 @@ final class AthleteModeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["WEEK AHEAD"].waitForExistence(timeout: 4),
                       "week-ahead card is missing")
         attach("athlete-week")
+    }
+
+    /// General health opens on the day and its quality metrics — no training
+    /// card, and no goal weight anywhere on it.
+    func testGeneralHealthDashboard() throws {
+        let app = launch("-seedHealth")
+
+        XCTAssertTrue(app.staticTexts["TODAY"].waitForExistence(timeout: 8),
+                      "general-health dashboard didn't lead with today")
+        XCTAssertFalse(app.staticTexts["TODAY'S TRAINING"].exists,
+                       "athlete card leaked into general-health mode")
+        attach("health-dashboard-top")
+
+        XCTAssertTrue(app.staticTexts["GENERAL HEALTH"].waitForExistence(timeout: 4),
+                      "the health metrics are the mode — they must be on the dashboard")
+
+        scroll(app)
+        XCTAssertTrue(app.staticTexts["MOVEMENT"].waitForExistence(timeout: 4),
+                      "movement card is missing")
+        attach("health-movement")
+
+        scroll(app)
+        // Cycle tracking is on in this seed too, and locked just the same.
+        XCTAssertTrue(app.staticTexts["CYCLE"].waitForExistence(timeout: 4),
+                      "cycle card is missing")
+        XCTAssertTrue(app.staticTexts["Locked"].exists,
+                      "cycle data must be locked until Face ID or the PIN unlocks it")
+        attach("health-cycle-locked")
+
+        scroll(app)
+        XCTAssertTrue(app.staticTexts["WEIGHT"].waitForExistence(timeout: 4),
+                      "weight is still tracked here, just not as the score")
+        XCTAssertFalse(app.staticTexts["GOAL"].exists,
+                       "general health has no goal weight to chase")
+        attach("health-weight-and-streak")
+    }
+
+    /// Setup offers all three modes, and picking general health skips the
+    /// goal-weight question entirely rather than asking for a number nobody
+    /// in this mode has.
+    func testSetupOffersGeneralHealthWithoutAGoalWeight() throws {
+        let app = launch("-resetStore")
+
+        let option = app.buttons.containing(
+            NSPredicate(format: "label CONTAINS 'General Health'")).firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 10),
+                      "setup didn't offer general health as a mode")
+        XCTAssertTrue(app.buttons.containing(
+            NSPredicate(format: "label CONTAINS 'Athlete'")).firstMatch.exists)
+        attach("setup-modes")
+
+        option.tap()
+        // The health metrics are the mode, so there's nothing left to opt into.
+        XCTAssertFalse(app.switches["Also track general health"].exists,
+                       "the add-on toggle belongs to the other two modes")
+
+        app.buttons["Continue"].tap()      // past the mode step
+        app.buttons["Continue"].tap()      // past the profile step
+
+        XCTAssertTrue(app.navigationBars["Where You're At"].waitForExistence(timeout: 4),
+                      "general health should go straight to the baseline step")
+        XCTAssertTrue(app.textFields["Current weight (lb)"].exists)
+        XCTAssertFalse(app.textFields["Goal weight (lb)"].exists,
+                       "general health has no goal weight")
+        attach("setup-baseline")
     }
 
     /// Weight-loss mode is untouched: it still opens on weight and today.

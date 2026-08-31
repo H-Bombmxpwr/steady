@@ -1,11 +1,11 @@
 ---
 title: Modes
-summary: Weight loss or athlete — two different dashboards, two different sets of targets.
+summary: Weight loss, athlete, or general health — three dashboards, three sets of targets.
 ---
 
 # Modes
 
-<p class="lede">People use a tracker for genuinely different reasons, and the same dashboard can't serve both. Steady asks which one you are before it asks anything else.</p>
+<p class="lede">People use a tracker for genuinely different reasons, and the same dashboard can't serve all of them. Steady asks which one you are before it asks anything else.</p>
 
 ## The question at setup
 
@@ -13,14 +13,15 @@ The first screen of setup asks what you're here for. Your answer decides your da
 
 You can switch modes later in **Settings → Mode** without losing anything you've logged.
 
-| | Weight Loss | Athlete |
-|---|---|---|
-| **Dashboard opens on** | Your weight trend and today's budget | Today's session and the fuel for it |
-| **Calories** | Maintenance minus a deficit set by your pace | Maintenance **plus** the day's training |
-| **Macros** | A protein target; calories do the rest | Carbs, protein, and fat periodized to the day's load |
-| **Hydration** | A flat daily goal | Your measured sweat rate, scaled to the weather |
-| **Weight** | The scoreboard | A data point, watched for under-fuelling |
-| **Plan** | A weekly grid of workout days | Dated sessions, imported or entered |
+| | Weight Loss | Athlete | General Health |
+|---|---|---|---|
+| **Dashboard opens on** | Your weight trend and today's budget | Today's session and the fuel for it | Today, and how well you ate it |
+| **Calories** | Maintenance minus a deficit set by your pace | Maintenance **plus** the day's training | Maintenance, plus training-day fuel |
+| **Macros** | A protein target; calories do the rest | Carbs, protein, and fat periodized to the day's load | A protein target; calories do the rest |
+| **Hydration** | A flat daily goal | Your measured sweat rate, scaled to the weather | A flat daily goal |
+| **Weight** | The scoreboard | A data point, watched for under-fuelling | A trend you keep an eye on |
+| **Plan** | A weekly grid of workout days | Dated sessions, imported or entered | A weekly grid, if you want one |
+| **Health metrics** | Optional add-on | Optional add-on | Built in |
 
 ## Weight loss mode
 
@@ -48,11 +49,25 @@ If you want a body-composition block, turn it off and set a pace — but Steady 
 
 The weight card also watches for this: a sustained drop during a hard training block gets called out, because it usually means under-fuelling before it means progress.
 
-## General health
+## General health mode
 
-A separate switch, not a third mode. Turn it on and whichever dashboard you picked also surfaces **fiber, sodium, and added sugar** against sensible daily marks, and blood-work tracking comes along with it.
+For people who aren't chasing a number in either direction — not cutting, not training for anything, just eating well and keeping an eye on things.
 
-Useful if you care about more than the number on the scale or the stopwatch. Switchable any time in **Settings → Mode**.
+**No deficit.** Your calorie target sits at maintenance, worked out the same adaptive way as everywhere else, with training-day fuel added on top if you log a session. There is no goal weight, and setup never asks for one.
+
+**The day is the dashboard.** Calories, protein, and water up top; then **fiber, sodium, and added sugar** against sensible daily marks, with your latest blood panel underneath.
+
+**Movement without a training plan.** Minutes today, minutes across the last seven days, and how many of those days you moved at all — shown against the usual 150-minutes-a-week guideline as context, not as a target you can fail.
+
+**Weight is still there**, as a smoothed trend near the bottom of the dashboard rather than the score at the top.
+
+Cycle tracking and fasting sit on this dashboard too, if you've switched them on.
+
+## The general-health add-on
+
+The same health metrics are available as a switch in the other two modes. Turn on **Track general health** and whichever dashboard you picked also surfaces fiber, sodium, and added sugar, with blood-work tracking alongside.
+
+It's on permanently in general-health mode — there, it's the point rather than an extra. Switchable any time in **Settings → Mode**.
 
 ## Cycle tracking
 

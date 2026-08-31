@@ -196,8 +196,11 @@ enum CalorieEngine {
         if plan.adaptiveBudget, let adaptive = adaptiveTDEE(profile: profile, plan: plan) {
             t = adaptive.blended
         }
+        // General health never runs a deficit — whatever pace the plan is
+        // carrying (from a previous mode, say) doesn't apply here.
+        let pace = profile.mode.deficitByDefault ? plan.paceLbsPerWeek : 0
         let calories = plan.calorieBudgetOverride
-            ?? dailyBudget(tdee: t, paceLbsPerWeek: plan.paceLbsPerWeek, sex: profile.sex)
+            ?? dailyBudget(tdee: t, paceLbsPerWeek: pace, sex: profile.sex)
         return DailyTargets(calories: calories,
                             proteinGrams: plan.proteinTargetGrams,
                             waterOunces: plan.waterGoalOunces)
@@ -374,8 +377,9 @@ enum CalorieEngine {
 
     /// Targets for a specific day.
     ///
-    /// In weight-loss mode this is the base budget plus the day's training
-    /// burn, so eating the fuel doesn't read as going "over". In athlete mode
+    /// In weight-loss and general-health mode this is the base budget plus
+    /// the day's training burn, so eating the fuel doesn't read as going
+    /// "over" (general health just starts from maintenance). In athlete mode
     /// the whole calculation is different — maintenance plus training, with
     /// carbs periodized to the load — and `AthleteEngine` owns it.
     static func targets(profile: UserProfile,
