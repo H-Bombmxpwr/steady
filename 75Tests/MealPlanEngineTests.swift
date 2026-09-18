@@ -320,6 +320,182 @@ final class MealPlanEngineTests: XCTestCase {
                        "what's left of the day is the budget minus what went in")
     }
 
+    // MARK: - Training owns the clock
+
+    /// The case that started this: lunch at 12:30 and a session at 12:30.
+    /// One of them has to move, and it isn't the session.
+    func testMealIsMovedOutOfTheWayOfASessionAtTheSameTime() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        // The default schedule puts lunch at 12:30.
+        let result = build(day: day, plan: p, targets: targets(),
+                           sessions: [TrainingSession(id: "clash", name: "Tempo",
+                                                      minutes: 90, hour: 12, minute: 30,
+                                                      category: .cardio, intensity: .moderate)])
+        guard let lunch = result.meals.first(where: { $0.meal == .lunch }) else {
+            return XCTFail("lunch should still be on the plan")
+        }
+        XCTAssertNotNil(lunch.movedFrom, "lunch should have been moved off the session")
+        XCTAssertEqual(lunch.movedFrom, 12 * 60 + 30)
+        XCTAssertNotEqual(lunch.minutesOfDay, 12 * 60 + 30)
+        XCTAssertNotNil(lunch.movedNote)
+    }
+
+    /// No meal may sit inside a session, or so close to the start that it
+    /// hasn't cleared. The window it needs scales with how big it is.
+    func testNoMealLandsInsideOrTooCloseToASession() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let sessions = [
+            TrainingSession(id: "am", name: "Intervals", minutes: 75, hour: 7, minute: 0,
+                            category: .cardio, intensity: .hard),
+            TrainingSession(id: "pm", name: "Lift", minutes: 60, hour: 18, minute: 0,
+                            category: .strength, intensity: .moderate)
+        ]
+        let result = build(day: day, plan: p, targets: targets(), sessions: sessions)
+
+        for meal in result.plannedMeals {
+            for block in result.sessions {
+                XCTAssertFalse(meal.minutesOfDay >= block.minutesOfDay
+                                   && meal.minutesOfDay < block.endMinutesOfDay,
+                               "\(meal.label) is scheduled during \(block.session.name)")
+                // Anything before the session must clear it — 45 minutes is
+                // the smallest window any meal size asks for.
+                if meal.minutesOfDay < block.minutesOfDay {
+                    XCTAssertLessThanOrEqual(meal.minutesOfDay, block.minutesOfDay - 45,
+                                             "\(meal.label) is too close to \(block.session.name) to have cleared")
+                }
+            }
+        }
+    }
+
+    /// A meal that moves to clear a session should then be the session's
+    /// pre-session meal, not have a snack invented next to it.
+    func testAMovedMealBecomesThePreSessionMealInsteadOfSpawningOne() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let result = build(day: day, plan: p, targets: targets(),
+                           sessions: [TrainingSession(id: "clash", name: "Tempo",
+                                                      minutes: 90, hour: 13, minute: 0,
+                                                      category: .cardio, intensity: .moderate)])
+
+        guard let pre = result.meals.first(where: { $0.role == .preWorkout }) else {
+            return XCTFail("something has to be the pre-session meal")
+        }
+        XCTAssertEqual(pre.meal, .lunch, "the moved lunch should be doing that job")
+        XCTAssertFalse(pre.isSynthetic, "no snack should have been invented beside it")
+    }
+
+    /// Meals stay in clock order and don't stack on top of each other after
+    /// being shuffled around.
+    func testShiftedMealsStayOrderedAndApart() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let result = build(day: day, plan: p, targets: targets(),
+                           sessions: [TrainingSession(id: "mid", name: "Long ride",
+                                                      minutes: 180, hour: 11, minute: 0,
+                                                      category: .cardio, intensity: .moderate)])
+        let times = result.plannedMeals.map(\.minutesOfDay)
+        XCTAssertEqual(times, times.sorted(), "meals came out of order")
+        for (a, b) in zip(times, times.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(b - a, 45, "two meals ended up on top of each other")
+        }
+    }
+
+    /// An early session shouldn't drag breakfast to five in the morning. The
+    /// right shape is a small top-up before and the real meal after, and the
+    /// engine has to arrive at that on its own.
+    func testAnEarlySessionGetsATopUpNotABreakfastAtFiveAM() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let dawn = TrainingSession(id: "dawn", name: "Intervals", minutes: 75,
+                                   hour: 7, minute: 0, category: .cardio, intensity: .hard)
+        let result = build(day: day, plan: p, targets: targets(), sessions: [dawn])
+
+        guard let breakfast = result.meals.first(where: { $0.meal == .breakfast }) else {
+            return XCTFail("breakfast should still be on the plan")
+        }
+        XCTAssertGreaterThan(breakfast.minutesOfDay, 7 * 60,
+                             "breakfast belongs after the session, not before dawn")
+        XCTAssertEqual(breakfast.role, .recovery)
+
+        guard let pre = result.meals.first(where: { $0.role == .preWorkout }) else {
+            return XCTFail("something small should still go in beforehand")
+        }
+        XCTAssertTrue(pre.isSynthetic)
+        XCTAssertLessThan(pre.calories, breakfast.calories,
+                          "the pre-session top-up should be the smaller of the two")
+
+        XCTAssertTrue(result.plannedMeals.allSatisfy { $0.minutesOfDay >= 5 * 60 + 30 },
+                      "nothing should be scheduled before half five")
+    }
+
+    /// When the day's carb target can't cover its own session, the meals that
+    /// aren't feeding it still get something — a breakfast of zero carbs is a
+    /// symptom, not a plan.
+    func testWorkoutFuelDoesNotStripEveryOtherMealOfCarbs() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        // A three-hour ride against a carb target set for something smaller.
+        let long = session(at: 11, minutes: 180)
+        let result = build(day: day, plan: p, targets: targets(), sessions: [long])
+
+        XCTAssertFalse(result.advisories.isEmpty, "the mismatch has to be stated")
+        for meal in result.plannedMeals where meal.role == .normal {
+            XCTAssertGreaterThan(meal.carbGrams, 0,
+                                 "\(meal.label) was stripped of carbs entirely")
+        }
+    }
+
+    /// No two meals on a plan may share a `Meal`: food logged to one would
+    /// count against both, and the progress bars would disagree with the log.
+    func testEveryMealOnThePlanHasItsOwnIdentity() {
+        let p = plan()
+        let scenarios: [[TrainingSession]] = [
+            [],
+            [session(at: 7, minutes: 75)],
+            [session(at: 11, minutes: 180)],
+            [session(at: 6, minutes: 60), session(at: 18, minutes: 60, category: .strength)]
+        ]
+        for sessions in scenarios {
+            let day = DayLog(date: noon)
+            let result = build(day: day, plan: p, targets: targets(), sessions: sessions)
+            let meals = result.plannedMeals.map(\.meal)
+            XCTAssertEqual(Set(meals).count, meals.count,
+                           "two meals shared an identity with \(sessions.count) session(s): \(meals)")
+        }
+    }
+
+    /// A day with no training must leave the schedule exactly as written.
+    func testMealsAreNotMovedWhenThereIsNoTraining() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let result = build(day: day, plan: p, targets: targets())
+
+        XCTAssertTrue(result.meals.allSatisfy { $0.movedFrom == nil },
+                      "nothing should move on a rest day")
+        let lunch = result.meals.first { $0.meal == .lunch }
+        XCTAssertEqual(lunch?.minutesOfDay, 12 * 60 + 30, "lunch should be where the schedule put it")
+    }
+
+    /// A called-off session doesn't get to move anything.
+    func testASkippedSessionDoesNotShoveMealsAround() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let clash = TrainingSession(id: "clash", name: "Tempo", minutes: 90,
+                                    hour: 12, minute: 30,
+                                    category: .cardio, intensity: .moderate)
+        let result = MealPlanEngine.plan(date: day.date, day: day, plan: p, profile: profile(),
+                                         targets: targets(), sessions: [], fuels: [],
+                                         skipped: [MealPlanEngine.SessionBlock(
+                                            id: clash.id, session: clash,
+                                            fuel: fuel(for: clash), isSkipped: true)],
+                                         now: noon)
+        let lunch = result.meals.first { $0.meal == .lunch }
+        XCTAssertEqual(lunch?.minutesOfDay, 12 * 60 + 30)
+        XCTAssertNil(lunch?.movedFrom)
+    }
+
     // MARK: - Calling a session off
 
     /// The row going grey is the least of it. A session that isn't happening

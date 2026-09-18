@@ -5,6 +5,10 @@ struct PhotosGalleryView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var appLock: AppLockManager
     var plan: Plan
+    /// False when pushed onto an existing stack rather than owning a tab. A
+    /// view that supplies its own NavigationStack can't be pushed onto one —
+    /// the push lands on a blank screen.
+    var isRoot: Bool = true
     private let columns = [GridItem(.adaptive(minimum: 110), spacing: 12)]
 
     // Flatten days → ordered items
@@ -32,7 +36,16 @@ struct PhotosGalleryView: View {
     @State private var timelapseError: String?
 
     var body: some View {
-        NavigationStack {
+        if isRoot {
+            NavigationStack { content }
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        Group {
             Group {
                 if appLock.photosUnlocked {
                     gallery
@@ -45,12 +58,13 @@ struct PhotosGalleryView: View {
             .navigationTitle("Progress Photos")
             .toolbar {
                 if appLock.photosUnlocked {
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItem(placement: isRoot ? .topBarLeading : .topBarTrailing) {
                         Button {
                             appLock.lockPhotos()
                         } label: {
                             Image(systemName: "lock.fill")
                         }
+                        .accessibilityLabel("Lock photos")
                     }
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Button {

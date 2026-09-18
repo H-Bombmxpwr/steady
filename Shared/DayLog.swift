@@ -35,6 +35,19 @@ enum Meal: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// Roughly when each meal happens, for deciding which bucket a slot the
+    /// engine invented should log its food under.
+    var typicalMinutesOfDay: Int {
+        switch self {
+        case .breakfast: return 7 * 60 + 30
+        case .morningSnack: return 10 * 60
+        case .lunch: return 12 * 60 + 30
+        case .afternoonSnack: return 15 * 60 + 30
+        case .dinner: return 18 * 60 + 30
+        case .dessert: return 20 * 60 + 30
+        }
+    }
+
     /// Sensible default for "log food right now".
     static func suggested(at date: Date = Date()) -> Meal {
         let comps = Calendar.current.dateComponents([.hour, .minute], from: date)

@@ -67,6 +67,9 @@ enum MealPlanEngine {
         let isSynthetic: Bool
         /// True when this meal is in the past and locked to what was eaten.
         let isLocked: Bool
+        /// Minutes-of-day this meal sits at on the schedule, when training
+        /// moved it somewhere else today.
+        let movedFrom: Int?
 
         let calories: Int
         let carbGrams: Int
@@ -107,6 +110,18 @@ enum MealPlanEngine {
         }
 
         var hasLoggedFood: Bool { eatenCalories > 0 }
+
+        /// "Moved up from 12:30 PM" — said out loud, because a meal that
+        /// silently isn't where the schedule says it is looks like a bug.
+        var movedNote: String? {
+            guard let movedFrom else { return nil }
+            let comps = DateComponents(hour: movedFrom / 60, minute: movedFrom % 60)
+            let date = Calendar.current.date(from: comps) ?? Date()
+            let was = date.formatted(date: .omitted, time: .shortened)
+            return movedFrom > minutesOfDay
+                ? "Moved up from \(was) so it's cleared before you train."
+                : "Pushed back from \(was) — you're training then."
+        }
     }
 
     /// A session on the timeline, with its fueling already worked out.
@@ -439,6 +454,23 @@ enum MealPlanEngine {
         var skipped: Bool
         var isSynthetic: Bool
         var isLocked = false
+        /// Where this meal sat on the schedule before training moved it.
+        var shiftedFrom: Int?
+
+        /// How long before a session this meal needs in order to have cleared.
+        ///
+        /// Scaled by size, because that's what actually decides it: a full
+        /// dinner needs two to three hours, a gel or a banana needs twenty
+        /// minutes. Training on a stomach that's still working is the single
+        /// most common way a planned session falls apart, and it's entirely
+        /// avoidable by moving the meal.
+        var digestionLeadMinutes: Int {
+            switch weight {
+            case ..<0.7: return 45     // a snack
+            case ..<1.3: return 120    // an ordinary meal
+            default:     return 180    // a big one
+            }
+        }
         var role: MealRole = .normal
         var isBig = false
         var isIronFocus = false
@@ -465,6 +497,13 @@ enum MealPlanEngine {
         func finish(day: DayLog, blocks: [SessionBlock], ironNote: String) -> MealTarget {
             var notes: [String] = []
             if isIronFocus, !ironNote.isEmpty { notes.append(ironNote) }
+            if let shiftedFrom {
+                let comps = DateComponents(hour: shiftedFrom / 60, minute: shiftedFrom % 60)
+                let date = Calendar.current.date(from: comps) ?? Date()
+                notes.append(shiftedFrom > minutesOfDay
+                    ? "Normally \(date.formatted(date: .omitted, time: .shortened)) — moved so it has time to clear before training."
+                    : "Normally \(date.formatted(date: .omitted, time: .shortened)) — moved because you're training then.")
+            }
             if role == .preWorkout {
                 notes.append("Keep the fat and fiber low here — both slow the stomach down, and that's the last thing you want at the start line.")
             }
@@ -478,6 +517,7 @@ enum MealPlanEngine {
                               skipped: skipped,
                               isSynthetic: isSynthetic,
                               isLocked: isLocked,
+                              movedFrom: shiftedFrom,
                               calories: Int(calories.rounded()),
                               carbGrams: Int(carbs.rounded()),
                               proteinGrams: Int(protein.rounded()),
@@ -517,6 +557,14 @@ enum MealPlanEngine {
             entries = recompressed(entries, wake: wake)
         }
 
+        // Training gets the clock. A session is a commitment with a time on
+        // it; a meal time is a habit, and habits are the thing that should
+        // bend. Meals that would land mid-session — or too close to the start
+        // to have cleared — move first, so the synthetic-slot pass below sees
+        // the day as it will actually be eaten and doesn't invent a
+        // pre-session snack next to a lunch that just moved into the slot.
+        entries = shiftedAroundTraining(entries, blocks: blocks, wake: day.wakeMinutesOfDay)
+
         // Workout fuel that no meal is near enough to carry gets its own slot.
         for block in blocks {
             let start = block.minutesOfDay
@@ -530,7 +578,7 @@ enum MealPlanEngine {
                 if !hasPre {
                     let at = max(day.wakeMinutesOfDay ?? 0, start - syntheticPreOffsetMinutes)
                     entries.append(Entry(id: "pre-\(block.id)",
-                                         meal: Meal.suggested(at: dateAt(minutes: at)),
+                                         meal: availableMeal(at: at, taken: Set(entries.map(\.meal))),
                                          label: "Pre-Session Fuel",
                                          minutesOfDay: at,
                                          weight: 0.45,
@@ -547,7 +595,7 @@ enum MealPlanEngine {
                 if !hasPost {
                     let at = min(23 * 60 + 30, end + syntheticRecoveryOffsetMinutes)
                     entries.append(Entry(id: "recovery-\(block.id)",
-                                         meal: Meal.suggested(at: dateAt(minutes: at)),
+                                         meal: availableMeal(at: at, taken: Set(entries.map(\.meal))),
                                          label: "Recovery Snack",
                                          minutesOfDay: at,
                                          weight: 0.55,
@@ -559,6 +607,115 @@ enum MealPlanEngine {
 
         return entries.sorted { $0.minutesOfDay < $1.minutesOfDay }
     }
+
+    /// Nudge meals out of the way of training.
+    ///
+    /// Two things are wrong with a meal that overlaps a session, and they
+    /// need different answers. A meal *during* the session simply can't
+    /// happen. A meal shortly *before* it can happen, but shouldn't: food
+    /// still being digested is blood flow that the working muscle wants, and
+    /// it's why the session feels terrible. So each meal claims a clear
+    /// window ahead of the session scaled to its own size, and if the
+    /// schedule puts it inside that window it moves — earlier if there's room
+    /// to digest, otherwise to after the session, whichever is the smaller
+    /// disruption to the day.
+    private static func shiftedAroundTraining(_ entries: [Entry],
+                                              blocks: [SessionBlock],
+                                              wake: Int?) -> [Entry] {
+        guard !blocks.isEmpty, !entries.isEmpty else { return entries }
+        var result = entries
+        let floor = max(earliestMealMinutes, (wake.map { $0 + 15 }) ?? earliestMealMinutes)
+
+        func clash(_ time: Int, lead: Int) -> SessionBlock? {
+            blocks.first {
+                time > $0.minutesOfDay - lead && time < $0.endMinutesOfDay + postSessionGap
+            }
+        }
+
+        for i in result.indices where !result[i].skipped {
+            let original = result[i].minutesOfDay
+            var time = original
+            let lead = result[i].digestionLeadMinutes
+
+            // Bounded: moving clear of one session can land on the next, but
+            // each pass moves strictly forward past one more session.
+            for _ in 0..<blocks.count {
+                guard let block = clash(time, lead: lead) else { break }
+                let earlier = block.minutesOfDay - lead
+                let later = block.endMinutesOfDay + postSessionGap
+                let canGoEarlier = earlier >= floor
+                let canGoLater = later <= bedtimeMinutes
+
+                if canGoEarlier && canGoLater {
+                    // Whichever asks less of the day — but with a thumb on
+                    // the scale for eating *before*. Going into a session
+                    // already fuelled beats finishing it and then having your
+                    // first real meal of the afternoon, and a meal moved
+                    // earlier keeps its job as the pre-session meal instead of
+                    // leaving a hole that has to be filled with an invented
+                    // snack. Only a session late enough that moving back would
+                    // drag the meal hours off its time flips it.
+                    let earlierCost = (time - earlier) - earlierBias
+                    time = earlierCost <= (later - time) ? earlier : later
+                } else if canGoEarlier {
+                    time = earlier
+                } else if canGoLater {
+                    time = later
+                } else {
+                    break   // nowhere left to put it; leave it where it was
+                }
+            }
+
+            if time != original {
+                result[i].minutesOfDay = time
+                result[i].shiftedFrom = original
+            }
+        }
+
+        return spaced(result, blocks: blocks)
+    }
+
+    /// Keep meals in order and off each other, without shoving one back into
+    /// a session on the way.
+    private static func spaced(_ entries: [Entry], blocks: [SessionBlock]) -> [Entry] {
+        var result = entries.sorted { $0.minutesOfDay < $1.minutesOfDay }
+        for i in result.indices.dropFirst() where !result[i].skipped {
+            let earliest = result[i - 1].minutesOfDay + minimumMealGap
+            guard result[i].minutesOfDay < earliest else { continue }
+            var time = earliest
+            // Pushed into a session? Go past the end of it instead.
+            if let block = blocks.first(where: {
+                time >= $0.minutesOfDay && time < $0.endMinutesOfDay + postSessionGap
+            }) {
+                time = block.endMinutesOfDay + postSessionGap
+            }
+            time = min(time, 23 * 60 + 30)
+            if result[i].shiftedFrom == nil, time != result[i].minutesOfDay {
+                result[i].shiftedFrom = result[i].minutesOfDay
+            }
+            result[i].minutesOfDay = time
+        }
+        return result.sorted { $0.minutesOfDay < $1.minutesOfDay }
+    }
+
+    /// The earliest a planned meal should ever be pulled back to.
+    ///
+    /// Six, not five. A real meal two hours before a 7 a.m. session means
+    /// eating at five, which nobody does and nobody should be told to do —
+    /// the actual answer for an early session is a small top-up beforehand
+    /// and the proper meal afterwards. Holding the floor here is what makes
+    /// the engine reach that answer instead of the literal one.
+    private static let earliestMealMinutes = 6 * 60
+    /// Long enough after a session to have stopped and changed.
+    private static let postSessionGap = 20
+    /// The least two meals can sit apart and still be two meals.
+    private static let minimumMealGap = 60
+    /// How much further a meal will travel to land *before* a session rather
+    /// than after it, when both would work.
+    private static let earlierBias = 45
+    /// The most of a day's carbohydrate the pre-session and recovery floors
+    /// may claim between them before they start being scaled back.
+    private static let maxWorkoutFloorShare = 0.7
 
     /// The last sensible hour to be eating a planned meal.
     private static let bedtimeMinutes = 22 * 60
@@ -598,6 +755,23 @@ enum MealPlanEngine {
             }
         }
         return kept
+    }
+
+    /// Which meal an invented slot should log its food under.
+    ///
+    /// It can't reuse one already on the plan: two entries sharing a `Meal`
+    /// means everything logged to it counts against both, so a pre-session
+    /// top-up at quarter to six would eat the real breakfast's progress. The
+    /// unused meal whose usual hour is nearest gets it — which lands a dawn
+    /// top-up in Morning Snack and an afternoon refuel in Afternoon Snack.
+    private static func availableMeal(at minutes: Int, taken: Set<Meal>) -> Meal {
+        let free = Meal.allCases.filter { !taken.contains($0) }
+        guard !free.isEmpty else { return Meal.suggested(at: dateAt(minutes: minutes)) }
+        let suggested = Meal.suggested(at: dateAt(minutes: minutes))
+        if free.contains(suggested) { return suggested }
+        return free.min {
+            abs($0.typicalMinutesOfDay - minutes) < abs($1.typicalMinutesOfDay - minutes)
+        } ?? suggested
     }
 
     private static func dateAt(minutes: Int) -> Date {
@@ -723,8 +897,15 @@ enum MealPlanEngine {
         // together and the mismatch is said out loud.
         var carbFloors = openIndices.map { entries[$0].carbFloor }
         let floorTotal = carbFloors.reduce(0, +)
-        if floorTotal > remaining.carbs, floorTotal > 0 {
-            let factor = max(0, remaining.carbs) / floorTotal
+        // Leave something for the meals that aren't feeding the session. A day
+        // whose carb target can't cover its own training will happen — but
+        // answering it with a breakfast of zero carbs is not a plan, it's a
+        // symptom. The other meals keep a share and the mismatch gets said.
+        let floorCeiling = openIndices.count > 2
+            ? max(0, remaining.carbs) * maxWorkoutFloorShare
+            : max(0, remaining.carbs)
+        if floorTotal > floorCeiling, floorTotal > 0 {
+            let factor = floorCeiling / floorTotal
             carbFloors = carbFloors.map { $0 * factor }
             advisories.append("Today's carb target doesn't quite cover what the session itself asks for. The fuel around training has been scaled to fit — if this is a regular thing, the day's target is the number to raise, not the meals.")
         }

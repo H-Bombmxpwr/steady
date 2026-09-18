@@ -33,7 +33,6 @@ struct DayPlanView: View {
 
     @State private var expanded: Set<String> = []
     @State private var showShapeSheet = false
-    @State private var showSettings = false
     @State private var foodEntry: FoodEntryRequest?
     @State private var ideasRequest: MealIdeasRequest?
     @State private var fuelDetail: FuelingPlan?
@@ -95,8 +94,11 @@ struct DayPlanView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Pushed, the leading slot belongs to the back button, and
-                // Settings is already a tap away from wherever you came from.
+                // Adjust is the only thing this screen owns. Settings lives on
+                // the dashboard — one gear, one place, rather than the same
+                // button repeated on every tab.
+                //
+                // Pushed, the leading slot belongs to the back button.
                 ToolbarItem(placement: isRoot ? .topBarLeading : .topBarTrailing) {
                     Button {
                         Haptics.tap()
@@ -107,20 +109,9 @@ struct DayPlanView: View {
                     }
                     .accessibilityIdentifier("dayplan.adjust")
                 }
-                if isRoot {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { showSettings = true } label: {
-                            Image(systemName: "gearshape")
-                        }
-                        .accessibilityLabel("Settings")
-                    }
-                }
             }
             .sheet(isPresented: $showShapeSheet) {
                 DayShapeSheet(plan: plan, day: day)
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView(plan: plan, profile: profile)
             }
             .sheet(item: $foodEntry) { request in
                 NavigationStack {
@@ -439,6 +430,12 @@ private struct MealPlanRow: View {
                         }
                         if target.isBig { TagChip(text: "BIG", tint: Theme.alcoholTint) }
                         if target.isIronFocus { TagChip(text: "IRON", tint: Theme.workoutTint) }
+                        if target.movedFrom != nil {
+                            Image(systemName: "arrow.up.arrow.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Theme.textDim)
+                                .accessibilityLabel("Moved for training")
+                        }
                         Spacer(minLength: 0)
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption2)
@@ -453,6 +450,13 @@ private struct MealPlanRow: View {
                         Text(target.macroLine)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+
+                        if let moved = target.movedNote {
+                            Text(moved)
+                                .font(.caption2)
+                                .foregroundStyle(Theme.textDim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
                         if target.hasLoggedFood {
                             MealProgressBar(progress: target.progress, tint: tint)
@@ -493,7 +497,12 @@ private struct MealPlanRow: View {
                             MealActionButton(title: "Ideas", icon: "sparkles",
                                              tint: tint, action: onIdeas)
                         }
-                        MealActionButton(title: target.skipped ? "Un-skip" : "Skipped it",
+                        // "Skipped it" doesn't fit a third of this card once
+                        // the timeline gutter has taken its 58 points — and a
+                        // label that clips is worse than a shorter one. The
+                        // sentence it was carrying lives in the why line
+                        // directly above these buttons anyway.
+                        MealActionButton(title: target.skipped ? "Undo" : "Skip",
                                          icon: target.skipped ? "arrow.uturn.backward" : "xmark",
                                          tint: Theme.textDim, action: onSkip)
                     }
@@ -535,14 +544,18 @@ private struct MealActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.caption2.weight(.bold))
                 Text(title)
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    // A backstop for large Dynamic Type, not a substitute for
+                    // a label that fits: these read as one control, so one of
+                    // them shrinking on its own would look like a mistake.
+                    .minimumScaleFactor(0.75)
             }
+            .padding(.horizontal, 6)
             .foregroundStyle(filled ? Color.white : tint)
             .frame(maxWidth: .infinity)
             .frame(height: 34)

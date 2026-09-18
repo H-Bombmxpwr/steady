@@ -68,6 +68,20 @@ struct CalendarScreen: View {
             .brandBackground()
             .navigationDestination(for: Date.self) { DayDetailView(plan: plan, profile: profile, date: $0) }
             .navigationTitle("Calendar")
+            .toolbar {
+                // Progress photos are browsed by date, so the calendar is
+                // where they belong — and it keeps them one tap away without
+                // spending a tab on them.
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        PhotosGalleryView(plan: plan, isRoot: false)
+                    } label: {
+                        Image(systemName: "photo.on.rectangle")
+                    }
+                    .accessibilityLabel("Progress Photos")
+                    .accessibilityIdentifier("calendar.photos")
+                }
+            }
         }
     }
 

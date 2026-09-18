@@ -8,63 +8,22 @@ struct MainTabView: View {
     var profile: UserProfile
 
     @State private var tab = 0
-    /// Which of the overflow screens the last tab is currently showing.
-    @State private var overflow: OverflowScreen = .photos
-    @State private var showOverflowPicker = false
 
     // Widget deep links (seventyfive://log-food, log-workout, today)
     @State private var showFoodLog = false
     @State private var showWorkoutLog = false
     @State private var showToday = false
 
-    /// The two screens that don't fit across the bottom.
-    ///
-    /// Six tabs is one too many: iOS collapses the overflow into its own
-    /// "More" tab, which is a full-screen list you have to navigate into and
-    /// back out of to reach two items. That's a worse trip than the tab bar
-    /// it replaced. Keeping five tabs and putting the choice in a small sheet
-    /// costs one tap and never leaves the screen you're on.
-    enum OverflowScreen: String, CaseIterable, Identifiable {
-        case photos, workouts
-
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .photos: return "Photos"
-            case .workouts: return "Workouts"
-            }
-        }
-
-        var icon: String {
-            switch self {
-            case .photos: return "photo.on.rectangle"
-            case .workouts: return "figure.strengthtraining.traditional"
-            }
-        }
-
-        var detail: String {
-            switch self {
-            case .photos: return "Progress photos, comparisons, and the timelapse"
-            case .workouts: return "Your workout library, presets, and exercise history"
-            }
-        }
-
-        var tint: Color {
-            switch self {
-            case .photos: return Theme.photoTint
-            case .workouts: return Theme.workoutTint
-            }
-        }
-    }
-
-    private static let overflowTabIndex = 4
-
+    // Five tabs, no overflow. Photos used to share the last slot with
+    // Workouts behind a picker, which meant a sheet every time you wanted the
+    // one you always want. Workouts owns the tab outright now, and Photos —
+    // which is browsed by date anyway — hangs off the Calendar.
     private static let tabs: [(label: String, icon: String)] = [
         ("Dashboard", "house.fill"),
         ("Day Plan", "list.bullet.clipboard.fill"),
         ("Stats", "chart.xyaxis.line"),
-        ("Calendar", "calendar")
+        ("Calendar", "calendar"),
+        ("Workouts", "figure.strengthtraining.traditional")
     ]
 
     @ViewBuilder
@@ -85,54 +44,17 @@ struct MainTabView: View {
         case 1: DayPlanView(plan: plan, profile: profile)
         case 2: StatsView(plan: plan, profile: profile)
         case 3: CalendarScreen(plan: plan, profile: profile)
-        default:
-            switch overflow {
-            case .photos: PhotosGalleryView(plan: plan)
-            case .workouts: WorkoutsView(plan: plan)
-            }
+        default: WorkoutsView(plan: plan)
         }
     }
 
-    /// Intercepts taps on the last tab so it opens the picker instead of
-    /// navigating anywhere. Only user taps go through this setter —
-    /// programmatic writes to `tab` assign the state directly — so selecting
-    /// a screen from the sheet can't bounce the sheet straight back open.
-    private var selection: Binding<Int> {
-        Binding(
-            get: { tab },
-            set: { newValue in
-                guard newValue == Self.overflowTabIndex else {
-                    tab = newValue
-                    return
-                }
-                Haptics.tap()
-                showOverflowPicker = true
-                tab = newValue
-            }
-        )
-    }
-
     var body: some View {
-        TabView(selection: selection) {
+        TabView(selection: $tab) {
             ForEach(0..<Self.tabs.count, id: \.self) { i in
                 screen(i)
                     .tabItem { Label(Self.tabs[i].label, systemImage: Self.tabs[i].icon) }
                     .tag(i)
             }
-            screen(Self.overflowTabIndex)
-                .tabItem { Label(overflow.label, systemImage: overflow.icon) }
-                .tag(Self.overflowTabIndex)
-        }
-        .sheet(isPresented: $showOverflowPicker) {
-            OverflowPicker(selection: overflow) { choice in
-                overflow = choice
-                tab = Self.overflowTabIndex
-                showOverflowPicker = false
-            }
-            .presentationDetents([.height(280)])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Theme.surface)
-            .themedRoot()
         }
         .onOpenURL { url in
             switch url.host {
@@ -161,74 +83,6 @@ struct MainTabView: View {
             }
             .themedRoot()
         }
-    }
-}
-
-// MARK: - Overflow picker
-
-/// The small sheet behind the last tab: two rows, a tap, done.
-///
-/// Deliberately not a navigation destination. The whole point is that you
-/// never leave the screen you were on — pick one and the tab underneath
-/// becomes it, cancel and nothing moved.
-private struct OverflowPicker: View {
-    let selection: MainTabView.OverflowScreen
-    let onPick: (MainTabView.OverflowScreen) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Go to")
-                .font(.caption.bold())
-                .foregroundStyle(Theme.textDim)
-                .kerning(1.2)
-                .padding(.horizontal, 4)
-                .padding(.top, 8)
-
-            ForEach(MainTabView.OverflowScreen.allCases) { screen in
-                Button {
-                    Haptics.selection()
-                    onPick(screen)
-                } label: {
-                    HStack(spacing: 12) {
-                        SectionIcon(systemImage: screen.icon, size: 34, tint: screen.tint)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(screen.label)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text(screen.detail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                        }
-                        Spacer(minLength: 0)
-                        if selection == screen {
-                            Image(systemName: "checkmark")
-                                .font(.subheadline.bold())
-                                .foregroundStyle(screen.tint)
-                        }
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(screen.tint.opacity(selection == screen ? 0.14 : 0.07))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .strokeBorder(screen.tint.opacity(selection == screen ? 0.35 : 0.15))
-                            )
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.pressable)
-                .accessibilityIdentifier("overflow.\(screen.rawValue)")
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

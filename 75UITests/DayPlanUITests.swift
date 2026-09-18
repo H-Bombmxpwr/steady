@@ -46,32 +46,55 @@ final class DayPlanUITests: XCTestCase {
                       "the Day Plan tab opened on nothing")
     }
 
-    /// The last tab opens a sheet rather than the system's full-screen
-    /// "More" list, and picking from it swaps the tab in place.
-    func testOverflowTabOpensASheetInsteadOfAPage() {
+    /// Five tabs, and the last one is Workouts every time — no system "More"
+    /// list, and no picker asking which screen you meant.
+    func testLastTabIsAlwaysWorkouts() {
         let app = launch()
         XCTAssertFalse(app.tabBars.buttons["More"].exists,
                        "the system More tab should be gone entirely")
+        XCTAssertFalse(app.tabBars.buttons["Photos"].exists,
+                       "Photos moved to the Calendar — it shouldn't hold a tab")
 
-        // The last tab starts as Photos.
-        let photosTab = app.tabBars.buttons["Photos"]
-        XCTAssertTrue(photosTab.waitForExistence(timeout: 15))
-        photosTab.tap()
+        let workouts = app.tabBars.buttons["Workouts"]
+        XCTAssertTrue(workouts.waitForExistence(timeout: 15))
+        workouts.tap()
 
-        // Tapping it opens the picker, and the tab bar is still there behind
-        // it — the giveaway that nothing navigated.
-        let workoutsRow = app.buttons["overflow.workouts"]
-        XCTAssertTrue(workoutsRow.waitForExistence(timeout: 5),
-                      "the last tab should open a picker sheet")
-        XCTAssertTrue(app.tabBars.firstMatch.exists,
-                      "the tab bar vanished — this navigated instead of presenting")
+        // Straight there: no sheet in between.
+        XCTAssertFalse(app.buttons["overflow.workouts"].exists,
+                       "tapping Workouts should not ask which screen you meant")
+        XCTAssertTrue(app.navigationBars["Workouts"].waitForExistence(timeout: 5),
+                      "the Workouts tab opened on nothing")
+    }
 
-        workoutsRow.tap()
+    /// Photos hangs off the Calendar now, and has to actually arrive — it
+    /// owns a NavigationStack of its own, which is the same trap the day plan
+    /// fell into.
+    func testPhotosPushesFromTheCalendar() {
+        let app = launch()
+        let calendar = app.tabBars.buttons["Calendar"]
+        XCTAssertTrue(calendar.waitForExistence(timeout: 15))
+        calendar.tap()
 
-        // The tab itself becomes Workouts.
-        XCTAssertTrue(app.tabBars.buttons["Workouts"].waitForExistence(timeout: 5),
-                      "picking Workouts should swap the tab in place")
-        XCTAssertFalse(app.buttons["overflow.workouts"].exists, "the sheet should have closed")
+        let photos = app.buttons["calendar.photos"]
+        XCTAssertTrue(photos.waitForExistence(timeout: 5),
+                      "the Calendar should offer a way into Progress Photos")
+        photos.tap()
+
+        XCTAssertTrue(app.navigationBars["Progress Photos"].waitForExistence(timeout: 10),
+                      "Progress Photos went nowhere — the destination is empty")
+        XCTAssertTrue(app.navigationBars.buttons.element(boundBy: 0).exists,
+                      "no back button — the push replaced the stack instead of adding to it")
+    }
+
+    /// Settings has one home: the dashboard.
+    func testDayPlanHasNoSettingsGear() {
+        let app = launch()
+        let tab = app.tabBars.buttons["Day Plan"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 15))
+        tab.tap()
+        XCTAssertTrue(app.buttons["dayplan.adjust"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Settings"].exists,
+                       "Settings belongs on the dashboard, not on every tab")
     }
 
     /// The regression this file exists for.
