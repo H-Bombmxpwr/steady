@@ -320,8 +320,10 @@ Worth calling out separately in the build's "What to Test" box, since it's a new
 > - **Adjust → planning around a big meal.** Pick one and the others should shrink.
 > - **Workouts on the plan.** Log one with an intensity and a start time; the meals either side should change. Pre-session meals go carb-heavy and low fat, post-session gets protein.
 > - **Calling a session off.** Tap the ⋯ on any planned workout → "Not doing this today". The day's calories and carbs should drop, and the meals either side should stop being pre-session and recovery meals. It's still on screen so you can put it back.
+> - **Settings → Meals & Food → "Finish eating before training."** Set it to what actually works for you (45 min to 3 hours). Pre-session meals move to respect it; snacks scale down from it. The *after* window isn't adjustable — following a hard session the plan always puts something in the first 30–60 minutes, which is what the literature is consistent about.
+> - **Eating later than planned.** If the plan says lunch at 12:30 and you log it at 1:30, the row should move to when you actually ate and anything crowded after it should slide back.
 > - **Meals moving around training.** Put a session at the same time as one of your meals. The meal should move — earlier if there's room to digest, otherwise to after you finish — and say so under its name. Workouts keep their time; meals are the ones that bend. Tell me if a meal ever ends up mid-session, or too close to the start to have settled.
-> - **Tabs.** Workouts has its own tab now, and Progress Photos moved to the photo button on the Calendar.
+> - **Tabs.** Workouts has its own tab now, and Progress Photos moved to the photo button on the Calendar. Tapping a workout in Workouts → All Workouts should open its editor directly (this used to push a blank screen you had to back out of).
 > - **Settings → Food Preferences.** Add the stores you shop and any foods you won't eat, then use "What Should I Eat?" on a meal. It should never suggest something on your exclusion list — if it does, that's a bug I want to hear about immediately.
 > - **Settings → Meal Schedule.** Change your meal times and sizes, or switch snacks on.
 > - **Recipes.** Paste a link, then "Save as a Meal" — it stores the whole batch and how many servings it makes, so logging it later is a servings stepper.

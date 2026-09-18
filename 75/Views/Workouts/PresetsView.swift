@@ -224,9 +224,6 @@ struct WorkoutsView: View {
             .themedForm()
             .keyboardDoneButton()
             .navigationTitle("Workouts")
-            .navigationDestination(for: WorkoutPreset.self) { preset in
-                WorkoutDetailView(plan: plan, preset: preset)
-            }
             .onAppear {
                 if scheduleSource.isEmpty, let first = plan.presets.first {
                     scheduleSource = first.name

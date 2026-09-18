@@ -66,6 +66,38 @@ final class DayPlanUITests: XCTestCase {
                       "the Workouts tab opened on nothing")
     }
 
+    /// Workouts tab → All Workouts → tap one. The library is a pushed view,
+    /// and its rows used value-based links resolved by a `navigationDestination`
+    /// declared back on the Workouts form — which isn't on screen any more by
+    /// then, so the tap pushed a broken screen you had to back out of.
+    func testTappingAWorkoutOpensItsEditor() {
+        let app = launch()
+        let tab = app.tabBars.buttons["Workouts"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 15))
+        tab.tap()
+
+        // The row stacks a title and a subtitle, so its accessibility label
+        // is the two joined — match the prefix.
+        let library = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH 'All Workouts'")).firstMatch
+        XCTAssertTrue(library.waitForExistence(timeout: 5),
+                      "the seeded plan should have a workout library")
+        library.tap()
+        XCTAssertTrue(app.navigationBars["All Workouts"].waitForExistence(timeout: 5))
+
+        let row = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH 'Upper Body'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "the seeded workout should be listed")
+        row.tap()
+
+        // The editor's own content. If the link couldn't resolve its
+        // destination, this is a blank screen.
+        XCTAssertTrue(app.staticTexts["Bench Press"].waitForExistence(timeout: 10),
+                      "tapping a workout went nowhere — the destination didn't resolve")
+        XCTAssertTrue(app.navigationBars.buttons.element(boundBy: 0).exists,
+                      "no back button — the push replaced the stack instead of adding to it")
+    }
+
     /// Photos hangs off the Calendar now, and has to actually arrive — it
     /// owns a NavigationStack of its own, which is the same trap the day plan
     /// fell into.

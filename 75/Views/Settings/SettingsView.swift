@@ -389,6 +389,16 @@ struct SettingsView: View {
                             Image(systemName: "cart.fill")
                         }
                     }
+                    Picker("Finish eating before training", selection: Binding(
+                        get: { plan.preSessionLeadMinutes },
+                        set: { plan.preSessionLeadMinutes = $0; try? context.save() }
+                    )) {
+                        Text("45 min").tag(45)
+                        Text("1 hour").tag(60)
+                        Text("1½ hours").tag(90)
+                        Text("2 hours").tag(120)
+                        Text("3 hours").tag(180)
+                    }
                     if profile.mode == .athlete {
                         Toggle("Protein at 1 g per pound", isOn: Binding(
                             get: { plan.proteinPerPoundTarget },
@@ -398,9 +408,14 @@ struct SettingsView: View {
                 } header: {
                     Text("Meals & Food")
                 } footer: {
-                    Text(profile.mode == .athlete
-                         ? "The meal schedule decides how each day's targets are split across sittings — it's what the Day Plan tab is built from. Food preferences bound every meal suggestion to what you can buy and will eat. Protein at 1 g per pound is the convention most athletes train on; switching it off falls back to the load-based 1.6–2.0 g/kg bands, which leaves more room for carbs on the biggest days."
-                         : "The meal schedule decides how each day's targets are split across sittings — it's what the Day Plan tab is built from. Food preferences bound every meal suggestion to what you can actually buy and will actually eat.")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("The meal schedule decides how each day's targets are split across sittings — it's what the Day Plan tab is built from. Food preferences bound every meal suggestion to what you can actually buy and will actually eat.")
+                        Text("How long before training you want to be done eating is personal — two hours is the usual advice, but plenty of people train fine on one. Meals that would land inside that window get moved. Snacks need less than a full meal, so they scale from this.")
+                        Text("Eating *after* a session isn't adjustable: following a hard effort the window that matters is the first 30–60 minutes, so the plan always puts something there.")
+                        if profile.mode == .athlete {
+                            Text("Protein at 1 g per pound is the convention most athletes train on; switching it off falls back to the load-based 1.6–2.0 g/kg bands, which leaves more room for carbs on the biggest days.")
+                        }
+                    }
                 }
 
                 // --- AI & estimates (details live on their own screen)

@@ -496,6 +496,114 @@ final class MealPlanEngineTests: XCTestCase {
         XCTAssertNil(lunch?.movedFrom)
     }
 
+    // MARK: - Windows around a session
+
+    /// After a hard effort the window that matters is the first 30–60
+    /// minutes. A lunch ninety minutes later is not the recovery meal, and
+    /// the engine has to put something in that window rather than counting
+    /// the next scheduled meal as good enough.
+    func testHardSessionGetsSomethingInsideTheRecoveryWindow() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        // Ends 10:30. The nearest scheduled meal is lunch at 12:30.
+        let hard = session(at: 9, minutes: 90, intensity: .hard)
+        let result = build(day: day, plan: p, targets: targets(), sessions: [hard])
+
+        guard let recovery = result.meals.first(where: { $0.role == .recovery }) else {
+            return XCTFail("a hard session must be followed by something")
+        }
+        let end = 10 * 60 + 30
+        XCTAssertGreaterThanOrEqual(recovery.minutesOfDay, end)
+        XCTAssertLessThanOrEqual(recovery.minutesOfDay, end + 60,
+                                 "recovery after a hard session has to land inside the hour")
+    }
+
+    /// Easy work doesn't carry that urgency — the next normal meal is fine,
+    /// and inventing a snack for it would just be noise.
+    func testEasySessionLetsTheNextNormalMealDoTheJob() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let easy = session(at: 9, minutes: 90, intensity: .easy)
+        let result = build(day: day, plan: p, targets: targets(), sessions: [easy])
+
+        let recovery = result.meals.first { $0.role == .recovery }
+        XCTAssertEqual(recovery?.meal, .lunch,
+                       "lunch should be allowed to be the recovery meal after easy work")
+        XCTAssertEqual(recovery?.isSynthetic, false)
+    }
+
+    /// How long before training you finish eating is a preference, and
+    /// setting it has to actually move the meal.
+    func testPreSessionLeadIsHonoured() {
+        let session = TrainingSession(id: "s", name: "Threshold", minutes: 60,
+                                      hour: 15, minute: 0, category: .cardio, intensity: .hard)
+
+        func preMealTime(lead: Int) -> Int? {
+            let p = plan()
+            p.preSessionLeadMinutes = lead
+            p.mealSlots.forEach { if $0.meal == .afternoonSnack { $0.enabled = true } }
+            let day = DayLog(date: noon)
+            return build(day: day, plan: p, targets: targets(), sessions: [session])
+                .meals.first { $0.role == .preWorkout }?.minutesOfDay
+        }
+
+        guard let long = preMealTime(lead: 180), let short = preMealTime(lead: 45) else {
+            return XCTFail("there should be a pre-session meal either way")
+        }
+        XCTAssertLessThan(long, short, "a longer lead should put the meal earlier")
+        XCTAssertLessThanOrEqual(long, 15 * 60, "and still clear of the session")
+        XCTAssertLessThanOrEqual(short, 15 * 60)
+    }
+
+    // MARK: - Following the log
+
+    /// The plan says 12:20, the log says 1:30. The row follows the food —
+    /// leaving it at 12:20 makes everything after it wrong.
+    func testAMealMovesToWhenItWasActuallyEaten() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let cal = Calendar.current
+
+        let late = FoodLog(name: "Late lunch", calories: 800, proteinGrams: 45,
+                           meal: .lunch, facts: NutritionFacts(carbsGrams: 90, fatGrams: 25))
+        late.createdAt = cal.date(bySettingHour: 13, minute: 30, second: 0, of: day.date)!
+        day.foods.append(late)
+
+        let now = cal.date(bySettingHour: 14, minute: 0, second: 0, of: day.date)!
+        let result = build(day: day, plan: p, targets: targets(), now: now)
+
+        guard let lunch = result.meals.first(where: { $0.meal == .lunch }) else {
+            return XCTFail("lunch should be on the plan")
+        }
+        XCTAssertTrue(lunch.isLocked)
+        XCTAssertEqual(lunch.minutesOfDay, 13 * 60 + 30, "the row should sit where the food went in")
+        XCTAssertEqual(lunch.movedFrom, 12 * 60 + 30)
+        XCTAssertNotNil(lunch.movedNote)
+    }
+
+    /// And a meal eaten very late pushes what's after it along, rather than
+    /// leaving dinner an hour after lunch.
+    func testEatingVeryLatePushesTheNextMealBack() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let cal = Calendar.current
+
+        // Lunch at half five, ninety minutes before dinner is due.
+        let late = FoodLog(name: "Very late lunch", calories: 700, proteinGrams: 40,
+                           meal: .lunch, facts: NutritionFacts(carbsGrams: 80, fatGrams: 22))
+        late.createdAt = cal.date(bySettingHour: 17, minute: 30, second: 0, of: day.date)!
+        day.foods.append(late)
+
+        let now = cal.date(bySettingHour: 18, minute: 0, second: 0, of: day.date)!
+        let result = build(day: day, plan: p, targets: targets(), now: now)
+
+        guard let dinner = result.meals.first(where: { $0.meal == .dinner }) else {
+            return XCTFail("dinner should be on the plan")
+        }
+        XCTAssertGreaterThanOrEqual(dinner.minutesOfDay, 17 * 60 + 30 + 60,
+                                    "dinner should keep its distance from a very late lunch")
+    }
+
     // MARK: - Calling a session off
 
     /// The row going grey is the least of it. A session that isn't happening

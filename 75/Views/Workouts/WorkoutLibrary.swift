@@ -75,7 +75,17 @@ struct WorkoutLibraryView: View {
     var body: some View {
         List {
             ForEach(results) { p in
-                NavigationLink(value: p) {
+                // A direct destination, not `NavigationLink(value:)`.
+                //
+                // The value form needs a matching `navigationDestination` that
+                // is visible from the link, and the one for WorkoutPreset was
+                // declared on the Workouts form — which is no longer on screen
+                // once this list has been pushed onto the stack. SwiftUI can't
+                // resolve the link from here, so the tap pushed a broken
+                // screen you had to back out of to see anything.
+                NavigationLink {
+                    WorkoutDetailView(plan: plan, preset: p)
+                } label: {
                     PresetRow(preset: p, showTimestamp: dupes.contains(p.name.lowercased()))
                 }
             }

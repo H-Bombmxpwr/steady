@@ -50,6 +50,16 @@ final class Plan {
     /// load-based g/kg bands. On by default in athlete mode.
     var proteinPerPoundTarget: Bool = true
 
+    /// How long before a session you want to have finished a normal-sized
+    /// meal, in minutes. Snacks and big meals scale from it.
+    ///
+    /// Personal, not universal: two hours is the common recommendation, but
+    /// plenty of people train fine on an hour and some need three. It's the
+    /// number that decides where every pre-session meal lands, so it's the
+    /// one worth letting people set. The *post*-session window deliberately
+    /// isn't settable — see `MealPlanEngine.recoveryWindow`.
+    var preSessionLeadMinutes: Int = 120
+
     @Relationship(deleteRule: .cascade) var days: [DayLog]
     @Relationship(deleteRule: .cascade) var presets: [WorkoutPreset]
     @Relationship(deleteRule: .cascade) var schedule: [WorkoutScheduleEntry]

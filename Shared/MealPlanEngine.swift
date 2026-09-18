@@ -118,9 +118,10 @@ enum MealPlanEngine {
             let comps = DateComponents(hour: movedFrom / 60, minute: movedFrom % 60)
             let date = Calendar.current.date(from: comps) ?? Date()
             let was = date.formatted(date: .omitted, time: .shortened)
+            if isLocked { return "Planned for \(was) — this is when you actually ate." }
             return movedFrom > minutesOfDay
                 ? "Moved up from \(was) so it's cleared before you train."
-                : "Pushed back from \(was) — you're training then."
+                : "Pushed back from \(was) — the day shifted around it."
         }
     }
 
@@ -242,8 +243,25 @@ enum MealPlanEngine {
     static let maxProteinPerMeal = 55.0
     /// How far before a session a meal still counts as the pre-session meal.
     static let preWorkoutWindowMinutes = 180
-    /// And how long after it still counts as recovery.
+    /// And how long after it still counts as recovery — for an easy session,
+    /// where the glycogen debt is small and there's no hurry.
     static let recoveryWindowMinutes = 150
+
+    /// How soon after a session the next meal has to land.
+    ///
+    /// Unlike the pre-session lead, this one isn't a preference. After a hard
+    /// session the muscle is at its most receptive to carbohydrate and the
+    /// glycogen debt is real, and the guidance is consistent: eat inside
+    /// thirty to sixty minutes. Easy work doesn't carry that urgency — the
+    /// next normal meal is fine — so the window only tightens when the
+    /// session actually earned it.
+    static func recoveryWindow(for intensity: WorkoutIntensity) -> Int {
+        switch intensity {
+        case .hard:     return 60
+        case .moderate: return 120
+        case .easy:     return recoveryWindowMinutes
+        }
+    }
     /// Where a synthetic pre-session top-up lands when no real meal is close.
     static let syntheticPreOffsetMinutes = 75
     /// And a synthetic recovery meal, after the session ends.
@@ -311,12 +329,13 @@ enum MealPlanEngine {
                            advisories: [], iron: iron, duringSessionCarbs: duringCarbs)
         }
 
-        assignRoles(&entries, blocks: blocks, bigMeal: day.bigMeal)
+        assignRoles(&entries, blocks: blocks, bigMeal: day.bigMeal,
+                    baseLead: max(15, plan.preSessionLeadMinutes))
 
         // --- Lock what already happened, re-plan what hasn't
         var advisories: [String] = []
         if isToday {
-            lockPastMeals(&entries, day: day, nowMinutes: nowMinutes)
+            lockPastMeals(&entries, day: day, nowMinutes: nowMinutes, blocks: blocks)
         }
         for i in entries.indices {
             entries[i].eatenCalories = day.calories(for: entries[i].meal)
@@ -459,16 +478,15 @@ enum MealPlanEngine {
 
         /// How long before a session this meal needs in order to have cleared.
         ///
-        /// Scaled by size, because that's what actually decides it: a full
-        /// dinner needs two to three hours, a gel or a banana needs twenty
-        /// minutes. Training on a stomach that's still working is the single
-        /// most common way a planned session falls apart, and it's entirely
-        /// avoidable by moving the meal.
-        var digestionLeadMinutes: Int {
+        /// Anchored on the athlete's own number for a normal meal — two hours
+        /// is the usual recommendation but it varies enormously, and it's
+        /// their stomach — then scaled by size, because that part doesn't:
+        /// a full dinner takes longer than a banana whatever you're used to.
+        func digestionLead(base: Int) -> Int {
             switch weight {
-            case ..<0.7: return 45     // a snack
-            case ..<1.3: return 120    // an ordinary meal
-            default:     return 180    // a big one
+            case ..<0.7: return max(15, Int(Double(base) * 0.4))   // a snack
+            case ..<1.3: return base                               // an ordinary meal
+            default:     return Int(Double(base) * 1.5)            // a big one
             }
         }
         var role: MealRole = .normal
@@ -532,6 +550,7 @@ enum MealPlanEngine {
     /// Slots → entries, dropping anything that fell before the day started
     /// and inserting synthetic meals where workout fuel has nowhere to go.
     private static func buildEntries(day: DayLog, plan: Plan, blocks: [SessionBlock]) -> [Entry] {
+        let baseLead = max(15, plan.preSessionLeadMinutes)
         let slots = plan.activeMealSlots
         var entries: [Entry] = slots.map {
             Entry(id: "slot-\($0.meal.rawValue)",
@@ -563,7 +582,8 @@ enum MealPlanEngine {
         // to have cleared — move first, so the synthetic-slot pass below sees
         // the day as it will actually be eaten and doesn't invent a
         // pre-session snack next to a lunch that just moved into the slot.
-        entries = shiftedAroundTraining(entries, blocks: blocks, wake: day.wakeMinutesOfDay)
+        entries = shiftedAroundTraining(entries, blocks: blocks,
+                                        wake: day.wakeMinutesOfDay, baseLead: baseLead)
 
         // Workout fuel that no meal is near enough to carry gets its own slot.
         for block in blocks {
@@ -573,7 +593,7 @@ enum MealPlanEngine {
             if block.fuel.preCarbs > 0 {
                 let hasPre = entries.contains {
                     !$0.skipped && $0.minutesOfDay <= start
-                        && $0.minutesOfDay >= start - preWorkoutWindowMinutes
+                        && $0.minutesOfDay >= start - max(preWorkoutWindowMinutes, baseLead)
                 }
                 if !hasPre {
                     let at = max(day.wakeMinutesOfDay ?? 0, start - syntheticPreOffsetMinutes)
@@ -588,9 +608,10 @@ enum MealPlanEngine {
             }
 
             if block.fuel.recoveryProtein > 0 || block.fuel.recoveryCarbs > 0 {
+                let window = recoveryWindow(for: block.session.intensity)
                 let hasPost = entries.contains {
                     !$0.skipped && $0.minutesOfDay >= end
-                        && $0.minutesOfDay <= end + recoveryWindowMinutes
+                        && $0.minutesOfDay <= end + window
                 }
                 if !hasPost {
                     let at = min(23 * 60 + 30, end + syntheticRecoveryOffsetMinutes)
@@ -621,7 +642,8 @@ enum MealPlanEngine {
     /// disruption to the day.
     private static func shiftedAroundTraining(_ entries: [Entry],
                                               blocks: [SessionBlock],
-                                              wake: Int?) -> [Entry] {
+                                              wake: Int?,
+                                              baseLead: Int) -> [Entry] {
         guard !blocks.isEmpty, !entries.isEmpty else { return entries }
         var result = entries
         let floor = max(earliestMealMinutes, (wake.map { $0 + 15 }) ?? earliestMealMinutes)
@@ -635,7 +657,7 @@ enum MealPlanEngine {
         for i in result.indices where !result[i].skipped {
             let original = result[i].minutesOfDay
             var time = original
-            let lead = result[i].digestionLeadMinutes
+            let lead = result[i].digestionLead(base: baseLead)
 
             // Bounded: moving clear of one session can land on the next, but
             // each pass moves strictly forward past one more session.
@@ -679,7 +701,7 @@ enum MealPlanEngine {
     /// a session on the way.
     private static func spaced(_ entries: [Entry], blocks: [SessionBlock]) -> [Entry] {
         var result = entries.sorted { $0.minutesOfDay < $1.minutesOfDay }
-        for i in result.indices.dropFirst() where !result[i].skipped {
+        for i in result.indices.dropFirst() where !result[i].skipped && !result[i].isLocked {
             let earliest = result[i - 1].minutesOfDay + minimumMealGap
             guard result[i].minutesOfDay < earliest else { continue }
             var time = earliest
@@ -780,7 +802,8 @@ enum MealPlanEngine {
     }
 
     /// Who's the pre-session meal, who's recovery, who's the big one.
-    private static func assignRoles(_ entries: inout [Entry], blocks: [SessionBlock], bigMeal: Meal?) {
+    private static func assignRoles(_ entries: inout [Entry], blocks: [SessionBlock],
+                                    bigMeal: Meal?, baseLead: Int) {
         for block in blocks {
             let start = block.minutesOfDay
             let end = block.endMinutesOfDay
@@ -792,7 +815,7 @@ enum MealPlanEngine {
                 let candidates = entries.indices.filter {
                     !entries[$0].skipped
                         && entries[$0].minutesOfDay <= start
-                        && entries[$0].minutesOfDay >= start - preWorkoutWindowMinutes
+                        && entries[$0].minutesOfDay >= start - max(preWorkoutWindowMinutes, baseLead)
                 }
                 if let i = candidates.max(by: { entries[$0].minutesOfDay < entries[$1].minutesOfDay }) {
                     entries[i].role = .preWorkout
@@ -805,7 +828,7 @@ enum MealPlanEngine {
                 let candidates = entries.indices.filter {
                     !entries[$0].skipped
                         && entries[$0].minutesOfDay >= end
-                        && entries[$0].minutesOfDay <= end + recoveryWindowMinutes
+                        && entries[$0].minutesOfDay <= end + recoveryWindow(for: block.session.intensity)
                 }
                 if let i = candidates.min(by: { entries[$0].minutesOfDay < entries[$1].minutesOfDay }) {
                     // A meal can't be both; the deadline after the session is
@@ -825,7 +848,16 @@ enum MealPlanEngine {
 
     /// Meals that have passed and have food against them stop being plans and
     /// become facts. Everything still ahead gets re-planned around them.
-    private static func lockPastMeals(_ entries: inout [Entry], day: DayLog, nowMinutes: Int) {
+    ///
+    /// A meal also moves to when it was *actually* eaten. The plan saying
+    /// 12:20 and the log saying 1:30 is the normal case, not the exceptional
+    /// one, and leaving the row at 12:20 makes everything after it wrong:
+    /// dinner three hours later is a different instruction than dinner five
+    /// hours later. So the row follows the food, and the meals still ahead
+    /// get pushed along to keep their distance.
+    private static func lockPastMeals(_ entries: inout [Entry], day: DayLog,
+                                      nowMinutes: Int, blocks: [SessionBlock]) {
+        let calendar = Calendar.current
         for i in entries.indices where !entries[i].skipped {
             guard entries[i].minutesOfDay < nowMinutes else { continue }
             let facts = day.facts(for: entries[i].meal)
@@ -836,7 +868,19 @@ enum MealPlanEngine {
             entries[i].carbs = facts.carbsGrams
             entries[i].fat = facts.fatGrams
             entries[i].protein = Double(day.protein(for: entries[i].meal))
+
+            // When it actually went in, if that's knowable.
+            if let first = day.foods(for: entries[i].meal).first,
+               calendar.isDate(first.createdAt, inSameDayAs: day.date) {
+                let c = calendar.dateComponents([.hour, .minute], from: first.createdAt)
+                let actual = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+                if abs(actual - entries[i].minutesOfDay) >= 20 {
+                    entries[i].shiftedFrom = entries[i].minutesOfDay
+                    entries[i].minutesOfDay = actual
+                }
+            }
         }
+        entries = spaced(entries, blocks: blocks)
     }
 
     // MARK: - Allocation

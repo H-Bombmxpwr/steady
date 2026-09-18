@@ -89,6 +89,20 @@ struct SeventyFiveHardApp: App {
             }
             plan.days.append(day)
         }
+
+        // A couple of built workouts, so the Workouts tab has a library to
+        // open rather than only its empty state.
+        let upper = WorkoutPreset(name: "Upper Body", defaultMinutes: 45, category: .strength)
+        upper.exercises.append(PresetExercise(name: "Bench Press", orderIndex: 0,
+                                              sets: 4, reps: 8, weightLbs: 135))
+        upper.exercises.append(PresetExercise(name: "Bent Over Row", orderIndex: 1,
+                                              sets: 4, reps: 10, weightLbs: 95))
+        let legs = WorkoutPreset(name: "Lower Body", defaultMinutes: 50, category: .strength)
+        legs.exercises.append(PresetExercise(name: "Back Squat", orderIndex: 0,
+                                             sets: 5, reps: 5, weightLbs: 185))
+        plan.presets.append(upper)
+        plan.presets.append(legs)
+
         try? context.save()
     }
 
