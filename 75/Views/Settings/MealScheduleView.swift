@@ -87,17 +87,28 @@ private struct MealSlotRow: View {
             }
 
             if slot.enabled {
-                DatePicker("Time", selection: Binding(
-                    get: { time },
-                    set: { newValue in
-                        time = newValue
-                        let c = Calendar.current.dateComponents([.hour, .minute], from: newValue)
-                        slot.hour = c.hour ?? slot.hour
-                        slot.minute = c.minute ?? 0
-                        onChange()
-                    }
-                ), displayedComponents: .hourAndMinute)
-                .font(.subheadline)
+                // A wheel rather than the tap-then-type field: setting a
+                // meal time is a coarse choice you make by feel, and spinning
+                // to half seven is one gesture where typing it is four.
+                HStack {
+                    Text("Time")
+                        .font(.subheadline)
+                    Spacer()
+                    DatePicker("Time", selection: Binding(
+                        get: { time },
+                        set: { newValue in
+                            time = newValue
+                            let c = Calendar.current.dateComponents([.hour, .minute], from: newValue)
+                            slot.hour = c.hour ?? slot.hour
+                            slot.minute = c.minute ?? 0
+                            onChange()
+                        }
+                    ), displayedComponents: .hourAndMinute)
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .frame(maxWidth: 200, maxHeight: 110)
+                    .clipped()
+                }
 
                 Picker("Size", selection: Binding(
                     get: { sizeIndex },

@@ -119,6 +119,9 @@ enum MealPlanEngine {
             let date = Calendar.current.date(from: comps) ?? Date()
             let was = date.formatted(date: .omitted, time: .shortened)
             if isLocked { return "Planned for \(was) — this is when you actually ate." }
+            if role == .recovery && movedFrom > minutesOfDay {
+                return "Moved up from \(was) to land in the window after you train."
+            }
             return movedFrom > minutesOfDay
                 ? "Moved up from \(was) so it's cleared before you train."
                 : "Pushed back from \(was) — the day shifted around it."
@@ -262,10 +265,43 @@ enum MealPlanEngine {
         case .easy:     return recoveryWindowMinutes
         }
     }
-    /// Where a synthetic pre-session top-up lands when no real meal is close.
-    static let syntheticPreOffsetMinutes = 75
     /// And a synthetic recovery meal, after the session ends.
     static let syntheticRecoveryOffsetMinutes = 30
+    /// How far past the recovery window a real meal can sit and still be
+    /// worth pulling back into it, rather than leaving it alone and
+    /// inventing a snack. Lunch half an hour late is a nudge; dinner two
+    /// hours late is the evening, and moving it isn't a nudge at all.
+    static let recoveryPullReach = 60
+
+    /// Clock times people recognise.
+    ///
+    /// Every time on the plan that the engine worked out for itself — a meal
+    /// moved clear of a session, an invented top-up, a day re-spread after a
+    /// late start — lands on a quarter hour. "Eat at 2:12" is arithmetic
+    /// showing through; nobody plans a day in twelve-minute increments, and
+    /// seeing one is what makes the whole plan read as a machine's guess
+    /// rather than a schedule.
+    ///
+    /// Times the *user* set are never touched. If someone's breakfast is at
+    /// 7:05 it stays at 7:05 — this only rounds numbers the engine invented.
+    static let timeGranularityMinutes = 15
+
+    /// Which way to round, which matters more than it looks: a meal moved
+    /// earlier to clear a session has to round *earlier* or it eats into the
+    /// clearance it was just given, and one pushed after a session has to
+    /// round *later* or it lands back inside it.
+    enum Rounding { case down, up, nearest }
+
+    static func snapped(_ minutes: Int, _ rounding: Rounding = .nearest) -> Int {
+        let step = timeGranularityMinutes
+        let result: Int
+        switch rounding {
+        case .down:    result = (minutes / step) * step
+        case .up:      result = ((minutes + step - 1) / step) * step
+        case .nearest: result = ((minutes + step / 2) / step) * step
+        }
+        return min(max(result, 0), 23 * 60 + 45)
+    }
     /// Fat is pulled down before a session — it slows gastric emptying, and
     /// the last thing a hard effort needs is food still sitting there.
     static let preWorkoutFatFactor = 0.35
@@ -585,6 +621,10 @@ enum MealPlanEngine {
         entries = shiftedAroundTraining(entries, blocks: blocks,
                                         wake: day.wakeMinutesOfDay, baseLead: baseLead)
 
+        // And a meal that just missed the window after a hard session comes
+        // back to meet it, before the pass below decides it needs inventing.
+        entries = pulledIntoRecovery(entries, blocks: blocks)
+
         // Workout fuel that no meal is near enough to carry gets its own slot.
         for block in blocks {
             let start = block.minutesOfDay
@@ -596,7 +636,22 @@ enum MealPlanEngine {
                         && $0.minutesOfDay >= start - max(preWorkoutWindowMinutes, baseLead)
                 }
                 if !hasPre {
-                    let at = max(day.wakeMinutesOfDay ?? 0, start - syntheticPreOffsetMinutes)
+                    // Their number, not ours. Someone who set two hours and
+                    // gets a top-up seventy-five minutes out has been told
+                    // their setting is a suggestion.
+                    //
+                    // The one thing that overrides it is the hour: a dawn
+                    // session and a two-hour lead works out to eating at
+                    // five, and the answer to that isn't a 5 a.m. alarm, it's
+                    // a smaller gap. Same reason the real meals have a floor.
+                    //
+                    // And the floor itself yields to the session: a five
+                    // o'clock start means eating before five, whatever the
+                    // hour says about it.
+                    let earliest = max(earliestTopUpMinutes, day.wakeMinutesOfDay ?? 0)
+                    let latest = snapped(start - minimumTopUpLead, .down)
+                    let at = min(latest,
+                                 max(snapped(earliest, .up), snapped(start - baseLead, .down)))
                     entries.append(Entry(id: "pre-\(block.id)",
                                          meal: availableMeal(at: at, taken: Set(entries.map(\.meal))),
                                          label: "Pre-Session Fuel",
@@ -614,7 +669,8 @@ enum MealPlanEngine {
                         && $0.minutesOfDay <= end + window
                 }
                 if !hasPost {
-                    let at = min(23 * 60 + 30, end + syntheticRecoveryOffsetMinutes)
+                    let at = min(23 * 60 + 30,
+                                 snapped(end + syntheticRecoveryOffsetMinutes, .up))
                     entries.append(Entry(id: "recovery-\(block.id)",
                                          meal: availableMeal(at: at, taken: Set(entries.map(\.meal))),
                                          label: "Recovery Snack",
@@ -663,8 +719,10 @@ enum MealPlanEngine {
             // each pass moves strictly forward past one more session.
             for _ in 0..<blocks.count {
                 guard let block = clash(time, lead: lead) else { break }
-                let earlier = block.minutesOfDay - lead
-                let later = block.endMinutesOfDay + postSessionGap
+                // Rounded away from the session in both directions, so the
+                // quarter-hour never quietly shortens the clearance.
+                let earlier = snapped(block.minutesOfDay - lead, .down)
+                let later = snapped(block.endMinutesOfDay + postSessionGap, .up)
                 let canGoEarlier = earlier >= floor
                 let canGoLater = later <= bedtimeMinutes
 
@@ -704,12 +762,12 @@ enum MealPlanEngine {
         for i in result.indices.dropFirst() where !result[i].skipped && !result[i].isLocked {
             let earliest = result[i - 1].minutesOfDay + minimumMealGap
             guard result[i].minutesOfDay < earliest else { continue }
-            var time = earliest
+            var time = snapped(earliest, .up)
             // Pushed into a session? Go past the end of it instead.
             if let block = blocks.first(where: {
                 time >= $0.minutesOfDay && time < $0.endMinutesOfDay + postSessionGap
             }) {
-                time = block.endMinutesOfDay + postSessionGap
+                time = snapped(block.endMinutesOfDay + postSessionGap, .up)
             }
             time = min(time, 23 * 60 + 30)
             if result[i].shiftedFrom == nil, time != result[i].minutesOfDay {
@@ -719,6 +777,75 @@ enum MealPlanEngine {
         }
         return result.sorted { $0.minutesOfDay < $1.minutesOfDay }
     }
+
+    /// Bring the next meal back to meet a hard session, instead of inventing
+    /// a snack in front of it.
+    ///
+    /// Two hours of hard work finishing at eleven, with lunch on the schedule
+    /// for half twelve, is the case this exists for. The window that matters
+    /// after a hard effort closes an hour later, so the old answer was to
+    /// leave lunch alone and invent a Recovery Snack at half eleven — which
+    /// is two meals an hour apart, one of them filed under whichever meal
+    /// name happened to still be free. Nobody eats that way. They eat lunch,
+    /// early, because they just trained for two hours and they're hungry.
+    ///
+    /// So the meal moves: back to half an hour after the session, which is
+    /// where the carbohydrate wanted to go anyway. What comes out is one
+    /// meal at the right time rather than two at the wrong ones.
+    ///
+    /// Only hard sessions, and only meals that are *close*. Easy and moderate
+    /// work has no deadline worth rearranging a day around — their windows
+    /// are wide enough that the next normal meal already lands inside one —
+    /// and a dinner two hours past the window isn't a meal that slipped, it's
+    /// the evening. Dragging that back to half four would be the same kind of
+    /// wrong, in the other direction.
+    private static func pulledIntoRecovery(_ entries: [Entry],
+                                           blocks: [SessionBlock]) -> [Entry] {
+        var result = entries.sorted { $0.minutesOfDay < $1.minutesOfDay }
+
+        for block in blocks where block.session.intensity == .hard {
+            guard block.fuel.recoveryCarbs > 0 || block.fuel.recoveryProtein > 0 else { continue }
+            let end = block.endMinutesOfDay
+            let window = recoveryWindow(for: block.session.intensity)
+
+            // Something already lands in the window — nothing to move.
+            let covered = result.contains {
+                !$0.skipped && $0.minutesOfDay >= end && $0.minutesOfDay <= end + window
+            }
+            if covered { continue }
+
+            // The first meal after the window that's near enough to be a
+            // nudge. Locked meals are facts about when someone ate and don't
+            // move for anyone.
+            guard let i = result.indices.first(where: {
+                !result[$0].skipped && !result[$0].isLocked
+                    && result[$0].minutesOfDay > end + window
+                    && result[$0].minutesOfDay <= end + window + recoveryPullReach
+            }) else { continue }
+
+            // Not on top of the meal before it, and not before the session
+            // has actually finished.
+            let floor = i > 0 ? result[i - 1].minutesOfDay + minimumMealGap : end
+            let target = snapped(max(end + syntheticRecoveryOffsetMinutes, floor), .up)
+            guard target < result[i].minutesOfDay, target <= end + window else { continue }
+
+            if result[i].shiftedFrom == nil { result[i].shiftedFrom = result[i].minutesOfDay }
+            result[i].minutesOfDay = target
+        }
+
+        return result.sorted { $0.minutesOfDay < $1.minutesOfDay }
+    }
+
+    /// And the earliest an invented pre-session top-up may land.
+    ///
+    /// Earlier than a real meal's floor, because that's the whole point of a
+    /// top-up — it's the thing that makes a dawn session workable without a
+    /// proper breakfast in front of it — but not by much. Past here the
+    /// honest answer is a shorter gap, not an earlier alarm.
+    private static let earliestTopUpMinutes = 5 * 60 + 30
+    /// However tight the morning gets, a top-up still goes in *before* the
+    /// session rather than at the gun.
+    private static let minimumTopUpLead = 15
 
     /// The earliest a planned meal should ever be pulled back to.
     ///
@@ -769,11 +896,11 @@ enum MealPlanEngine {
 
         // Spread whatever survived evenly across the hours that are left.
         if kept.count == 1 {
-            kept[0].minutesOfDay = max(kept[0].minutesOfDay, start)
+            kept[0].minutesOfDay = snapped(max(kept[0].minutesOfDay, start))
         } else {
             let step = Double(end - start) / Double(kept.count - 1)
             for i in kept.indices {
-                kept[i].minutesOfDay = start + Int((Double(i) * step).rounded())
+                kept[i].minutesOfDay = snapped(start + Int((Double(i) * step).rounded()))
             }
         }
         return kept

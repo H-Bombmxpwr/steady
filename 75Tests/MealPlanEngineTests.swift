@@ -555,6 +555,118 @@ final class MealPlanEngineTests: XCTestCase {
         XCTAssertLessThanOrEqual(short, 15 * 60)
     }
 
+    /// A hard two-hour session ending at eleven and a lunch at half twelve is
+    /// the case the recovery pull exists for: one meal moved, not one meal
+    /// left alone with a snack invented in front of it.
+    func testHardSessionPullsTheNextMealIntoTheRecoveryWindow() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let hard = session(at: 9, minutes: 120, intensity: .hard)
+        let result = build(day: day, plan: p, targets: targets(), sessions: [hard])
+
+        guard let lunch = result.meals.first(where: { $0.meal == .lunch }) else {
+            return XCTFail("lunch should be on the plan")
+        }
+        XCTAssertEqual(lunch.role, .recovery)
+        XCTAssertEqual(lunch.minutesOfDay, 11 * 60 + 30,
+                       "lunch should come back to half an hour after the session")
+        XCTAssertEqual(lunch.movedFrom, 12 * 60 + 30)
+        XCTAssertFalse(result.meals.contains { $0.isSynthetic },
+                       "moving lunch means there's nothing left to invent")
+    }
+
+    /// The same rule, later in the day — it's about the session, not about
+    /// which meal happens to be next.
+    func testTheAfternoonSnackGetsPulledTheSameWay() {
+        let p = plan()
+        p.mealSlots.forEach { if $0.meal == .afternoonSnack { $0.enabled = true } }
+        let day = DayLog(date: noon)
+        let hard = session(at: 13, minutes: 60, intensity: .hard)
+        let result = build(day: day, plan: p, targets: targets(), sessions: [hard])
+
+        guard let snack = result.meals.first(where: { $0.meal == .afternoonSnack }) else {
+            return XCTFail("the afternoon snack should be on the plan")
+        }
+        XCTAssertEqual(snack.role, .recovery)
+        XCTAssertEqual(snack.minutesOfDay, 14 * 60 + 30)
+    }
+
+    /// Easy and moderate work has no deadline worth rearranging a day around,
+    /// and their windows are wide enough that the next meal already fits.
+    func testAModerateSessionLeavesTheNextMealWhereItIs() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let moderate = session(at: 9, minutes: 120, intensity: .moderate)
+        let result = build(day: day, plan: p, targets: targets(), sessions: [moderate])
+
+        let lunch = result.meals.first { $0.meal == .lunch }
+        XCTAssertEqual(lunch?.minutesOfDay, 12 * 60 + 30, "moderate work doesn't move lunch")
+        XCTAssertEqual(lunch?.role, .recovery, "it's still the meal that does the job")
+    }
+
+    /// A dinner two hours past the window isn't a meal that slipped, it's the
+    /// evening. Pulling it to half four would be the same kind of wrong.
+    func testAMealTooFarPastTheWindowIsLeftAlone() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let hard = session(at: 15, minutes: 60, intensity: .hard)
+        let result = build(day: day, plan: p, targets: targets(), sessions: [hard])
+
+        XCTAssertEqual(result.meals.first { $0.meal == .dinner }?.minutesOfDay, 18 * 60 + 30)
+        XCTAssertTrue(result.meals.contains { $0.isSynthetic && $0.role == .recovery },
+                      "so the invented snack is still the right answer here")
+    }
+
+    // MARK: - Times people recognise
+
+    /// "Eat at 2:12" is arithmetic showing through. Every time the engine
+    /// worked out for itself lands on a quarter hour.
+    func testEngineTimesLandOnTheQuarterHour() {
+        let p = plan()
+        p.mealSlots.forEach {
+            if $0.meal == .morningSnack || $0.meal == .afternoonSnack { $0.enabled = true }
+        }
+        let day = DayLog(date: noon)
+
+        for hour in [7, 9, 11, 13, 15, 17] {
+            for intensity in [WorkoutIntensity.easy, .moderate, .hard] {
+                let s = session(at: hour, minutes: 120, intensity: intensity)
+                let result = build(day: day, plan: p, targets: targets(), sessions: [s])
+                for meal in result.meals where meal.movedFrom != nil || meal.isSynthetic {
+                    XCTAssertEqual(meal.minutesOfDay % 15, 0,
+                                   "\(meal.label) at \(meal.timeString) (\(hour):00 \(intensity))")
+                }
+            }
+        }
+    }
+
+    /// A time the *user* set is never rounded. Breakfast at 7:05 stays at 7:05.
+    func testAUserSetTimeIsLeftExactlyWhereTheyPutIt() {
+        let p = plan()
+        p.mealSlots.forEach { if $0.meal == .breakfast { $0.hour = 7; $0.minute = 5 } }
+        let day = DayLog(date: noon)
+        let result = build(day: day, plan: p, targets: targets())
+
+        XCTAssertEqual(result.meals.first { $0.meal == .breakfast }?.minutesOfDay, 7 * 60 + 5)
+    }
+
+    /// An invented pre-session top-up used to land 75 minutes out whatever
+    /// the athlete had asked for. It's their stomach and their setting.
+    func testTheInventedPreSessionSlotHonoursTheLeadSetting() {
+        func preTime(lead: Int) -> Int? {
+            let p = plan()
+            p.preSessionLeadMinutes = lead
+            let day = DayLog(date: noon)
+            // Late enough in the morning that no scheduled meal covers it.
+            let s = session(at: 11, minutes: 60, intensity: .hard)
+            return build(day: day, plan: p, targets: targets(), sessions: [s])
+                .meals.first { $0.isSynthetic && $0.role == .preWorkout }?.minutesOfDay
+        }
+
+        XCTAssertEqual(preTime(lead: 90), 11 * 60 - 90, "ninety minutes means ninety minutes")
+        XCTAssertEqual(preTime(lead: 120), 11 * 60 - 120)
+    }
+
     // MARK: - Following the log
 
     /// The plan says 12:20, the log says 1:30. The row follows the food —
