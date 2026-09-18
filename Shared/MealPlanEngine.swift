@@ -114,8 +114,13 @@ enum MealPlanEngine {
         let id: String
         let session: TrainingSession
         let fuel: FuelingPlan
+        /// Called off for today. Still drawn — there has to be something to
+        /// tap to put it back — but it fuels nothing and costs nothing.
+        var isSkipped = false
 
-        static func == (lhs: SessionBlock, rhs: SessionBlock) -> Bool { lhs.id == rhs.id }
+        static func == (lhs: SessionBlock, rhs: SessionBlock) -> Bool {
+            lhs.id == rhs.id && lhs.isSkipped == rhs.isSkipped
+        }
 
         var minutesOfDay: Int { session.hour * 60 + session.minute }
         var endMinutesOfDay: Int { minutesOfDay + session.minutes }
@@ -201,8 +206,10 @@ enum MealPlanEngine {
         }
 
         private func isSkippedMeal(_ item: Item) -> Bool {
-            if case .meal(let m) = item { return m.skipped }
-            return false
+            switch item {
+            case .meal(let m): return m.skipped
+            case .session(let s): return s.isSkipped
+            }
         }
     }
 
@@ -246,6 +253,7 @@ enum MealPlanEngine {
                      targets: DailyTargets,
                      sessions: [TrainingSession],
                      fuels: [FuelingPlan],
+                     skipped: [SessionBlock] = [],
                      iron: IronCoach.Finding? = nil,
                      now: Date = Date()) -> DayPlan {
 
@@ -256,10 +264,17 @@ enum MealPlanEngine {
             return (c.hour ?? 0) * 60 + (c.minute ?? 0)
         }()
 
-        // Sessions and their fueling, paired and in clock order.
+        // Sessions and their fueling, paired and in clock order. Only the
+        // live ones — `blocks` drives every calculation below, so a called-off
+        // session simply isn't in it.
         let blocks = zip(sessions, fuels)
             .map { SessionBlock(id: $0.0.id, session: $0.0, fuel: $0.1) }
             .sorted { $0.minutesOfDay < $1.minutesOfDay }
+        let skippedBlocks = skipped.map { block -> SessionBlock in
+            var copy = block
+            copy.isSkipped = true
+            return copy
+        }
 
         // Carbs taken in mid-session belong to the session, not to a meal.
         let duringCarbs = blocks.reduce(0) { $0 + $1.fuel.duringCarbs }
@@ -271,7 +286,11 @@ enum MealPlanEngine {
         // --- Which slots are in play
         var entries = buildEntries(day: day, plan: plan, blocks: blocks)
         guard !entries.isEmpty else {
-            return DayPlan(date: date, items: blocks.map(Item.session), targets: targets,
+            return DayPlan(date: date,
+                           items: (blocks + skippedBlocks)
+                               .sorted { $0.minutesOfDay < $1.minutesOfDay }
+                               .map(Item.session),
+                           targets: targets,
                            headline: headline(targets: targets, mealCount: 0, blocks: blocks),
                            subhead: "No meals are switched on. Add some under Settings → Meal Schedule.",
                            advisories: [], iron: iron, duringSessionCarbs: duringCarbs)
@@ -321,7 +340,8 @@ enum MealPlanEngine {
         // --- Assemble
         let ironNote = (iron?.status.steersMeals ?? false) ? (iron?.mealNote ?? "") : ""
         let mealTargets = entries.map { $0.finish(day: day, blocks: blocks, ironNote: ironNote) }
-        var items: [Item] = mealTargets.map(Item.meal) + blocks.map(Item.session)
+        var items: [Item] = mealTargets.map(Item.meal)
+            + (blocks + skippedBlocks).map(Item.session)
         items.sort { ($0.minutesOfDay, $0.sortRank) < ($1.minutesOfDay, $1.sortRank) }
 
         // Anything the fueling engine wanted to say — heat, sweat tests, caps.
@@ -873,22 +893,28 @@ extension MealPlanEngine {
                      now: Date = Date()) -> DayPlan {
         planModel.ensureMealSchedule()
 
-        var sessions = planModel.sessions(on: date)
-        if sessions.isEmpty {
-            sessions = day.workouts
-                .filter { $0.minutes > 0 }
-                .map(TrainingSession.init)
-                .sorted { ($0.hour, $0.minute) < ($1.hour, $1.minute) }
-        }
-
         let sweat = planModel.sweatProfile()
-        let fuels = sessions.map {
-            FuelingEngine.plan(for: $0,
+        func fuel(_ session: TrainingSession) -> FuelingPlan {
+            FuelingEngine.plan(for: session,
                                bodyweightLbs: planModel.currentWeight,
                                sweat: sweat,
                                weather: planModel.weatherAwareFueling ? weather : nil,
                                cyclePhase: cyclePhase)
         }
+
+        var everything = planModel.allSessions(on: date)
+        if everything.isEmpty {
+            everything = day.workouts
+                .filter { $0.minutes > 0 }
+                .map(TrainingSession.init)
+                .sorted { ($0.hour, $0.minute) < ($1.hour, $1.minute) }
+        }
+        let sessions = everything.filter { !day.isWorkoutSkipped($0.skipKey) }
+        let skipped = everything
+            .filter { day.isWorkoutSkipped($0.skipKey) }
+            .map { SessionBlock(id: $0.id, session: $0, fuel: fuel($0), isSkipped: true) }
+
+        let fuels = sessions.map(fuel)
 
         let iron = IronCoach.evaluate(labs: planModel.latestIronLabs,
                                       sex: profile.sex,
@@ -901,6 +927,7 @@ extension MealPlanEngine {
                                    targets: targets,
                                    sessions: sessions,
                                    fuels: fuels,
+                                   skipped: skipped,
                                    iron: iron,
                                    now: now)
     }

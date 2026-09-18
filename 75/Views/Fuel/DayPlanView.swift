@@ -15,7 +15,22 @@ struct DayPlanView: View {
     var plan: Plan
     var profile: UserProfile
 
-    @State private var date = Calendar.current.startOfDay(for: Date())
+    /// False when this is pushed onto an existing navigation stack rather
+    /// than being a tab's root. A view that supplies its own NavigationStack
+    /// cannot be pushed onto one — the push lands on a dead end — so the
+    /// stack belongs to whoever owns the screen, not to the screen.
+    var isRoot: Bool = true
+
+    @State private var date: Date
+
+    init(plan: Plan, profile: UserProfile, date: Date? = nil, isRoot: Bool = true) {
+        self.plan = plan
+        self.profile = profile
+        self.isRoot = isRoot
+        let start = Calendar.current.startOfDay(for: date ?? Date())
+        _date = State(initialValue: start)
+    }
+
     @State private var expanded: Set<String> = []
     @State private var showShapeSheet = false
     @State private var showSettings = false
@@ -44,7 +59,16 @@ struct DayPlanView: View {
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
 
     var body: some View {
-        NavigationStack {
+        if isRoot {
+            NavigationStack { content }
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        Group {
             ScrollViewReader { proxy in
                 ScrollView {
                     let today = dayPlan
@@ -71,7 +95,9 @@ struct DayPlanView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                // Pushed, the leading slot belongs to the back button, and
+                // Settings is already a tap away from wherever you came from.
+                ToolbarItem(placement: isRoot ? .topBarLeading : .topBarTrailing) {
                     Button {
                         Haptics.tap()
                         showShapeSheet = true
@@ -81,11 +107,13 @@ struct DayPlanView: View {
                     }
                     .accessibilityIdentifier("dayplan.adjust")
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSettings = true } label: {
-                        Image(systemName: "gearshape")
+                if isRoot {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showSettings = true } label: {
+                            Image(systemName: "gearshape")
+                        }
+                        .accessibilityLabel("Settings")
                     }
-                    .accessibilityLabel("Settings")
                 }
             }
             .sheet(isPresented: $showShapeSheet) {
@@ -230,7 +258,9 @@ struct DayPlanView: View {
                                     onIdeas: { ideasRequest = MealIdeasRequest(target: target, brief: brief(for: target, in: p)) },
                                     onSkip: { skip(target) })
                     case .session(let block):
-                        SessionPlanRow(block: block) { fuelDetail = block.fuel }
+                        SessionPlanRow(block: block,
+                                       onDetail: { fuelDetail = block.fuel },
+                                       onToggleSkip: { toggleSkip(block) })
                     }
                 }
                 .id(item.id)
@@ -272,6 +302,17 @@ struct DayPlanView: View {
         Haptics.tap()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+        }
+    }
+
+    /// Calling a session off re-plans the whole day around it, not just the
+    /// timeline row: the budget loses its burn, the carb band steps down, and
+    /// the pre-session and recovery meals stop being pre-session and recovery
+    /// meals.
+    private func toggleSkip(_ block: MealPlanEngine.SessionBlock) {
+        Haptics.success()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            day.setWorkoutSkipped(block.session.skipKey, !block.isSkipped)
         }
     }
 
@@ -440,28 +481,23 @@ private struct MealPlanRow: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    // Equal-width pills rather than the stock bordered
+                    // styles: those size themselves to their labels, so
+                    // "Log", "Ideas" and "Skipped it" came out three
+                    // different widths and two different heights in a row
+                    // that reads as one control.
                     HStack(spacing: 8) {
                         if !target.skipped {
-                            Button(action: onLog) {
-                                Label("Log", systemImage: "plus.circle.fill").font(.caption.bold())
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(tint)
-
-                            Button(action: onIdeas) {
-                                Label("Ideas", systemImage: "sparkles").font(.caption.bold())
-                            }
-                            .buttonStyle(.bordered)
+                            MealActionButton(title: "Log", icon: "plus",
+                                             tint: tint, filled: true, action: onLog)
+                            MealActionButton(title: "Ideas", icon: "sparkles",
+                                             tint: tint, action: onIdeas)
                         }
-                        Button(action: onSkip) {
-                            Label(target.skipped ? "Un-skip" : "Skipped it",
-                                  systemImage: target.skipped ? "arrow.uturn.backward" : "xmark.circle")
-                                .font(.caption.bold())
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(Theme.textDim)
+                        MealActionButton(title: target.skipped ? "Un-skip" : "Skipped it",
+                                         icon: target.skipped ? "arrow.uturn.backward" : "xmark",
+                                         tint: Theme.textDim, action: onSkip)
                     }
-                    .padding(.top, 2)
+                    .padding(.top, 4)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -487,6 +523,40 @@ private struct MealPlanRow: View {
     }
 }
 
+/// One of the three actions under an expanded meal. Fixed height, equal
+/// width, same icon weight — so the row reads as a single control instead of
+/// three buttons that happen to be next to each other.
+private struct MealActionButton: View {
+    let title: String
+    let icon: String
+    let tint: Color
+    var filled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.caption2.weight(.bold))
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .foregroundStyle(filled ? Color.white : tint)
+            .frame(maxWidth: .infinity)
+            .frame(height: 34)
+            .background(
+                Capsule().fill(filled
+                               ? AnyShapeStyle(tint)
+                               : AnyShapeStyle(tint.opacity(0.15)))
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+    }
+}
+
 private struct MealProgressBar: View {
     let progress: Double
     let tint: Color
@@ -509,56 +579,109 @@ private struct MealProgressBar: View {
 private struct SessionPlanRow: View {
     let block: MealPlanEngine.SessionBlock
     let onDetail: () -> Void
+    let onToggleSkip: () -> Void
+
+    private var tint: Color { block.isSkipped ? Theme.textDim : Theme.workoutTint }
 
     var body: some View {
-        Button(action: onDetail) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: block.session.category.icon)
-                        .font(.caption)
-                        .foregroundStyle(Theme.workoutTint)
-                    Text(block.session.name)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    if block.session.completed {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: block.session.category.icon)
+                    .font(.caption)
+                    .foregroundStyle(tint)
+                Text(block.session.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(block.isSkipped ? Theme.textDim : .primary)
+                    .strikethrough(block.isSkipped)
+                    .lineLimit(1)
+                if block.session.completed && !block.isSkipped {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
+                Spacer(minLength: 0)
+
+                if block.session.canBeSkipped {
+                    Menu {
+                        if block.isSkipped {
+                            Button {
+                                onToggleSkip()
+                            } label: {
+                                Label("Put it back on the plan", systemImage: "arrow.uturn.backward")
+                            }
+                        } else {
+                            Button {
+                                onDetail()
+                            } label: {
+                                Label("See the fueling", systemImage: "drop.fill")
+                            }
+                            Button(role: .destructive) {
+                                onToggleSkip()
+                            } label: {
+                                Label("Not doing this today", systemImage: "xmark.circle")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.textDim)
+                            .padding(.leading, 4)
                     }
-                    Spacer(minLength: 0)
+                    .accessibilityIdentifier("session.menu")
+                } else {
                     Image(systemName: "chevron.right")
                         .font(.caption2)
                         .foregroundStyle(Theme.textDim)
                 }
+            }
 
-                Text("\(block.session.minutes) min · \(block.session.intensity.label) · \(block.fuel.burnCalories) cal")
+            if block.isSkipped {
+                Text("Called off — the day's calories and carbs came down with it.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                if let during = block.duringLine {
-                    Label(during, systemImage: "bolt.fill")
-                        .font(.caption)
-                        .foregroundStyle(Theme.foodTint)
-                        .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: onToggleSkip) {
+                    Label("Put it back", systemImage: "arrow.uturn.backward")
+                        .font(.caption.bold())
+                        .foregroundStyle(Theme.workoutTint)
                 }
+                .buttonStyle(.pressable)
+                .padding(.top, 2)
+            } else {
+                Button(action: onDetail) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("\(block.session.minutes) min · \(block.session.intensity.label) · \(block.fuel.burnCalories) cal")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
 
-                Label(block.hydrationLine, systemImage: "drop.fill")
-                    .font(.caption)
-                    .foregroundStyle(Theme.waterTint)
+                        if let during = block.duringLine {
+                            Label(during, systemImage: "bolt.fill")
+                                .font(.caption)
+                                .foregroundStyle(Theme.foodTint)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Label(block.hydrationLine, systemImage: "drop.fill")
+                            .font(.caption)
+                            .foregroundStyle(Theme.waterTint)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Theme.workoutTint.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Theme.workoutTint.opacity(0.28))
-                    )
-            )
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(tint.opacity(block.isSkipped ? 0.05 : 0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(tint.opacity(block.isSkipped ? 0.14 : 0.28))
+                )
+        )
+        .opacity(block.isSkipped ? 0.65 : 1)
     }
 }
 

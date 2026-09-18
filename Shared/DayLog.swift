@@ -124,6 +124,10 @@ final class DayLog {
     /// The meal being planned around — a dinner out, a long lunch. It takes a
     /// bigger share and everything else shrinks to pay for it.
     var bigMealRaw: String? = nil
+    /// Sessions called off for today (`TrainingSession.skipKey`). A workout
+    /// that isn't happening shouldn't be paying for carbs, and the day's
+    /// budget has to come down with it.
+    var skippedWorkoutsRaw: [String] = []
 
     @Relationship(deleteRule: .cascade) var workouts: [WorkoutLog]
     @Relationship(deleteRule: .cascade) var foods: [FoodLog]
@@ -202,6 +206,21 @@ final class DayLog {
 
     func isSkipped(_ meal: Meal) -> Bool { skippedMealsRaw.contains(meal.rawValue) }
 
+    func isWorkoutSkipped(_ key: String) -> Bool { skippedWorkoutsRaw.contains(key) }
+
+    /// Call a session off for today, or put it back. The day's calories,
+    /// carbs, and the meals built on them all follow from this.
+    func setWorkoutSkipped(_ key: String, _ skipped: Bool) {
+        if skipped {
+            guard !skippedWorkoutsRaw.contains(key) else { return }
+            skippedWorkoutsRaw.append(key)
+        } else {
+            skippedWorkoutsRaw.removeAll { $0 == key }
+        }
+        try? modelContext?.save()
+        WidgetSnapshot.refreshTotals(from: self)
+    }
+
     /// Mark a meal skipped (or un-skip it) and save — the reallocation itself
     /// falls out of the plan being recomputed from this.
     func setSkipped(_ meal: Meal, _ skipped: Bool) {
@@ -234,11 +253,13 @@ final class DayLog {
         wakeMinute = nil
         skippedMealsRaw = []
         bigMealRaw = nil
+        skippedWorkoutsRaw = []
         try? modelContext?.save()
     }
 
     var hasDayShapeChanges: Bool {
         wakeHour != nil || !skippedMealsRaw.isEmpty || bigMealRaw != nil
+            || !skippedWorkoutsRaw.isEmpty
     }
 
     // MARK: Food mutations — the only way food should be added or removed.

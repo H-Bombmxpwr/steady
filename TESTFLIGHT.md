@@ -33,7 +33,7 @@ How to get **Steady** onto other people's phones with TestFlight, and what still
 | Real bundle ID (`com.hunter.seventyfivehard`) | ✅ |
 | Development team set (`U3PXY283T3`), automatic signing | ✅ |
 | App icon (1024 + 10 alternate icons) | ✅ |
-| Version / build number (`1.0 (6.7)`) | ✅ |
+| Version / build number (`1.2 (6.8)`) | ✅ |
 | Every permission has a usage string (Health, Camera, Mic, Speech, Face ID, Photos, Calendar) | ✅ |
 | Export compliance pre-answered (`ITSAppUsesNonExemptEncryption = NO`) | ✅ — no export question on every upload |
 | App category set (Lifestyle) | ✅ |
@@ -306,6 +306,27 @@ Steady has two things a first-time tester will get stuck on. Put both in the bet
 > **Please allow Health access** when asked — steps, sleep, and weigh-ins come from there, including Garmin devices that sync to Apple Health.
 >
 > Things I'd love feedback on: does the calorie budget feel right after a few days? Do the widgets update? Anything confusing in onboarding?
+
+### What's new in 1.2 (6.8) — the Day Plan
+
+Worth calling out separately in the build's "What to Test" box, since it's a new tab rather than a tweak:
+
+> **New: the Day Plan tab.** Instead of one calorie number for the whole day, you now get a target per meal — breakfast, lunch, dinner, and any snacks you switch on — laid out in clock order with your workouts in between. Each meal shows what to aim for in calories, carbs, protein and fat, and why it's sized that way.
+>
+> The parts I'd most like broken:
+>
+> - **"Skipped it."** Tap it on any meal and everything still ahead of you re-plans around it. If it genuinely can't be made up, it should say so rather than printing an enormous dinner — tell me if it ever does the latter.
+> - **Adjust → the day started late.** Meals should move into the hours you've actually got, not vanish.
+> - **Adjust → planning around a big meal.** Pick one and the others should shrink.
+> - **Workouts on the plan.** Log one with an intensity and a start time; the meals either side should change. Pre-session meals go carb-heavy and low fat, post-session gets protein.
+> - **Calling a session off.** Tap the ⋯ on any planned workout → "Not doing this today". The day's calories and carbs should drop, and the meals either side should stop being pre-session and recovery meals. It's still on screen so you can put it back.
+> - **The last tab.** Tapping it opens a small sheet with Photos and Workouts instead of the old full-screen "More" list — pick one and the tab becomes it.
+> - **Settings → Food Preferences.** Add the stores you shop and any foods you won't eat, then use "What Should I Eat?" on a meal. It should never suggest something on your exclusion list — if it does, that's a bug I want to hear about immediately.
+> - **Settings → Meal Schedule.** Change your meal times and sizes, or switch snacks on.
+> - **Recipes.** Paste a link, then "Save as a Meal" — it stores the whole batch and how many servings it makes, so logging it later is a servings stepper.
+> - **Blood work → Iron.** If you have a recent ferritin number, entering it turns on iron coaching. It gives food guidance only and will always point you at a doctor; it will never tell you to take a supplement.
+>
+> Athletes: protein now defaults to **1 g per pound of bodyweight**. You can switch that off in Settings → Meals & Food to go back to the load-based g/kg bands.
 >
 > Full docs — how the adaptive budget works, every way to log food, fueling, privacy: **https://h-bombmxpwr.github.io/steady/**
 >
@@ -317,8 +338,8 @@ Requires **iOS 18.0 or later**, iPhone only. Worth stating up front so nobody in
 
 ## Shipping updates
 
-- **Every upload needs a higher build number.** You're at `1.0 (6.7)`, so the next one is `1.0 (6.8)`. Bump `CURRENT_PROJECT_VERSION` in build settings, or let Xcode's "Manage version and build number" do it during distribution. Reusing a build number is rejected instantly.
-- `MARKETING_VERSION` (`1.0`) only needs bumping for a user-visible release.
+- **Every upload needs a higher build number.** You're at `1.2 (6.8)`, so the next one is `1.2 (6.9)`. Bump `CURRENT_PROJECT_VERSION` in build settings, or let Xcode's "Manage version and build number" do it during distribution. Reusing a build number is rejected instantly.
+- `MARKETING_VERSION` (`1.2`) only needs bumping for a user-visible release.
 - **Builds expire after 90 days.** Testers get cut off when that happens, so plan on uploading something at least quarterly during a long beta.
 - Subsequent external builds usually skip review unless you change something significant — but Apple decides, not you.
 - Crash reports land in Xcode → **Organizer → Crashes**, aggregated across testers. Written feedback lands in App Store Connect → TestFlight → **Feedback**.

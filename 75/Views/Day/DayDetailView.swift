@@ -174,7 +174,7 @@ struct DayDetailView: View {
                     Label("What Should I Eat?", systemImage: "wand.and.stars")
                 }
                 NavigationLink {
-                    DayPlanView(plan: plan, profile: profile)
+                    DayPlanView(plan: plan, profile: profile, date: date, isRoot: false)
                 } label: {
                     Label("Plan the Whole Day", systemImage: "list.bullet.clipboard")
                 }

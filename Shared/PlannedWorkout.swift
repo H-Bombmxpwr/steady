@@ -103,6 +103,14 @@ struct TrainingSession: Identifiable, Hashable {
     let distanceMiles: Double?
     let origin: Origin
     let completed: Bool
+    /// A stable handle for "I'm not doing this one today."
+    ///
+    /// Derived from content rather than from a SwiftData object id on
+    /// purpose: a recurring Monday slot has no per-day object to hang a flag
+    /// on, and an object id wouldn't survive being read back on another
+    /// launch anyway. Name plus time plus length is specific enough that two
+    /// sessions on one day don't collide in practice.
+    let skipKey: String
 
     var timeString: String {
         let comps = DateComponents(hour: hour, minute: minute)
@@ -131,6 +139,8 @@ struct TrainingSession: Identifiable, Hashable {
         self.distanceMiles = nil
         self.origin = .schedule
         self.completed = false
+        self.skipKey = TrainingSession.skipKey(name: entry.name, hour: entry.hour,
+                                               minute: entry.minute, minutes: entry.minutes)
     }
 
     /// Build one directly. Everything else about a session is derived, so
@@ -147,8 +157,11 @@ struct TrainingSession: Identifiable, Hashable {
          tss: Double? = nil,
          distanceMiles: Double? = nil,
          origin: Origin = .planned,
-         completed: Bool = false) {
+         completed: Bool = false,
+         skipKey: String? = nil) {
         self.id = id
+        self.skipKey = skipKey ?? TrainingSession.skipKey(name: name, hour: hour,
+                                                          minute: minute, minutes: minutes)
         self.name = name
         self.minutes = minutes
         self.hour = hour
@@ -181,6 +194,10 @@ struct TrainingSession: Identifiable, Hashable {
         self.distanceMiles = nil
         self.origin = .logged
         self.completed = true
+        self.skipKey = TrainingSession.skipKey(name: log.name,
+                                               hour: log.minutesOfDay / 60,
+                                               minute: log.minutesOfDay % 60,
+                                               minutes: log.minutes)
     }
 
     init(_ planned: PlannedWorkout) {
@@ -196,5 +213,17 @@ struct TrainingSession: Identifiable, Hashable {
         self.distanceMiles = planned.distanceMiles
         self.origin = planned.isImported ? .trainingPeaks : .planned
         self.completed = planned.completedAt != nil
+        // An imported session already has a stable identifier of its own.
+        self.skipKey = planned.externalID
+            ?? TrainingSession.skipKey(name: planned.name, hour: planned.hour,
+                                       minute: planned.minute, minutes: planned.minutes)
     }
+
+    static func skipKey(name: String, hour: Int, minute: Int, minutes: Int) -> String {
+        "\(name.lowercased())|\(hour):\(minute)|\(minutes)"
+    }
+
+    /// Already-finished work can't be un-done by skipping it — the calories
+    /// were spent. Only what's still ahead can be called off.
+    var canBeSkipped: Bool { origin != .logged }
 }

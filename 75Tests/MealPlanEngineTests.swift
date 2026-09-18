@@ -320,6 +320,99 @@ final class MealPlanEngineTests: XCTestCase {
                        "what's left of the day is the budget minus what went in")
     }
 
+    // MARK: - Calling a session off
+
+    /// The row going grey is the least of it. A session that isn't happening
+    /// must stop fuelling the day: no pre-load, no recovery meal, no
+    /// mid-session carbs.
+    func testSkippedSessionStopsFuellingTheDay() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let ride = session(at: 14, minutes: 120)
+
+        let before = build(day: day, plan: p, targets: targets(), sessions: [ride])
+        XCTAssertTrue(before.meals.contains { $0.role == .preWorkout })
+        XCTAssertTrue(before.meals.contains { $0.role == .recovery })
+        XCTAssertGreaterThan(before.duringSessionCarbs, 0)
+
+        // Called off: the engine is handed it as a skipped block instead.
+        let after = MealPlanEngine.plan(date: day.date, day: day, plan: p, profile: profile(),
+                                        targets: targets(), sessions: [], fuels: [],
+                                        skipped: [MealPlanEngine.SessionBlock(
+                                            id: ride.id, session: ride,
+                                            fuel: fuel(for: ride), isSkipped: true)],
+                                        now: noon)
+
+        XCTAssertEqual(after.duringSessionCarbs, 0, "nothing is being eaten mid-ride")
+        XCTAssertTrue(after.meals.allSatisfy { $0.role == .normal },
+                      "no meal should still be timed around a session that isn't happening")
+        XCTAssertFalse(after.meals.contains(where: \.isSynthetic),
+                       "the recovery snack existed only to feed the session")
+        // But it's still on screen, so it can be put back.
+        XCTAssertEqual(after.sessions.count, 1)
+        XCTAssertTrue(after.sessions[0].isSkipped)
+    }
+
+    /// And the day's own targets have to come down — a rest day's food is not
+    /// a training day's food. This is the path every other screen reads.
+    func testSkippingASessionTakesItOutOfTheDaysTargets() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        p.days.append(day)
+
+        let workout = WorkoutScheduleEntry(weekday: Calendar.current.component(.weekday, from: day.date),
+                                           name: "Threshold intervals", minutes: 90,
+                                           hour: 17, minute: 0,
+                                           category: .cardio, intensity: .hard)
+        p.schedule.append(workout)
+
+        let live = p.sessions(on: day.date)
+        XCTAssertEqual(live.count, 1)
+        let trainingTargets = AthleteEngine.targets(profile: profile(), plan: p,
+                                                    maintenanceTDEE: 2600,
+                                                    sessions: live)
+
+        day.setWorkoutSkipped(live[0].skipKey, true)
+
+        XCTAssertTrue(p.sessions(on: day.date).isEmpty,
+                      "a called-off session must not reach the engines")
+        XCTAssertEqual(p.allSessions(on: day.date).count, 1,
+                       "but it's still on the books, so it can be put back")
+
+        let restTargets = AthleteEngine.targets(profile: profile(), plan: p,
+                                                maintenanceTDEE: 2600,
+                                                sessions: p.sessions(on: day.date))
+        XCTAssertLessThan(restTargets.calories, trainingTargets.calories)
+        XCTAssertLessThan(restTargets.carbGrams, trainingTargets.carbGrams)
+        XCTAssertEqual(restTargets.load, .rest)
+    }
+
+    /// Work already done can't be called off — the calories were spent.
+    func testLoggedWorkoutsCannotBeSkipped() {
+        let logged = WorkoutLog(name: "Morning run", minutes: 45, category: .cardio,
+                                intensity: .moderate, startHour: 6, startMinute: 30)
+        XCTAssertFalse(TrainingSession(logged).canBeSkipped)
+        XCTAssertTrue(session(at: 9).canBeSkipped)
+    }
+
+    /// Putting it back has to restore the day exactly.
+    func testUnskippingRestoresTheSession() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        p.days.append(day)
+        let entry = WorkoutScheduleEntry(weekday: Calendar.current.component(.weekday, from: day.date),
+                                         name: "Easy spin", minutes: 60, hour: 7, minute: 0)
+        p.schedule.append(entry)
+
+        let key = p.sessions(on: day.date)[0].skipKey
+        day.setWorkoutSkipped(key, true)
+        XCTAssertTrue(p.sessions(on: day.date).isEmpty)
+
+        day.setWorkoutSkipped(key, false)
+        XCTAssertEqual(p.sessions(on: day.date).count, 1)
+        XCTAssertFalse(day.hasDayShapeChanges)
+    }
+
     // MARK: - Protein
 
     /// Spread, not stacked: a day that puts 150 g of protein into dinner and

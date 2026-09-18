@@ -27,6 +27,14 @@ struct DayShapeSheet: View {
 
     private var slots: [MealSlot] { plan.activeMealSlots }
 
+    /// Everything on the books today, called off or not — you have to be able
+    /// to see a skipped session to put it back.
+    private var sessions: [TrainingSession] {
+        let planned = plan.allSessions(on: day.date)
+        guard planned.isEmpty else { return planned }
+        return day.workouts.filter { $0.minutes > 0 }.map(TrainingSession.init)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -90,6 +98,31 @@ struct DayShapeSheet: View {
                     Text("Skipped today")
                 } footer: {
                     Text("Marking a meal skipped hands its calories and macros to the meals still ahead of you. If it genuinely won't fit in what's left, the plan says so instead of printing a dinner nobody could eat.")
+                }
+
+                // --- Training
+                if !sessions.isEmpty {
+                    Section {
+                        ForEach(sessions, id: \.skipKey) { session in
+                            Toggle(isOn: Binding(
+                                get: { day.isWorkoutSkipped(session.skipKey) },
+                                set: { day.setWorkoutSkipped(session.skipKey, $0); Haptics.tap() }
+                            )) {
+                                HStack {
+                                    Label(session.name, systemImage: session.category.icon)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(session.timeString)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Not training today")
+                    } footer: {
+                        Text("Switching a session off takes its calories back out of the day and steps the carbs down with it — a rest day's food isn't a training day's food. The fuel around it stops being pre-session and recovery too.")
+                    }
                 }
 
                 if day.hasDayShapeChanges {

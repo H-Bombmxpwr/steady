@@ -41,6 +41,7 @@ struct BackupPayload: Codable {
         var wakeMinute: Int? = nil
         var skippedMealsRaw: [String]? = nil
         var bigMealRaw: String? = nil
+        var skippedWorkoutsRaw: [String]? = nil
         let workouts: [BWorkout]
         let foods: [BFood]
         let photos: [BPhoto]
@@ -126,6 +127,7 @@ enum BackupService {
                 wakeMinute: d.wakeMinute,
                 skippedMealsRaw: d.skippedMealsRaw,
                 bigMealRaw: d.bigMealRaw,
+                skippedWorkoutsRaw: d.skippedWorkoutsRaw,
                 workouts: workouts,
                 foods: foods,
                 photos: photos

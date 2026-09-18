@@ -129,10 +129,27 @@ final class Plan {
     /// TrainingPeaks says Tuesday is a rest day, the standing "Tuesday: Gym,
     /// 45 min" entry must not keep adding phantom calories to the budget.
     /// Only when no dated session exists does the weekly schedule stand in.
+    /// Filtered by what's actually still happening. Everything downstream —
+    /// the calorie budget, the carb target, the fueling, the widgets — reads
+    /// this, so calling a session off here makes the whole day follow without
+    /// a single other call site changing.
     func sessions(on date: Date) -> [TrainingSession] {
+        let all = allSessions(on: date)
+        guard let day = dayLog(on: date), !day.skippedWorkoutsRaw.isEmpty else { return all }
+        return all.filter { !day.isWorkoutSkipped($0.skipKey) }
+    }
+
+    /// Everything on the books for a date, called off or not. Only the day
+    /// plan wants this — it still draws a skipped session, greyed out, so
+    /// there's something to tap to put it back.
+    func allSessions(on date: Date) -> [TrainingSession] {
         let dated = plannedWorkouts(on: date)
         if !dated.isEmpty { return dated.map(TrainingSession.init) }
         return scheduledWorkouts(on: date).map(TrainingSession.init)
+    }
+
+    func dayLog(on date: Date) -> DayLog? {
+        days.first { Calendar.current.isDate($0.date, inSameDayAs: date) }
     }
 
     /// True once any dated plan exists at all — the signal that this person
