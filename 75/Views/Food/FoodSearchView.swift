@@ -34,6 +34,10 @@ struct FoodSearchView: View {
     // Recipe-from-a-link (Gemini URL/video reading)
     @State private var showRecipeLink = false
 
+    // A saved meal being logged — how many servings is a question, not an
+    // assumption, once meals can be whole recipes.
+    @State private var savedMealToLog: SavedMeal?
+
     init(day: DayLog, meal: Meal = .suggested()) {
         self.day = day
         _meal = State(initialValue: meal)
@@ -129,17 +133,32 @@ struct FoodSearchView: View {
                     Section {
                         ForEach(savedMeals) { saved in
                             Button {
-                                logSavedMeal(saved)
+                                // One serving is the common case, so a single
+                                // tap still logs — but a recipe that makes six
+                                // needs asking, and asking once beats editing
+                                // six food rows afterwards.
+                                if saved.isRecipe {
+                                    savedMealToLog = saved
+                                } else {
+                                    logSavedMeal(saved)
+                                }
                             } label: {
                                 HStack(spacing: 8) {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(saved.name).lineLimit(1).foregroundStyle(.primary)
-                                        Text("\(saved.items.count) item\(saved.items.count == 1 ? "" : "s") · \(saved.totalCalories) cal · \(saved.totalProtein) g protein")
+                                        HStack(spacing: 5) {
+                                            Text(saved.name).lineLimit(1).foregroundStyle(.primary)
+                                            if saved.isRecipe {
+                                                Image(systemName: "book.closed.fill")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(Theme.foodTint)
+                                            }
+                                        }
+                                        Text("\(saved.items.count) item\(saved.items.count == 1 ? "" : "s") · \(saved.servingSummary)")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Image(systemName: "plus.circle.fill")
+                                    Image(systemName: saved.isRecipe ? "slider.horizontal.3" : "plus.circle.fill")
                                         .foregroundStyle(Theme.accent)
                                 }
                                 .contentShape(Rectangle())
@@ -276,6 +295,12 @@ struct FoodSearchView: View {
                 add(log)
                 dismiss()
             }
+        }
+        .sheet(item: $savedMealToLog) { saved in
+            SavedMealServingsSheet(saved: saved, mealLabel: meal.label) { servings in
+                logSavedMeal(saved, servings: servings)
+            }
+            .themedRoot()
         }
         .sheet(isPresented: $showScanner) {
             NavigationStack {
@@ -419,9 +444,10 @@ struct FoodSearchView: View {
         loadQuickFoods()
     }
 
-    /// Logs every item of a saved meal into the selected meal.
-    private func logSavedMeal(_ saved: SavedMeal) {
-        saved.orderedItems.forEach { add($0.makeLog()) }
+    /// Logs a saved meal into the selected meal. `servings` is the number of
+    /// servings being eaten, which for a recipe is usually not the batch.
+    private func logSavedMeal(_ saved: SavedMeal, servings: Double = 1) {
+        saved.makeLogs(servings: servings, meal: nil).forEach { add($0) }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         dismiss()
     }
@@ -830,6 +856,85 @@ private struct CustomFoodSheet: View {
             groundedResult = result.grounded
         } catch {
             estimateError = error.localizedDescription
+        }
+    }
+}
+
+
+// MARK: - Servings
+
+/// How much of a saved meal is actually being eaten.
+///
+/// A meal snapshotted from a day's log is one serving and never needs this
+/// screen. A recipe that makes six is a different object: the stored numbers
+/// are the whole batch, and logging it without asking would put six dinners
+/// into one evening. Everything scales together — calories, protein, and the
+/// full micronutrient panel — so the iron and fiber in a third of a pot of
+/// chili are a third of the pot's.
+struct SavedMealServingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let saved: SavedMeal
+    let mealLabel: String
+    let onLog: (Double) -> Void
+
+    @State private var servings: Double = 1
+
+    private var factor: Double { saved.factor(forServings: servings) }
+    private var calories: Int { Int((Double(saved.totalCalories) * factor).rounded()) }
+    private var protein: Int { Int((Double(saved.totalProtein) * factor).rounded()) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Stepper(value: $servings, in: 0.25...max(1, saved.servings * 2), step: 0.25) {
+                        HStack {
+                            Text("Eating")
+                            Spacer()
+                            Text("\(servings.formatted()) serving\(servings == 1 ? "" : "s")")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    HStack {
+                        Text("That's")
+                        Spacer()
+                        Text("\(calories) cal · \(protein) g protein")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.foodTint)
+                    }
+                } header: {
+                    Text(saved.name)
+                } footer: {
+                    Text("The whole batch makes about \(saved.servings.formatted()) serving\(saved.servings == 1 ? "" : "s") — \(saved.totalCalories) cal in total. Every number scales with the stepper, micronutrients included.")
+                }
+
+                if let source = saved.sourceURL, let link = URL(string: source), !source.isEmpty {
+                    Section {
+                        Link(destination: link) {
+                            Label("Open the recipe", systemImage: "link")
+                        }
+                    }
+                }
+
+                Section {
+                    Button {
+                        onLog(servings)
+                        dismiss()
+                    } label: {
+                        Text("Log to \(mealLabel) — \(calories) cal").bold()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .themedForm()
+            .navigationTitle("Servings")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear { servings = min(1, saved.servings) }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
         }
     }
 }

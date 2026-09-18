@@ -37,6 +37,19 @@ final class Plan {
     /// deficit for a body-composition block using `paceLbsPerWeek`.
     var eatAtMaintenance: Bool = true
 
+    // MARK: Food preferences
+
+    /// Where this person actually shops. Suggestions that name a store are
+    /// only useful if it's a store they can get to — "grab the rotisserie
+    /// chicken at Costco" is worthless advice to someone who shops at Aldi.
+    var preferredStores: [String] = []
+    /// Foods to never suggest. Dislikes, allergies, "I'm not eating that" —
+    /// the app doesn't need to know which, only that it's off the table.
+    var dislikedFoods: [String] = []
+    /// Athlete protein at 1 g per pound of bodyweight rather than the
+    /// load-based g/kg bands. On by default in athlete mode.
+    var proteinPerPoundTarget: Bool = true
+
     @Relationship(deleteRule: .cascade) var days: [DayLog]
     @Relationship(deleteRule: .cascade) var presets: [WorkoutPreset]
     @Relationship(deleteRule: .cascade) var schedule: [WorkoutScheduleEntry]
@@ -46,6 +59,7 @@ final class Plan {
     @Relationship(deleteRule: .cascade) var plannedWorkouts: [PlannedWorkout] = []
     @Relationship(deleteRule: .cascade) var sweatTests: [SweatTest] = []
     @Relationship(deleteRule: .cascade) var cycles: [CycleEntry] = []
+    @Relationship(deleteRule: .cascade) var mealSlots: [MealSlot] = []
 
     init(startDate: Date,
          startingWeight: Double,
@@ -127,6 +141,33 @@ final class Plan {
 
     var trainingPeaksConnected: Bool {
         !(trainingPeaksFeedURL ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    // MARK: - Meal schedule
+
+    /// The day's shape, in clock order. Seeded on first read so a plan made
+    /// before meal planning existed gets the standard three-meals-plus-snacks
+    /// schedule rather than an empty day.
+    var orderedMealSlots: [MealSlot] {
+        mealSlots.sorted { ($0.minutesOfDay, $0.orderIndex) < ($1.minutesOfDay, $1.orderIndex) }
+    }
+
+    /// Slots that are actually part of the day.
+    var activeMealSlots: [MealSlot] { orderedMealSlots.filter(\.enabled) }
+
+    /// Install the default schedule if this plan has none. Idempotent, so it's
+    /// safe to call on every launch and from any screen that needs a schedule.
+    @discardableResult
+    func ensureMealSchedule() -> [MealSlot] {
+        if !mealSlots.isEmpty { return orderedMealSlots }
+        let defaults = MealSlot.defaultSchedule()
+        mealSlots.append(contentsOf: defaults)
+        try? modelContext?.save()
+        return orderedMealSlots
+    }
+
+    func mealSlot(for meal: Meal) -> MealSlot? {
+        mealSlots.first { $0.meal == meal }
     }
 
     /// The learned sweat profile, or nil until a plausible test exists.
@@ -267,6 +308,19 @@ final class LabResult {
     var fastingGlucose: Double?
     var a1c: Double?
 
+    // Iron status. Additive and defaulted, so panels logged before these
+    // existed stay valid — they just don't say anything about iron.
+
+    /// Ferritin, ng/mL. The body's iron stores, and the marker that moves
+    /// first: it falls long before hemoglobin does, which is why an athlete
+    /// can feel flattened with a "normal" blood count.
+    var ferritin: Double?
+    /// Hemoglobin, g/dL — the oxygen-carrying end of it.
+    var hemoglobin: Double?
+    /// Transferrin saturation, %. Optional third marker; when it's present it
+    /// separates true iron deficiency from ferritin raised by inflammation.
+    var transferrinSaturation: Double?
+
     init(date: Date) {
         self.date = Calendar.current.startOfDay(for: date)
     }
@@ -274,6 +328,12 @@ final class LabResult {
     var isEmpty: Bool {
         ldl == nil && hdl == nil && triglycerides == nil
             && fastingGlucose == nil && a1c == nil
+            && ferritin == nil && hemoglobin == nil && transferrinSaturation == nil
+    }
+
+    /// Does this panel say anything about iron at all?
+    var hasIronMarkers: Bool {
+        ferritin != nil || hemoglobin != nil || transferrinSaturation != nil
     }
 }
 
@@ -281,6 +341,14 @@ extension Plan {
     /// Most recent non-empty lab panel.
     var latestLabs: LabResult? {
         labs.filter { !$0.isEmpty }.sorted { $0.date < $1.date }.last
+    }
+
+    /// Most recent panel that actually measured iron. Separate from
+    /// `latestLabs` because a lipid panel logged last week shouldn't hide the
+    /// ferritin number from three months ago — iron moves slowly, and the
+    /// older reading is still the best one available.
+    var latestIronLabs: LabResult? {
+        labs.filter(\.hasIronMarkers).sorted { $0.date < $1.date }.last
     }
 }
 

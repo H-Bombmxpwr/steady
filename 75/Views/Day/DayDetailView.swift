@@ -133,7 +133,9 @@ struct DayDetailView: View {
                         .fill(Theme.gradient)
                 )
                 // One row per meal — tap in to see and manage what you ate;
-                // swipe to delete the whole meal.
+                // swipe to delete the whole meal. The aims are built once for
+                // the day rather than per row; the plan is cheap but not free.
+                let aims = mealAims
                 ForEach(mealGroups, id: \.meal) { group in
                     NavigationLink {
                         MealDetailView(day: day, meal: group.meal,
@@ -147,6 +149,11 @@ struct DayDetailView: View {
                                 Text("\(group.foods.count) item\(group.foods.count == 1 ? "" : "s") · \(group.foods.reduce(0) { $0 + $1.proteinGrams }) g protein")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                if let meal = group.meal, let aim = aims[meal] {
+                                    Text(aim)
+                                        .font(.caption2)
+                                        .foregroundStyle(group.meal?.color ?? Theme.foodTint)
+                                }
                             }
                             Spacer()
                             Text("\(group.foods.reduce(0) { $0 + $1.calories }) cal")
@@ -165,6 +172,11 @@ struct DayDetailView: View {
                 }
                 Button { showMealIdeas = true } label: {
                     Label("What Should I Eat?", systemImage: "wand.and.stars")
+                }
+                NavigationLink {
+                    DayPlanView(plan: plan, profile: profile)
+                } label: {
+                    Label("Plan the Whole Day", systemImage: "list.bullet.clipboard")
                 }
                 if !day.foods.isEmpty {
                     Button { showDaySummary = true } label: {
@@ -379,13 +391,16 @@ struct DayDetailView: View {
         .navigationTitle(Text(date, style: .date))
         .sheet(isPresented: $showMealIdeas) {
             MealIdeasView(day: day, targets: targets,
-                          labs: labsEnabled ? AIFoodEstimator.LabSnapshot(labs: plan.latestLabs) : nil)
+                          labs: labSnapshot,
+                          preferences: FoodPreferences(plan: plan))
                 .themedRoot()
         }
         .sheet(isPresented: $showDaySummary) {
-            let labs = labsEnabled ? AIFoodEstimator.LabSnapshot(labs: plan.latestLabs) : nil
+            let labs = labSnapshot
+            let preferences = FoodPreferences(plan: plan)
             CoachReviewSheet(title: "Day Summary") { [day, targets] in
-                try await AIFoodEstimator.reviewDay(day: day, targets: targets, labs: labs)
+                try await AIFoodEstimator.reviewDay(day: day, targets: targets,
+                                                    labs: labs, preferences: preferences)
             }
             .themedRoot()
         }
@@ -402,6 +417,24 @@ struct DayDetailView: View {
                 Spacer()
                 Button("Done") { fieldFocused = false }
             }
+        }
+    }
+
+    /// The lab numbers to share, iron included, when that's switched on.
+    private var labSnapshot: AIFoodEstimator.LabSnapshot? {
+        guard labsEnabled else { return nil }
+        let iron = IronCoach.evaluate(labs: plan.latestIronLabs, sex: profile.sex)
+        return AIFoodEstimator.LabSnapshot(labs: plan.latestLabs ?? plan.latestIronLabs, iron: iron)
+    }
+
+    /// Each meal's own target, so the day's biggest screen stops showing only
+    /// what was eaten and starts showing what it was aiming at.
+    private var mealAims: [Meal: String] {
+        let plan = MealPlanEngine.plan(for: date, day: day, plan: self.plan,
+                                       profile: profile, targets: targets)
+        return plan.meals.reduce(into: [:]) { result, target in
+            guard !target.skipped, result[target.meal] == nil else { return }
+            result[target.meal] = "Aim \(target.calories) cal · \(target.carbGrams)C \(target.proteinGrams)P \(target.fatGrams)F"
         }
     }
 

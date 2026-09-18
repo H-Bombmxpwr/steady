@@ -16,6 +16,7 @@ struct MainTabView: View {
 
     private static let tabs: [(label: String, icon: String)] = [
         ("Dashboard", "house.fill"),
+        ("Day Plan", "list.bullet.clipboard.fill"),
         ("Stats", "chart.xyaxis.line"),
         ("Calendar", "calendar"),
         ("Photos", "photo.on.rectangle"),
@@ -35,16 +36,19 @@ struct MainTabView: View {
             case .generalHealth: GeneralHealthDashboardView(plan: plan, profile: profile)
             case .weightLoss: DashboardView(plan: plan, profile: profile)
             }
-        case 1: StatsView(plan: plan, profile: profile)
-        case 2: CalendarScreen(plan: plan, profile: profile)
-        case 3: PhotosGalleryView(plan: plan)
+        // The day plan is the same screen in every mode. What changes is the
+        // targets feeding it, and those already come from the mode.
+        case 1: DayPlanView(plan: plan, profile: profile)
+        case 2: StatsView(plan: plan, profile: profile)
+        case 3: CalendarScreen(plan: plan, profile: profile)
+        case 4: PhotosGalleryView(plan: plan)
         default: WorkoutsView(plan: plan)
         }
     }
 
     var body: some View {
         TabView(selection: $tab) {
-            ForEach(0..<5) { i in
+            ForEach(0..<6) { i in
                 screen(i)
                     .tabItem { Label(Self.tabs[i].label, systemImage: Self.tabs[i].icon) }
                     .tag(i)

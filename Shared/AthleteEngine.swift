@@ -84,6 +84,10 @@ struct AthleteTargets {
 
 enum AthleteEngine {
 
+    /// The gram-per-pound protein convention, in the unit the rest of the
+    /// engine works in. Lives here so the number is stated once.
+    static let proteinGramsPerPound = 1.0
+
     /// Classify the day from what's planned. Duration does most of the work;
     /// intensity and TSS pull a day up a band when it's genuinely hard rather
     /// than merely long.
@@ -160,7 +164,16 @@ enum AthleteEngine {
         // Protein first — it's the target that shouldn't flex.
         var proteinPerKg = load.proteinPerKg
         if !plan.eatAtMaintenance { proteinPerKg = max(proteinPerKg, 2.0) }
-        let protein = proteinPerKg * kg
+        var protein = proteinPerKg * kg
+        // The gram-per-pound convention. It's the number athletes actually
+        // train on, and it sits a little above the top of the ISSN band
+        // (2.2 g/kg vs 1.6–2.2) — not a risk, but not free either: every gram
+        // of protein is a gram of carbs that doesn't fit, so on the biggest
+        // days the fat floor below is what gives way. Applied as a floor, so
+        // a heavy day that already asks for more keeps asking for more.
+        if plan.proteinPerPoundTarget {
+            protein = max(protein, plan.currentWeight * AthleteEngine.proteinGramsPerPound)
+        }
 
         let carbs = load.carbsPerKg * kg
 

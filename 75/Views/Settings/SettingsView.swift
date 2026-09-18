@@ -361,6 +361,48 @@ struct SettingsView: View {
                     Text("Not medical advice — think of it as prep for your next doctor visit. Log a few numbers from a recent panel and day summaries and nutrition targets lean toward improving them. Values stay on this device; while this is on, only the bare numbers (never your name, age, or anything identifying) are included when a day summary is generated.")
                 }
 
+                // --- Meals: the shape of the day, and what to suggest in it
+                Section {
+                    NavigationLink {
+                        MealScheduleView(plan: plan)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Meal Schedule")
+                                Text(mealScheduleSummary)
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "clock")
+                        }
+                    }
+                    NavigationLink {
+                        FoodPreferencesView(plan: plan)
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Food Preferences")
+                                Text(FoodPreferences(plan: plan).summary)
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "cart.fill")
+                        }
+                    }
+                    if profile.mode == .athlete {
+                        Toggle("Protein at 1 g per pound", isOn: Binding(
+                            get: { plan.proteinPerPoundTarget },
+                            set: { plan.proteinPerPoundTarget = $0; try? context.save() }
+                        ))
+                    }
+                } header: {
+                    Text("Meals & Food")
+                } footer: {
+                    Text(profile.mode == .athlete
+                         ? "The meal schedule decides how each day's targets are split across sittings — it's what the Day Plan tab is built from. Food preferences bound every meal suggestion to what you can buy and will eat. Protein at 1 g per pound is the convention most athletes train on; switching it off falls back to the load-based 1.6–2.0 g/kg bands, which leaves more room for carbs on the biggest days."
+                         : "The meal schedule decides how each day's targets are split across sittings — it's what the Day Plan tab is built from. Food preferences bound every meal suggestion to what you can actually buy and will actually eat.")
+                }
+
                 // --- AI & estimates (details live on their own screen)
                 Section {
                     NavigationLink {
@@ -580,6 +622,18 @@ struct SettingsView: View {
                 manualHumidity = String(Int(manual.humidityPercent.rounded()))
             }
         }
+    }
+
+    /// "Breakfast, lunch, dinner · dinner is biggest"
+    private var mealScheduleSummary: String {
+        let slots = plan.orderedMealSlots.filter(\.enabled)
+        guard !slots.isEmpty else { return "Not set up yet" }
+        let names = slots.map { $0.label }.joined(separator: ", ")
+        guard let biggest = slots.max(by: { $0.share < $1.share }),
+              slots.count > 1, biggest.share > slots.map(\.share).reduce(0, +) / Double(slots.count) else {
+            return names
+        }
+        return "\(names) · \(biggest.label.lowercased()) is biggest"
     }
 
     // MARK: Athlete sections
@@ -1059,6 +1113,8 @@ private func labSummaryText(_ labs: LabResult) -> String {
     if let v = labs.triglycerides { parts.append("Trig \(Int(v))") }
     if let v = labs.fastingGlucose { parts.append("Glucose \(Int(v))") }
     if let v = labs.a1c { parts.append("A1C \(v.formatted(.number.precision(.fractionLength(1))))%") }
+    if let v = labs.ferritin { parts.append("Ferritin \(Int(v))") }
+    if let v = labs.hemoglobin { parts.append("Hgb \(v.formatted(.number.precision(.fractionLength(1))))") }
     return parts.joined(separator: " · ")
 }
 
@@ -1074,6 +1130,9 @@ struct LabEntrySheet: View {
     @State private var triglycerides = ""
     @State private var glucose = ""
     @State private var a1c = ""
+    @State private var ferritin = ""
+    @State private var hemoglobin = ""
+    @State private var transferrin = ""
 
     var body: some View {
         NavigationStack {
@@ -1090,6 +1149,16 @@ struct LabEntrySheet: View {
                 } footer: {
                     Text("Copy the numbers straight off the report. They stay on this device and only the bare values steer summaries — nothing identifying.")
                 }
+
+                Section {
+                    field("Ferritin", $ferritin, unit: "ng/mL")
+                    field("Hemoglobin", $hemoglobin, unit: "g/dL")
+                    field("Transferrin saturation", $transferrin, unit: "%")
+                } header: {
+                    Text("Iron")
+                } footer: {
+                    Text("Ferritin is the one worth finding on the report. It measures iron stores, and it falls long before a blood count does — which is why training can feel flat for months while everything reads \"normal.\" Enter it and the app steers meals toward iron and explains what actually helps it absorb. It will never suggest a supplement; that's a doctor's call, and getting it wrong does real harm.")
+                }
                 Button("Save") {
                     let labs = LabResult(date: date)
                     labs.ldl = Double(ldl)
@@ -1097,6 +1166,9 @@ struct LabEntrySheet: View {
                     labs.triglycerides = Double(triglycerides)
                     labs.fastingGlucose = Double(glucose)
                     labs.a1c = Double(a1c)
+                    labs.ferritin = Double(ferritin)
+                    labs.hemoglobin = Double(hemoglobin)
+                    labs.transferrinSaturation = Double(transferrin)
                     if !labs.isEmpty {
                         plan.labs.append(labs)
                         try? context.save()

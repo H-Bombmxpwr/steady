@@ -14,6 +14,11 @@ struct WorkoutFormView: View {
     @State private var minutes: Int = 45
     @State private var outdoor: Bool = false
     @State private var category: WorkoutCategory = .strength
+    /// How hard it was and when it started. Both feed the fueling math and
+    /// put the session in the right place on the day plan — a 6 a.m. session
+    /// and a 6 p.m. one are the same workout and a completely different day.
+    @State private var intensity: WorkoutIntensity = .moderate
+    @State private var startTime: Date = Date()
 
     @State private var entries: [ExerciseEntry] = []
     @State private var showExercisePicker = false
@@ -66,7 +71,24 @@ struct WorkoutFormView: View {
                     }
                 }
                 Stepper("Minutes: \(minutes)", value: $minutes, in: 5...300, step: 5)
+                DatePicker("Started at", selection: $startTime, displayedComponents: .hourAndMinute)
                 Toggle("Outdoors", isOn: $outdoor)
+            }
+
+            Section {
+                Picker("Intensity", selection: $intensity) {
+                    ForEach(WorkoutIntensity.allCases) { level in
+                        Text(level.label).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text(intensity.cue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("How hard")
+            } footer: {
+                Text("Drives the calorie estimate and the fueling around it — carbs, fluid, and sodium all scale with effort, not just with time.")
             }
 
             ForEach($entries) { $entry in
@@ -142,6 +164,8 @@ struct WorkoutFormView: View {
                 minutes = p.defaultMinutes
                 outdoor = p.outdoor
                 category = p.category
+                // Mobility work isn't a moderate effort by any reading of it.
+                if p.category == .mobility { intensity = .easy }
                 entries = p.orderedExercises.map { ex in
                     ExerciseEntry(name: ex.name,
                                   sets: (0..<max(1, ex.sets)).map { _ in
@@ -154,7 +178,10 @@ struct WorkoutFormView: View {
 
     private func logWorkout() {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let log = WorkoutLog(name: trimmed, minutes: minutes, outdoor: outdoor, category: category)
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: startTime)
+        let log = WorkoutLog(name: trimmed, minutes: minutes, outdoor: outdoor,
+                             category: category, intensity: intensity,
+                             startHour: comps.hour, startMinute: comps.minute)
         for entry in entries {
             for (index, set) in entry.sets.enumerated() where set.reps > 0 {
                 log.sets.append(SetLog(exerciseName: entry.name, setIndex: index,

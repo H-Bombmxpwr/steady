@@ -88,6 +88,7 @@ struct TrainingSession: Identifiable, Hashable {
         case schedule          // recurring weekday slot
         case planned           // dated, hand-entered
         case trainingPeaks     // dated, imported
+        case logged            // already done, reconstructed from the day's log
     }
 
     let id: String
@@ -130,6 +131,56 @@ struct TrainingSession: Identifiable, Hashable {
         self.distanceMiles = nil
         self.origin = .schedule
         self.completed = false
+    }
+
+    /// Build one directly. Everything else about a session is derived, so
+    /// this is the seam that lets the fueling and meal-plan math be tested
+    /// without a store behind it.
+    init(id: String,
+         name: String,
+         minutes: Int,
+         hour: Int,
+         minute: Int,
+         category: WorkoutCategory,
+         intensity: WorkoutIntensity,
+         details: String? = nil,
+         tss: Double? = nil,
+         distanceMiles: Double? = nil,
+         origin: Origin = .planned,
+         completed: Bool = false) {
+        self.id = id
+        self.name = name
+        self.minutes = minutes
+        self.hour = hour
+        self.minute = minute
+        self.category = category
+        self.intensity = intensity
+        self.details = details
+        self.tss = tss
+        self.distanceMiles = distanceMiles
+        self.origin = origin
+        self.completed = completed
+    }
+
+    /// A workout that already happened, read back off the day's log.
+    ///
+    /// Someone who never opens a training plan still trains, and the day's
+    /// fuel should bend around the session they actually did. This is what
+    /// lets the meal plan work in weight-loss and general-health mode, where
+    /// nothing is scheduled and the workout only exists after the fact.
+    init(_ log: WorkoutLog) {
+        self.id = "logged-\(log.persistentModelID.hashValue)"
+        self.name = log.name
+        self.minutes = log.minutes
+        self.hour = log.minutesOfDay / 60
+        self.minute = log.minutesOfDay % 60
+        self.category = log.category
+        self.intensity = log.intensity
+        self.details = nil
+        self.tss = nil
+        self.distanceMiles = nil
+        self.origin = .logged
+        self.completed = true
     }
 
     init(_ planned: PlannedWorkout) {

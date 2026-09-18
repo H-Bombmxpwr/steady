@@ -326,14 +326,24 @@ enum AIFoodEstimator {
         let triglycerides: Double?
         let fastingGlucose: Double?
         let a1c: Double?
+        let ferritin: Double?
+        let hemoglobin: Double?
+        let transferrinSaturation: Double?
+        /// Set when the local iron reading says this is worth steering food
+        /// toward — it turns a number in a list into an instruction.
+        let ironStatus: String?
 
-        init?(labs: LabResult?) {
+        init?(labs: LabResult?, iron: IronCoach.Finding? = nil) {
             guard let labs, !labs.isEmpty else { return nil }
             ldl = labs.ldl
             hdl = labs.hdl
             triglycerides = labs.triglycerides
             fastingGlucose = labs.fastingGlucose
             a1c = labs.a1c
+            ferritin = labs.ferritin
+            hemoglobin = labs.hemoglobin
+            transferrinSaturation = labs.transferrinSaturation
+            ironStatus = (iron?.status.isActionable ?? false) ? iron?.status.rawValue : nil
         }
 
         var promptLine: String {
@@ -343,7 +353,31 @@ enum AIFoodEstimator {
             if let triglycerides { parts.append("triglycerides \(Int(triglycerides)) mg/dL") }
             if let fastingGlucose { parts.append("fasting glucose \(Int(fastingGlucose)) mg/dL") }
             if let a1c { parts.append("A1C \(a1c.formatted(.number.precision(.fractionLength(1))))%") }
+            if let ferritin { parts.append("ferritin \(Int(ferritin)) ng/mL") }
+            if let hemoglobin {
+                parts.append("hemoglobin \(hemoglobin.formatted(.number.precision(.fractionLength(1)))) g/dL")
+            }
+            if let transferrinSaturation {
+                parts.append("transferrin saturation \(Int(transferrinSaturation))%")
+            }
             return parts.joined(separator: ", ")
+        }
+
+        /// The extra instruction low iron earns. Dietary only — pairing,
+        /// timing, and heme sources. Never supplements: that's a doctor's
+        /// call, and getting it wrong does real damage.
+        var ironInstruction: String {
+            guard ironStatus != nil else { return "" }
+            return """
+
+            Their iron stores are low. Favor iron-rich foods — red meat, liver, \
+            oysters, mussels, dark-meat poultry, lentils, beans, tofu, spinach, \
+            fortified cereal — and pair plant sources with vitamin C (peppers, \
+            citrus, tomato, strawberries) in the same dish, because that \
+            combination is what actually gets the iron absorbed. Keep coffee, \
+            tea, and large calcium servings out of these meals. Do not mention \
+            or recommend iron supplements, and do not say anything diagnostic.
+            """
         }
     }
 
@@ -351,7 +385,8 @@ enum AIFoodEstimator {
     /// suggests concrete substitutions for next time. When a lab snapshot is
     /// provided (opt-in), suggestions lean toward improving those markers.
     static func reviewDay(day: DayLog, targets: DailyTargets,
-                          labs: LabSnapshot? = nil) async throws -> DayReview {
+                          labs: LabSnapshot? = nil,
+                          preferences: FoodPreferences = .empty) async throws -> DayReview {
         struct PayloadSuggestion: Decodable {
             let issue: String?
             let swap: String?
@@ -389,7 +424,7 @@ enum AIFoodEstimator {
             swaps that cut added sugar and refined carbs. Where a suggestion \
             relates to a marker, phrase it as something worth raising with \
             their doctor. You are not giving medical advice and must not \
-            diagnose or recommend medication.
+            diagnose or recommend medication.\(labs.ironInstruction)
             """
         } else {
             labSection = ""
@@ -398,7 +433,7 @@ enum AIFoodEstimator {
         You are a supportive nutrition coach reviewing one day of eating. \
         Be specific and practical, never preachy. Suggestions must be food \
         SUBSTITUTIONS into what was actually eaten (swap X for Y in that \
-        meal), not generic advice.\(labSection)
+        meal), not generic advice.\(preferences.promptSection)\(labSection)
         Targets: \(targets.calories) cal, \(targets.proteinGrams) g protein.
         Eaten (total \(day.totalCalories) cal, \(day.totalProtein) g protein, \
         \(Int(totals.sodiumMg)) mg sodium, \(Int(totals.saturatedFatGrams)) g sat fat, \
@@ -427,7 +462,8 @@ enum AIFoodEstimator {
     /// Week-level coach: looks for patterns across the last 7 days and
     /// suggests the swaps that would have moved the needle most.
     static func reviewWeek(days: [DayLog], targets: DailyTargets,
-                           labs: LabSnapshot? = nil) async throws -> DayReview {
+                           labs: LabSnapshot? = nil,
+                           preferences: FoodPreferences = .empty) async throws -> DayReview {
         struct PayloadSuggestion: Decodable {
             let issue: String?
             let swap: String?
@@ -461,7 +497,7 @@ enum AIFoodEstimator {
             food choices: \(labs.promptLine).
             Weight suggestions toward improving these markers, phrase related \
             notes as things worth raising with their doctor, and never \
-            diagnose or recommend medication.
+            diagnose or recommend medication.\(labs.ironInstruction)
             """
         } else {
             labSection = ""
@@ -471,7 +507,7 @@ enum AIFoodEstimator {
         Look for repeating patterns (a daily soda, heavy weekend meals, low \
         protein at breakfast) rather than one-off slips. Be specific and \
         practical, never preachy. Suggestions must be substitutions into \
-        foods that were actually eaten repeatedly.\(labSection)
+        foods that were actually eaten repeatedly.\(preferences.promptSection)\(labSection)
         Daily targets: \(targets.calories) cal, \(targets.proteinGrams) g protein.
         The week (\(logged.count) logged day\(logged.count == 1 ? "" : "s")):
         \(dayLines)
@@ -509,10 +545,60 @@ enum AIFoodEstimator {
         let assumed: String?
     }
 
-    /// Suggest meals that fit what's LEFT of today's budget — the protein
-    /// gap steers the picks, labs (opt-in) steer the ingredients.
-    static func suggestMeals(meal: String, remainingCalories: Int, remainingProtein: Int,
-                             eatenToday: [String], labs: LabSnapshot? = nil) async throws -> [MealSuggestion] {
+    /// The specific meal being planned, when the ask came from the day plan
+    /// rather than from "what's left of today". Aiming at one meal's macros
+    /// is a far better question than aiming at a day's remainder — it has a
+    /// carb number, a protein number, and often a deadline attached.
+    struct MealBrief {
+        let label: String          // "Breakfast", "Recovery Snack"
+        let calories: Int
+        let carbGrams: Int
+        let proteinGrams: Int
+        let fatGrams: Int
+        /// "pre-workout" / "recovery" / nil
+        let role: String?
+        /// Minutes until the session this meal is feeding, when there is one.
+        let minutesBeforeSession: Int?
+
+        var promptLine: String {
+            var line = """
+            This is specifically their \(label.lowercased()), and it has its own \
+            target: about \(calories) calories, \(carbGrams) g carbs, \
+            \(proteinGrams) g protein, \(fatGrams) g fat. Every suggestion \
+            should land close to ALL FOUR of those numbers, not just the \
+            calories.
+            """
+            switch role {
+            case "pre-workout":
+                let when = minutesBeforeSession.map { "about \($0) minutes" } ?? "shortly"
+                line += """
+                 They train \(when) after this meal, so it has to be easy to \
+                digest: carb-forward, low fat, low fiber. Nothing heavy, greasy, \
+                or high in fiber — it won't have cleared in time.
+                """
+            case "recovery":
+                line += """
+                 This is their post-session meal, eaten soon after training, so \
+                it should pair real carbohydrate with real protein to refill \
+                glycogen and start repair.
+                """
+            default:
+                break
+            }
+            return line
+        }
+    }
+
+    /// Suggest meals that fit — either one meal's own macro target (when the
+    /// day plan asked) or what's LEFT of today's budget. Labs steer the
+    /// ingredients when they're shared; stores and dislikes are hard limits.
+    static func suggestMeals(meal: String,
+                             remainingCalories: Int,
+                             remainingProtein: Int,
+                             eatenToday: [String],
+                             labs: LabSnapshot? = nil,
+                             preferences: FoodPreferences = .empty,
+                             brief: MealBrief? = nil) async throws -> [MealSuggestion] {
         struct PayloadSuggestion: Decodable {
             let name: String?
             let why: String?
@@ -529,7 +615,7 @@ enum AIFoodEstimator {
             The user chose to share recent lab numbers (values only): \
             \(labs.promptLine). Favor suggestions that would help those \
             markers (less saturated fat and added sugar, more fiber) without \
-            saying anything that sounds like medical advice.
+            saying anything that sounds like medical advice.\(labs.ironInstruction)
             """
         } else {
             labSection = ""
@@ -537,12 +623,17 @@ enum AIFoodEstimator {
         let eatenLine = eatenToday.isEmpty
             ? "Nothing has been logged yet today."
             : "Already eaten today: \(eatenToday.joined(separator: ", ")). Don't repeat these."
+        // A meal brief replaces the day-remainder framing outright — they'd
+        // contradict each other, and the specific target is the better one.
+        let targetLine = brief?.promptLine ?? """
+        They have \(remainingCalories) calories and \(remainingProtein) g \
+        protein left in today's budget — every option must fit inside the \
+        remaining calories, and at least two should make a real dent in the \
+        protein gap.
+        """
         let prompt = """
         Suggest 3 realistic \(meal) options someone could actually make at \
-        home or grab easily tonight. They have \(remainingCalories) calories \
-        and \(remainingProtein) g protein left in today's budget — every \
-        option must fit inside the remaining calories, and at least two \
-        should make a real dent in the protein gap. \(eatenLine)\(labSection)
+        home or grab easily. \(targetLine) \(eatenLine)\(preferences.promptSection)\(labSection)
         \(nutritionGuidance)
         Respond with only JSON:
         {"suggestions": [{"name": "<short dish name>", \
@@ -554,6 +645,10 @@ enum AIFoodEstimator {
         let suggestions = (payload.suggestions ?? []).compactMap { s -> MealSuggestion? in
             guard let name = s.name, !name.isEmpty,
                   let food = s.food, let calories = food.calories else { return nil }
+            // A dislike list that only lives in the prompt isn't a dislike
+            // list. Anything naming an excluded food is dropped here, whatever
+            // the model thought.
+            if preferences.excludes(name) || preferences.excludes(s.assumed ?? "") { return nil }
             return MealSuggestion(name: name,
                                   why: s.why ?? "",
                                   calories: calories,
@@ -876,16 +971,20 @@ extension AIFoodEstimator {
             PromptInfo(
                 id: "suggest",
                 title: "What Should I Eat?",
-                whenUsed: "When you ask for meal ideas that fit today's budget.",
-                sends: "The meal name, your remaining calories and protein, and the names of foods already logged today (plus lab numbers only if you turned that on).",
+                whenUsed: "When you ask for meal ideas — for one meal on the day plan, or for whatever's left of the budget.",
+                sends: "The meal name and its target (or your remaining calories and protein), the names of foods already logged today, and the stores and excluded foods you set in Food Preferences (plus lab numbers only if you turned that on).",
                 grounded: false,
                 template: """
                 Suggest 3 realistic ‹meal› options someone could actually make at \
-                home or grab easily tonight. They have ‹remaining› calories \
-                and ‹remaining› g protein left in today's budget — every \
-                option must fit inside the remaining calories, and at least two \
-                should make a real dent in the protein gap. Already eaten today: \
-                ‹foods logged today›. Don't repeat these.
+                home or grab easily. This is specifically their ‹meal›, and it has \
+                its own target: about ‹calories› calories, ‹carbs› g carbs, \
+                ‹protein› g protein, ‹fat› g fat. Every suggestion should land \
+                close to ALL FOUR of those numbers, not just the calories. \
+                Already eaten today: ‹foods logged today›. Don't repeat these.
+                Every ingredient must be something they can buy at one of these \
+                stores: ‹your stores›.
+                Hard exclusions — never suggest these, and never suggest a dish \
+                that contains them: ‹foods you excluded›.
                 \(nutritionGuidance)
                 Respond with only JSON:
                 {"suggestions": [{"name": "<short dish name>", \

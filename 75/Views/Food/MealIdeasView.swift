@@ -1,14 +1,28 @@
 import SwiftUI
 import SwiftData
 
-/// "What should I eat?" — Gemini suggests meals that fit what's LEFT of
-/// today's budget (calorie ceiling, protein gap, lab-aware when on), and
-/// each idea logs with one tap as a normal editable FoodLog.
+/// "What should I eat?" — Gemini suggests meals that fit, and each idea logs
+/// with one tap as a normal editable FoodLog.
+///
+/// "Fit" means one of two things. Opened from the day plan, it means this
+/// meal's own target — its calories, carbs, protein, and fat, plus whether
+/// it's feeding a session in an hour — which is a far sharper question than
+/// the one this screen used to ask. Opened from anywhere else, it falls back
+/// to what's left of the day.
+///
+/// Either way the suggestions are bounded by what the user can actually buy
+/// and will actually eat (Settings → Food Preferences), and steered by labs
+/// when those are shared.
 struct MealIdeasView: View {
     @Environment(\.dismiss) private var dismiss
     var day: DayLog
     let targets: DailyTargets
     var labs: AIFoodEstimator.LabSnapshot?
+    var preferences: FoodPreferences = .empty
+    /// Which meal these get logged under. Defaults to whatever's next.
+    var meal: Meal = .suggested()
+    /// The specific meal target, when the ask came from the day plan.
+    var brief: AIFoodEstimator.MealBrief?
 
     @State private var suggestions: [AIFoodEstimator.MealSuggestion] = []
     @State private var error: String?
@@ -16,19 +30,30 @@ struct MealIdeasView: View {
 
     private var remainingCalories: Int { max(0, targets.calories - day.totalCalories) }
     private var remainingProtein: Int { max(0, targets.proteinGrams - day.totalProtein) }
-    private var meal: Meal { Meal.suggested() }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     HStack(spacing: 16) {
-                        stat("\(remainingCalories)", "cal left", tint: Theme.foodTint)
-                        stat("\(remainingProtein) g", "protein to go", tint: Theme.workoutTint)
-                        stat(meal.label, "up next", tint: meal.color)
+                        if let brief {
+                            stat("\(brief.calories)", "cal target", tint: Theme.foodTint)
+                            stat("\(brief.carbGrams) g", "carbs", tint: Theme.foodTint)
+                            stat("\(brief.proteinGrams) g", "protein", tint: Theme.workoutTint)
+                        } else {
+                            stat("\(remainingCalories)", "cal left", tint: Theme.foodTint)
+                            stat("\(remainingProtein) g", "protein to go", tint: Theme.workoutTint)
+                        }
+                        stat(brief?.label ?? meal.label,
+                             brief == nil ? "up next" : "this meal",
+                             tint: meal.color)
                         Spacer()
                     }
                     .padding(.vertical, 2)
+                } footer: {
+                    if !preferences.isEmpty {
+                        Text(preferenceFooter)
+                    }
                 }
 
                 if !suggestions.isEmpty {
@@ -118,15 +143,28 @@ struct MealIdeasView: View {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
+    private var preferenceFooter: String {
+        var parts: [String] = []
+        if !preferences.stores.isEmpty {
+            parts.append("Shopping at \(preferences.stores.joined(separator: ", "))")
+        }
+        if !preferences.dislikes.isEmpty {
+            parts.append("skipping \(preferences.dislikes.joined(separator: ", "))")
+        }
+        return parts.joined(separator: " · ") + "."
+    }
+
     private func load() async {
         guard suggestions.isEmpty else { return }
         do {
             suggestions = try await AIFoodEstimator.suggestMeals(
-                meal: meal.label.lowercased(),
+                meal: (brief?.label ?? meal.label).lowercased(),
                 remainingCalories: remainingCalories,
                 remainingProtein: remainingProtein,
                 eatenToday: day.foods.map(\.name),
-                labs: labs)
+                labs: labs,
+                preferences: preferences,
+                brief: brief)
         } catch {
             self.error = error.localizedDescription
         }

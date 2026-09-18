@@ -13,6 +13,11 @@ struct BackupPayload: Codable {
         let minutes: Int
         let outdoor: Bool
         let createdAt: Date
+        // Added with the day plan. Optional so older backups still decode.
+        var categoryRaw: String? = nil
+        var intensityRaw: String? = nil
+        var startHour: Int? = nil
+        var startMinute: Int? = nil
     }
     struct BFood: Codable {
         let name: String
@@ -30,6 +35,12 @@ struct BackupPayload: Codable {
         let standardDrinks: Double
         let takenSupplements: [String]
         let notes: String?
+        // The day's shape — a late start, skipped meals, the meal it was
+        // planned around. Optional for backwards compatibility.
+        var wakeHour: Int? = nil
+        var wakeMinute: Int? = nil
+        var skippedMealsRaw: [String]? = nil
+        var bigMealRaw: String? = nil
         let workouts: [BWorkout]
         let foods: [BFood]
         let photos: [BPhoto]
@@ -93,7 +104,10 @@ enum BackupService {
                 return .init(filename: p.filename, createdAt: p.createdAt, base64JPEG: data.base64EncodedString())
             }
             let workouts: [BackupPayload.BWorkout] = d.workouts.map {
-                .init(name: $0.name, minutes: $0.minutes, outdoor: $0.outdoor, createdAt: $0.createdAt)
+                .init(name: $0.name, minutes: $0.minutes, outdoor: $0.outdoor,
+                      createdAt: $0.createdAt, categoryRaw: $0.categoryRaw,
+                      intensityRaw: $0.intensityRaw, startHour: $0.startHour,
+                      startMinute: $0.startMinute)
             }
             let foods: [BackupPayload.BFood] = d.foods.map {
                 .init(name: $0.name, calories: $0.calories, proteinGrams: $0.proteinGrams,
@@ -108,6 +122,10 @@ enum BackupService {
                 standardDrinks: d.standardDrinks,
                 takenSupplements: d.takenSupplements,
                 notes: d.notes,
+                wakeHour: d.wakeHour,
+                wakeMinute: d.wakeMinute,
+                skippedMealsRaw: d.skippedMealsRaw,
+                bigMealRaw: d.bigMealRaw,
                 workouts: workouts,
                 foods: foods,
                 photos: photos

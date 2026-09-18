@@ -109,6 +109,22 @@ final class DayLog {
     var takenSupplements: [String] = []
     var notes: String?
 
+    // MARK: Day shape — how this particular day departs from the schedule.
+    // All additive and defaulted: a day that never touched these plans
+    // exactly the way the meal schedule says it should.
+
+    /// When the day actually started, when it wasn't the usual time. Slots
+    /// that fall before it drop out of the plan and their food is spread
+    /// across what's left — the "I slept through half of it" case.
+    var wakeHour: Int? = nil
+    var wakeMinute: Int? = nil
+    /// Meals deliberately skipped today (Meal.rawValue). Their share is
+    /// reallocated across the meals still ahead.
+    var skippedMealsRaw: [String] = []
+    /// The meal being planned around — a dinner out, a long lunch. It takes a
+    /// bigger share and everything else shrinks to pay for it.
+    var bigMealRaw: String? = nil
+
     @Relationship(deleteRule: .cascade) var workouts: [WorkoutLog]
     @Relationship(deleteRule: .cascade) var foods: [FoodLog]
     @Relationship(deleteRule: .cascade) var photos: [PhotoEntry]
@@ -155,6 +171,76 @@ final class DayLog {
         foods.filter { $0.meal == meal }.sorted { $0.createdAt < $1.createdAt }
     }
 
+    func calories(for meal: Meal?) -> Int {
+        foods(for: meal).reduce(0) { $0 + $1.calories }
+    }
+
+    func protein(for meal: Meal?) -> Int {
+        foods(for: meal).reduce(0) { $0 + $1.proteinGrams }
+    }
+
+    func facts(for meal: Meal?) -> NutritionFacts {
+        foods(for: meal).reduce(into: NutritionFacts()) { $0.add($1.facts) }
+    }
+
+    // MARK: Day shape
+
+    /// Minutes past midnight the day started, when it was set.
+    var wakeMinutesOfDay: Int? {
+        guard let wakeHour else { return nil }
+        return wakeHour * 60 + (wakeMinute ?? 0)
+    }
+
+    var skippedMeals: Set<Meal> {
+        Set(skippedMealsRaw.compactMap(Meal.init(rawValue:)))
+    }
+
+    var bigMeal: Meal? {
+        get { bigMealRaw.flatMap(Meal.init(rawValue:)) }
+        set { bigMealRaw = newValue?.rawValue }
+    }
+
+    func isSkipped(_ meal: Meal) -> Bool { skippedMealsRaw.contains(meal.rawValue) }
+
+    /// Mark a meal skipped (or un-skip it) and save — the reallocation itself
+    /// falls out of the plan being recomputed from this.
+    func setSkipped(_ meal: Meal, _ skipped: Bool) {
+        if skipped {
+            guard !skippedMealsRaw.contains(meal.rawValue) else { return }
+            skippedMealsRaw.append(meal.rawValue)
+            // A skipped meal can't also be the one you're planning around.
+            if bigMealRaw == meal.rawValue { bigMealRaw = nil }
+        } else {
+            skippedMealsRaw.removeAll { $0 == meal.rawValue }
+        }
+        try? modelContext?.save()
+    }
+
+    func setBigMeal(_ meal: Meal?) {
+        bigMealRaw = meal?.rawValue
+        if let meal { skippedMealsRaw.removeAll { $0 == meal.rawValue } }
+        try? modelContext?.save()
+    }
+
+    func setWake(hour: Int?, minute: Int?) {
+        wakeHour = hour
+        wakeMinute = minute
+        try? modelContext?.save()
+    }
+
+    /// Back to the standard shape — nothing skipped, no big meal, normal start.
+    func resetDayShape() {
+        wakeHour = nil
+        wakeMinute = nil
+        skippedMealsRaw = []
+        bigMealRaw = nil
+        try? modelContext?.save()
+    }
+
+    var hasDayShapeChanges: Bool {
+        wakeHour != nil || !skippedMealsRaw.isEmpty || bigMealRaw != nil
+    }
+
     // MARK: Food mutations — the only way food should be added or removed.
     // Each one updates the relationship array (so views refresh immediately)
     // AND saves right away (so nothing depends on an onDisappear that may
@@ -193,17 +279,31 @@ final class WorkoutLog {
     var minutes: Int
     var outdoor: Bool
     var categoryRaw: String = WorkoutCategory.other.rawValue
+    /// How hard it was. Defaulted for logs that predate the field — moderate
+    /// is the honest midpoint, and it's what the fueling math assumed anyway.
+    var intensityRaw: String = WorkoutIntensity.moderate.rawValue
+    /// When it started, so a performed workout sits on the day's timeline in
+    /// the right place rather than wherever it happened to get logged. Nil on
+    /// older logs; `createdAt` stands in for those.
+    var startHour: Int? = nil
+    var startMinute: Int? = nil
     var createdAt: Date
     /// HealthKit workout UUID when this log was imported from Health
     /// (Apple Watch, Garmin…) — the dedupe key so re-imports are no-ops.
     var healthKitID: String? = nil
     @Relationship(deleteRule: .cascade) var sets: [SetLog] = []
 
-    init(name: String, minutes: Int, outdoor: Bool = false, category: WorkoutCategory = .other) {
+    init(name: String, minutes: Int, outdoor: Bool = false,
+         category: WorkoutCategory = .other,
+         intensity: WorkoutIntensity = .moderate,
+         startHour: Int? = nil, startMinute: Int? = nil) {
         self.name = name
         self.minutes = minutes
         self.outdoor = outdoor
         self.categoryRaw = category.rawValue
+        self.intensityRaw = intensity.rawValue
+        self.startHour = startHour
+        self.startMinute = startMinute
         self.createdAt = Date()
         self.sets = []
     }
@@ -211,6 +311,25 @@ final class WorkoutLog {
     var category: WorkoutCategory {
         get { WorkoutCategory(rawValue: categoryRaw) ?? .other }
         set { categoryRaw = newValue.rawValue }
+    }
+
+    var intensity: WorkoutIntensity {
+        get { WorkoutIntensity(rawValue: intensityRaw) ?? .moderate }
+        set { intensityRaw = newValue.rawValue }
+    }
+
+    /// Where this lands on the day's timeline: the start time when it was
+    /// entered, otherwise the moment it was logged.
+    var minutesOfDay: Int {
+        if let startHour { return startHour * 60 + (startMinute ?? 0) }
+        let c = Calendar.current.dateComponents([.hour, .minute], from: createdAt)
+        return (c.hour ?? 12) * 60 + (c.minute ?? 0)
+    }
+
+    var timeString: String {
+        let comps = DateComponents(hour: minutesOfDay / 60, minute: minutesOfDay % 60)
+        let date = Calendar.current.date(from: comps) ?? createdAt
+        return date.formatted(date: .omitted, time: .shortened)
     }
 }
 

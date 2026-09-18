@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import UIKit
 
 /// "Paste a link" — drop in a recipe web page or video URL and Gemini reads
@@ -8,8 +9,12 @@ import UIKit
 /// editable before it lands in the day.
 struct RecipeImportView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     var mealLabel: String = "Today"
     let onLog: ([FoodLog]) -> Void
+
+    @State private var savedName = ""
+    @State private var didSave = false
 
     @State private var url = ""
     @State private var importing = false
@@ -85,6 +90,28 @@ struct RecipeImportView: View {
                         Text("Servings")
                     } footer: {
                         Text("This recipe makes about \(recipeServings) serving\(recipeServings == 1 ? "" : "s"). The numbers below are for the servings you're logging — step it up to log more, or the whole batch.")
+                    }
+
+                    // --- Keep it
+                    Section {
+                        HStack {
+                            TextField("Name it", text: $savedName)
+                                .textInputAutocapitalization(.words)
+                            Button {
+                                saveAsMeal()
+                            } label: {
+                                Label(didSave ? "Saved" : "Save",
+                                      systemImage: didSave ? "checkmark.circle.fill" : "bookmark.fill")
+                                    .font(.caption.bold())
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(didSave ? .green : Theme.accent)
+                            .disabled(didSave || savedName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        }
+                    } header: {
+                        Text("Save as a Meal")
+                    } footer: {
+                        Text("Stores the whole batch and how many servings it makes, so next time it's one tap and a servings stepper instead of reading the link again. Saving doesn't log it — that's the button below.")
                     }
 
                     // --- Items (whole recipe, scaled to servingsToLog)
@@ -178,6 +205,32 @@ struct RecipeImportView: View {
         return parts.joined(separator: "\n")
     }
 
+    /// Snapshot the WHOLE recipe — not the servings being logged — alongside
+    /// its yield. Storing the batch is what makes "I had a third of it" a
+    /// stepper later instead of arithmetic.
+    private func saveAsMeal() {
+        let trimmed = savedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !items.isEmpty else { return }
+        let meal = SavedMeal(name: trimmed,
+                             servings: Double(max(1, recipeServings)),
+                             sourceURL: url.trimmingCharacters(in: .whitespaces),
+                             notes: assumed.isEmpty ? nil : assumed)
+        for (index, item) in items.enumerated() {
+            meal.items.append(SavedMealItem(name: item.name,
+                                            orderIndex: index,
+                                            calories: item.calories,
+                                            proteinGrams: item.proteinGrams,
+                                            grams: item.grams,
+                                            source: "ai",
+                                            density: item.density,
+                                            facts: item.facts))
+        }
+        context.insert(meal)
+        try? context.save()
+        didSave = true
+        Haptics.success()
+    }
+
     private func runImport() async {
         importing = true
         importError = nil
@@ -188,6 +241,8 @@ struct RecipeImportView: View {
             items = recipe.items
             recipeServings = recipe.servings
             servingsToLog = 1
+            if savedName.isEmpty { savedName = recipe.title }
+            didSave = false
             assumed = recipe.assumed
             note = recipe.note
             grounded = recipe.grounded
