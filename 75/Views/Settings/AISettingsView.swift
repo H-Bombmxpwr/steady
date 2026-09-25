@@ -9,6 +9,12 @@ struct AISettingsView: View {
     @AppStorage(AIFoodEstimator.accurateModelKey) private var accurateModel = false
     @FocusState private var keyFocused: Bool
 
+    // A live check, because the shape of a key says nothing about whether
+    // Google will accept it — and "it stopped working" is usually the free
+    // tier's lookup quota, not the key.
+    @State private var checking = false
+    @State private var check: AIFoodEstimator.KeyCheck?
+
     var body: some View {
         Form {
             // --- What it powers / what leaves the device
@@ -22,9 +28,10 @@ struct AISettingsView: View {
                 • Estimate Nutrition on custom foods and “Not listed?” search results
                 • Filling in protein when a database entry is missing it
                 • What Should I Eat? — meal ideas that fit your remaining budget
+                • Feeling Restaurants? — healthy orders at real places near you
                 • Summarize My Day — the end-of-day review and swaps
 
-                Only food descriptions and food photos are sent to Google. Progress photos, weight, and everything else never leave the device. Estimates are good, not perfect — every number stays editable after logging, and a green “Looked up” badge marks numbers checked against real published data (vs an orange “Best guess”).
+                Only food descriptions, food photos, and — if you tap Restaurants — the name of the neighbourhood you're in are sent to Google. Progress photos, weight, and everything else never leave the device. Estimates are good, not perfect — every number stays editable after logging, and a green “Looked up” badge marks numbers checked against real published data (vs an orange “Best guess”).
                 """)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -47,11 +54,39 @@ struct AISettingsView: View {
                 } label: {
                     Label("How to get a free key", systemImage: "key.horizontal.fill")
                 }
+                Button {
+                    Task { await runCheck() }
+                } label: {
+                    HStack {
+                        Label("Test it now", systemImage: "checkmark.shield")
+                        if checking { Spacer(); ProgressView() }
+                    }
+                }
+                .disabled(checking)
+                if let check {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(check.headline,
+                              systemImage: check.isHealthy
+                                ? (check.groundedWorks ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                                : "xmark.octagon.fill")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(check.isHealthy
+                                             ? (check.groundedWorks ? Color.green : Theme.warn)
+                                             : Theme.danger)
+                        ForEach(check.notes, id: \.self) { note in
+                            Text("• \(note)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
                 Toggle("Higher accuracy (slower)", isOn: $accurateModel)
             } header: {
                 Text("Model")
             } footer: {
-                Text("A key is already bundled with the app, so estimates work out of the box — paste your own to use your own private quota. Higher accuracy switches estimates to the full Gemini Flash model: noticeably better numbers on complex meals, but a response takes several seconds instead of about one.")
+                Text("A key is already bundled with the app, so estimates work out of the box — paste your own to use your own private quota. Gemini keys don't expire on their own: when estimates suddenly stop being web-checked, it's the free tier's daily lookup quota, and “Test it now” says which it is. Higher accuracy switches estimates to the full Gemini Flash model: noticeably better numbers on complex meals, but a response takes several seconds instead of about one.")
             }
 
             // --- The exact prompts
@@ -91,6 +126,13 @@ struct AISettingsView: View {
                 Button("Done") { keyFocused = false }
             }
         }
+    }
+
+    private func runCheck() async {
+        checking = true
+        check = nil
+        check = await AIFoodEstimator.checkKey()
+        checking = false
     }
 
     /// A quick read on what's in the key field, so pasting a bad key is

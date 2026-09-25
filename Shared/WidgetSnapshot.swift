@@ -77,6 +77,10 @@ extension WidgetSnapshot {
         cached.waterOz = day.waterOunces
         cached.carbs = Int(day.totalFacts.carbsGrams.rounded())
         cached.workoutMinutes = day.workouts.reduce(0) { $0 + $1.minutes }
+        // A weigh-in logged today is the newest weight there is, and the large
+        // widget shows it — waiting for the next full build means the widget
+        // disagrees with the app all morning.
+        if let weight = day.weight, weight > 0 { cached.currentWeight = weight }
         cached.dayDate = today
         cached.save()
         WidgetCenter.shared.reloadAllTimelines()

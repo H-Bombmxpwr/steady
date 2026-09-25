@@ -26,7 +26,14 @@ enum AIFoodEstimator {
         return user.isEmpty ? bundledKey : user
     }
 
-    private static let bundledKey: String = {
+    /// True when the key in play came from Settings rather than the bundle.
+    static var usingUserKey: Bool {
+        let user = UserDefaults.standard.string(forKey: apiKeyKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !user.isEmpty && user != bundledKey
+    }
+
+    static let bundledKey: String = {
         guard let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
               let dict = NSDictionary(contentsOf: url) as? [String: Any] else { return "" }
         return (dict["GeminiAPIKey"] as? String ?? "")
@@ -398,7 +405,7 @@ enum AIFoodEstimator {
         }
 
         let foodLines = day.foods
-            .sorted { ($0.meal?.rawValue ?? "z", $0.createdAt) < ($1.meal?.rawValue ?? "z", $1.createdAt) }
+            .sorted { ($0.meal?.rawValue ?? "z", $0.occurredAt) < ($1.meal?.rawValue ?? "z", $1.occurredAt) }
             .map { f -> String in
                 let meal = f.meal?.label ?? "Unspecified"
                 var line = "- [\(meal)] \(f.name): \(f.calories) cal, \(f.proteinGrams) g protein"
@@ -543,6 +550,11 @@ enum AIFoodEstimator {
         let facts: NutritionFacts
         let density: String?
         let assumed: String?
+        /// Where to get it, when the idea came from a restaurant search.
+        var restaurant: String? = nil
+        /// How to order it so the numbers hold — "no crema, dressing on the
+        /// side". The whole trick of eating out well is in this line.
+        var order: String? = nil
     }
 
     /// The specific meal being planned, when the ask came from the day plan
@@ -592,17 +604,33 @@ enum AIFoodEstimator {
     /// Suggest meals that fit — either one meal's own macro target (when the
     /// day plan asked) or what's LEFT of today's budget. Labs steer the
     /// ingredients when they're shared; stores and dislikes are hard limits.
+    /// Ideas that fit — at home, or at a restaurant near a named place.
+    ///
+    /// `nearby` is the only thing that changes the character of the call: with
+    /// a place name it has to name real restaurants and real menu items, which
+    /// is a fact-finding question rather than a cooking one, so it runs
+    /// search-grounded and *fails* rather than falling back. A model inventing
+    /// a salad at a restaurant that doesn't exist — or inventing the calories
+    /// of a real one — is worse than no answer.
+    ///
+    /// `avoid` is what's already on screen, so "refresh this one" can hand back
+    /// something genuinely different instead of the same three ideas reshuffled.
     static func suggestMeals(meal: String,
                              remainingCalories: Int,
                              remainingProtein: Int,
                              eatenToday: [String],
                              labs: LabSnapshot? = nil,
                              preferences: FoodPreferences = .empty,
-                             brief: MealBrief? = nil) async throws -> [MealSuggestion] {
+                             brief: MealBrief? = nil,
+                             count: Int = 3,
+                             avoid: [String] = [],
+                             nearby: String? = nil) async throws -> [MealSuggestion] {
         struct PayloadSuggestion: Decodable {
             let name: String?
             let why: String?
             let assumed: String?
+            let restaurant: String?
+            let order: String?
             let food: FoodPayload?
         }
         struct Payload: Decodable {
@@ -631,17 +659,56 @@ enum AIFoodEstimator {
         remaining calories, and at least two should make a real dent in the \
         protein gap.
         """
-        let prompt = """
-        Suggest 3 realistic \(meal) options someone could actually make at \
-        home or grab easily. \(targetLine) \(eatenLine)\(preferences.promptSection)\(labSection)
-        \(nutritionGuidance)
-        Respond with only JSON:
-        {"suggestions": [{"name": "<short dish name>", \
-        "why": "<one short sentence: why this fits right now>", \
-        "assumed": "<short: the exact portion assumed>", \
-        "food": {\(nutritionSchema)}}]}
-        """
-        let payload: Payload = try await generate(prompt: prompt)
+        let avoidLine = avoid.isEmpty ? "" : """
+             Do NOT suggest any of these — they were already offered and \
+            turned down: \(avoid.joined(separator: ", ")). Come back with \
+            something genuinely different, not a variation on them.
+            """
+
+        let prompt: String
+        if let nearby {
+            prompt = """
+            Find \(count) genuinely good \(meal) option\(count == 1 ? "" : "s") on the menus of \
+            real restaurants, cafés or fast-casual chains in or very near \
+            \(nearby). Search for their actual published menus and nutrition \
+            information — only name places that really exist there, and only \
+            dishes that are really on their menu. If you can't verify a place \
+            has the dish, leave it out rather than guessing.
+            \(targetLine) \(eatenLine)\(avoidLine)\(preferences.promptSection)\(labSection)
+            Prefer things that are ordinary orders rather than obscure \
+            hacks, and say plainly how to order each one so the numbers hold \
+            (what to leave off, what to ask for on the side, what size).
+            \(nutritionGuidance)
+            Use the restaurant's own published numbers when they exist, and \
+            say so in "assumed"; otherwise estimate from the ingredients and \
+            say that instead.
+            Respond with only JSON:
+            {"suggestions": [{"name": "<the menu item, as they call it>", \
+            "restaurant": "<the restaurant or chain name, and its neighbourhood>", \
+            "order": "<one short sentence: how to order it>", \
+            "why": "<one short sentence: why this fits right now>", \
+            "assumed": "<short: published numbers, or what you estimated from>", \
+            "food": {\(nutritionSchema)}}]}
+            """
+        } else {
+            prompt = """
+            Suggest \(count) realistic \(meal) option\(count == 1 ? "" : "s") someone could actually make at \
+            home or grab easily. \(targetLine) \(eatenLine)\(avoidLine)\(preferences.promptSection)\(labSection)
+            \(nutritionGuidance)
+            Respond with only JSON:
+            {"suggestions": [{"name": "<short dish name>", \
+            "why": "<one short sentence: why this fits right now>", \
+            "assumed": "<short: the exact portion assumed>", \
+            "food": {\(nutritionSchema)}}]}
+            """
+        }
+
+        // Restaurants are a question about the world, so they go out with
+        // search attached and no silent fallback: an unverified restaurant is
+        // not a suggestion, it's a fabrication.
+        let payload: Payload = nearby == nil
+            ? try await generate(prompt: prompt)
+            : try await performGenerate(parts: [["text": prompt]], grounded: true)
         let suggestions = (payload.suggestions ?? []).compactMap { s -> MealSuggestion? in
             guard let name = s.name, !name.isEmpty,
                   let food = s.food, let calories = food.calories else { return nil }
@@ -649,6 +716,9 @@ enum AIFoodEstimator {
             // list. Anything naming an excluded food is dropped here, whatever
             // the model thought.
             if preferences.excludes(name) || preferences.excludes(s.assumed ?? "") { return nil }
+            // A restaurant idea with no restaurant on it is a guess wearing
+            // the wrong hat — drop it rather than show it as local.
+            if nearby != nil, (s.restaurant ?? "").isEmpty { return nil }
             return MealSuggestion(name: name,
                                   why: s.why ?? "",
                                   calories: calories,
@@ -656,7 +726,9 @@ enum AIFoodEstimator {
                                   grams: food.portion_grams,
                                   facts: food.facts,
                                   density: food.density,
-                                  assumed: s.assumed)
+                                  assumed: s.assumed,
+                                  restaurant: s.restaurant,
+                                  order: s.order)
         }
         guard !suggestions.isEmpty else { throw EstimatorError.badResponse }
         return suggestions
@@ -673,22 +745,147 @@ enum AIFoodEstimator {
         let candidates: [Candidate]?
     }
 
+    /// Why a call failed, told apart rather than lumped together.
+    ///
+    /// Every failure used to come back as "check the key, your connection, or
+    /// try a more specific description", which is three guesses and no answer.
+    /// The common failure in practice isn't the key at all — it's the free
+    /// tier's quota for *search-grounded* calls running out, which returns 429
+    /// while ordinary estimates keep working perfectly. Reading a recipe link
+    /// needs those tools, so the one feature that can't fall back was also the
+    /// one accusing a perfectly good key. These cases exist so each failure can
+    /// say what actually happened and what to do about it.
     enum EstimatorError: LocalizedError {
         case noKey, badResponse, badLink, linkUnread(String?)
+        /// The key was rejected outright — revoked, restricted, or mistyped.
+        case invalidKey(String?)
+        /// Free-tier quota spent. `grounded` when it was the search/URL tools
+        /// rather than the model itself, which is the usual case by far.
+        case quotaExhausted(grounded: Bool)
+        /// Gemini is over capacity (503). Nothing to fix; try again.
+        case overloaded
+        case offline
+        case timedOut
+        /// Anything else Google said, passed through rather than swallowed.
+        case server(code: Int, message: String?)
+
         var errorDescription: String? {
             switch self {
             case .noKey:
-                return "Add your free Gemini API key in Settings → AI Assist first."
+                return "Add your free Gemini API key in Settings → AI & Estimates first."
             case .badResponse:
-                return "Couldn't get an estimate — check the key, your connection, or try a more specific description."
+                return "Gemini answered, but not with numbers this could read. Try again, or describe the food a little more specifically."
             case .badLink:
                 return "That doesn't look like a web link — paste the full https:// address of the recipe."
             case .linkUnread(let why):
                 let base = "Couldn't read that link"
                 if let why, !why.isEmpty { return "\(base) — \(why). Try a recipe website or a YouTube link." }
                 return "\(base). Short-form video (TikTok, Instagram) often can't be read — try a recipe website or YouTube, or paste the ingredients into Describe Your Meal."
+            case .invalidKey(let detail):
+                let base = "Google rejected the API key. Keys don't expire on their own, but they can be deleted or restricted in AI Studio — check Settings → AI & Estimates, or paste a fresh one."
+                if let detail, !detail.isEmpty { return "\(base)\n\n(\(detail))" }
+                return base
+            case .quotaExhausted(let grounded):
+                return grounded
+                    ? "The free tier's quota for web-checked lookups is used up for now. Plain estimates still work — this only affects reading links and checking numbers against published data. It resets on Google's clock (usually within the day), or paste your own key in Settings → AI & Estimates."
+                    : "The free tier's request quota is used up for now. It resets on Google's clock — usually within a day — or paste your own key in Settings → AI & Estimates to use your own."
+            case .overloaded:
+                return "Gemini is over capacity right now — that's on Google's end, not your key. Try again in a minute."
+            case .offline:
+                return "No connection. Custom Food still works offline — type the numbers in and fix them later."
+            case .timedOut:
+                return "Gemini took too long to answer. Try again — or turn off “Higher accuracy” in Settings → AI & Estimates, which trades some precision for a much faster reply."
+            case .server(let code, let message):
+                if let message, !message.isEmpty { return "Gemini returned an error (\(code)): \(message)" }
+                return "Gemini returned an error (\(code)). Try again in a moment."
             }
         }
+
+        /// True when trying again later is the whole answer.
+        var isTransient: Bool {
+            switch self {
+            case .overloaded, .timedOut, .offline, .quotaExhausted: return true
+            default: return false
+            }
+        }
+    }
+
+    /// Google's error envelope: `{"error": {"code", "message", "status"}}`.
+    private struct APIError: Decodable {
+        struct Body: Decodable {
+            let code: Int?
+            let message: String?
+            let status: String?
+        }
+        let error: Body?
+    }
+
+    /// Turn a non-200 reply into the error that actually describes it.
+    private static func failure(status: Int, data: Data, grounded: Bool) -> EstimatorError {
+        let body = (try? JSONDecoder().decode(APIError.self, from: data))?.error
+        let message = body?.message
+        let code = body?.status ?? ""
+        switch status {
+        case 429:
+            return .quotaExhausted(grounded: grounded)
+        case 400 where (message ?? "").localizedCaseInsensitiveContains("api key")
+                    || code == "INVALID_ARGUMENT" && (message ?? "").localizedCaseInsensitiveContains("key"):
+            return .invalidKey(message)
+        case 401, 403:
+            return .invalidKey(message)
+        case 500, 502, 503, 504:
+            return .overloaded
+        default:
+            return .server(code: status, message: message)
+        }
+    }
+
+    /// A transport failure, named. `URLError` is where a dead Wi-Fi network and
+    /// a slow model both land, and they need different sentences.
+    private static func transportFailure(_ error: Error) -> EstimatorError {
+        guard let urlError = error as? URLError else { return .badResponse }
+        switch urlError.code {
+        case .notConnectedToInternet, .dataNotAllowed, .cannotFindHost,
+             .cannotConnectToHost, .networkConnectionLost:
+            return .offline
+        case .timedOut:
+            return .timedOut
+        default:
+            return .badResponse
+        }
+    }
+
+    // MARK: - Grounding cooldown
+
+    /// When the search-grounded path is out of quota, stop leading with it.
+    ///
+    /// Every grounded call that 429s is a wasted round trip before the plain
+    /// call that was always going to answer, and it burns request budget on
+    /// the way. So a quota rejection parks grounding for a while and estimates
+    /// go straight to the model, which is what the fallback was doing anyway —
+    /// just without the detour.
+    private static let groundingCooldownKey = "ai.grounding.cooldownUntil"
+    private static let groundingCooldown: TimeInterval = 30 * 60
+
+    static var groundingIsCoolingDown: Bool {
+        let until = UserDefaults.standard.double(forKey: groundingCooldownKey)
+        return until > Date().timeIntervalSince1970
+    }
+
+    /// When grounded lookups should start being tried again, if they're parked.
+    static var groundingResumesAt: Date? {
+        let until = UserDefaults.standard.double(forKey: groundingCooldownKey)
+        guard until > Date().timeIntervalSince1970 else { return nil }
+        return Date(timeIntervalSince1970: until)
+    }
+
+    private static func parkGrounding() {
+        UserDefaults.standard.set(Date().timeIntervalSince1970 + groundingCooldown,
+                                  forKey: groundingCooldownKey)
+    }
+
+    static func resumeGrounding() {
+        UserDefaults.standard.removeObject(forKey: groundingCooldownKey)
     }
 
     /// Full nutrition for one typical serving (Custom Food "Estimate with AI").
@@ -759,10 +956,64 @@ enum AIFoodEstimator {
     /// call so logging never breaks. Reports which one actually answered so
     /// the UI can badge "looked up" vs "best guess".
     private static func generateGrounded<T: Decodable>(parts: [[String: Any]]) async throws -> (payload: T, grounded: Bool) {
-        if let payload: T = try? await performGenerate(parts: parts, grounded: true) {
-            return (payload, true)
+        guard !groundingIsCoolingDown else {
+            return (try await performGenerate(parts: parts, grounded: false), false)
         }
-        return (try await performGenerate(parts: parts, grounded: false), false)
+
+        // Both at once, rather than grounded-then-plain.
+        //
+        // This used to run the search-grounded call first and only fall back
+        // when it failed, which meant the *normal* path was the slow one: a
+        // grounded call runs a web search before it generates, and a meal with
+        // seven items was waiting on that before the fast call had even
+        // started. Now the plain call — a couple of seconds — is always in
+        // flight, and grounding is an upgrade that has to arrive within
+        // `groundingDeadline` to be used. Worst case is the deadline instead of
+        // the sum of the two.
+        async let plainAttempt = attempt { try await performGenerate(parts: parts, grounded: false) as T }
+        async let groundedAttempt = attempt {
+            try await withDeadline(seconds: groundingDeadline) {
+                try await performGenerate(parts: parts, grounded: true) as T
+            }
+        }
+        let plain = await plainAttempt
+        let grounded = await groundedAttempt
+
+        switch grounded {
+        case .success(let payload):
+            return (payload, true)
+        case .failure(let error):
+            if case EstimatorError.quotaExhausted = error {
+                // Park it so the next estimate doesn't pay for the same
+                // rejection — and skips straight to the fast call.
+                parkGrounding()
+            }
+            return (try plain.get(), false)
+        }
+    }
+
+    /// How long a web-checked answer gets to beat the plain one. Past this the
+    /// numbers aren't worth the wait — they're an accuracy upgrade, not the
+    /// answer itself.
+    private static let groundingDeadline: TimeInterval = 6
+
+    private static func attempt<T>(_ work: @escaping @Sendable () async throws -> T) async -> Result<T, Error> {
+        do { return .success(try await work()) } catch { return .failure(error) }
+    }
+
+    /// Run `work`, giving up on it after `seconds`. The losing task is
+    /// cancelled, so a slow grounded call stops holding a connection open.
+    private static func withDeadline<T: Sendable>(seconds: TimeInterval,
+                                                  _ work: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await work() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw EstimatorError.timedOut
+            }
+            defer { group.cancelAll() }
+            return try await group.next()!
+        }
     }
 
     /// A call that runs with explicit tools (url_context, google_search) on a
@@ -787,9 +1038,21 @@ enum AIFoodEstimator {
                                    "generationConfig": ["temperature": 0]]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw EstimatorError.badResponse
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw transportFailure(error)
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            // Reading a link is a tool call, so a quota rejection here is the
+            // grounded quota — the same one estimates fall back from. Say so
+            // instead of blaming the key.
+            let error = failure(status: status, data: data, grounded: true)
+            if case .quotaExhausted = error { parkGrounding() }
+            throw error
         }
         let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
         let text = (decoded.candidates?.first?.content?.parts ?? [])
@@ -801,8 +1064,10 @@ enum AIFoodEstimator {
         return payload
     }
 
-    private static func performGenerate<T: Decodable>(parts: [[String: Any]], grounded: Bool) async throws -> T {
-        let key = apiKey
+    private static func performGenerate<T: Decodable>(parts: [[String: Any]],
+                                                      grounded: Bool,
+                                                      keyOverride: String? = nil) async throws -> T {
+        let key = keyOverride ?? apiKey
         guard !key.isEmpty else { throw EstimatorError.noKey }
 
         var request = URLRequest(url: URL(string:
@@ -826,9 +1091,26 @@ enum AIFoodEstimator {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw EstimatorError.badResponse
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw transportFailure(error)
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            let error = failure(status: status, data: data, grounded: grounded)
+            // A key the user pasted can be revoked or restricted while the
+            // bundled one is fine. Falling back once — and only for a rejected
+            // key, never for a quota or an outage — is the difference between
+            // "AI stopped working" and never noticing.
+            if case .invalidKey = error, keyOverride == nil,
+               usingUserKey, !bundledKey.isEmpty {
+                return try await performGenerate(parts: parts, grounded: grounded,
+                                                 keyOverride: bundledKey)
+            }
+            throw error
         }
 
         let decoded = try JSONDecoder().decode(GeminiResponse.self, from: data)
@@ -839,6 +1121,93 @@ enum AIFoodEstimator {
             throw EstimatorError.badResponse
         }
         return payload
+    }
+
+    // MARK: - Checking the key
+
+    /// What a live check of the key found.
+    struct KeyCheck {
+        /// Ordinary estimates — the path almost everything uses.
+        let plainWorks: Bool
+        /// Web-checked lookups and reading recipe links.
+        let groundedWorks: Bool
+        /// Whose key answered.
+        let usingUserKey: Bool
+        /// One line for each result, in the order they should be read.
+        let notes: [String]
+
+        var headline: String {
+            if plainWorks && groundedWorks { return "Everything works." }
+            if plainWorks { return "Estimates work — web lookups don't." }
+            return "Nothing is getting through."
+        }
+
+        var isHealthy: Bool { plainWorks }
+    }
+
+    /// Ask Google, rather than guessing from the shape of the string.
+    ///
+    /// A key that looks perfect can be revoked, and a key that's completely
+    /// fine still fails every grounded lookup once the free tier's search quota
+    /// is spent — which is what "the AI key stopped working" almost always
+    /// turns out to be. Two tiny calls tell those apart in about a second, so
+    /// the answer to "has it expired?" is a button rather than a guess.
+    static func checkKey() async -> KeyCheck {
+        let mine = usingUserKey
+        guard !apiKey.isEmpty else {
+            return KeyCheck(plainWorks: false, groundedWorks: false, usingUserKey: mine,
+                            notes: ["No key at all — paste one above."])
+        }
+
+        struct Ping: Decodable { let ok: String? }
+        var notes: [String] = []
+
+        var plainWorks = false
+        do {
+            let _: Ping = try await performGenerate(
+                parts: [["text": #"Reply with this JSON exactly: {"ok":"yes"}"#]],
+                grounded: false)
+            plainWorks = true
+            notes.append("Estimates: working. Describing a meal, photos, custom foods, meal ideas and the day review all go through this.")
+        } catch EstimatorError.badResponse {
+            // Google answered; the model just phrased the ping oddly. The key
+            // and the connection are the things being tested here.
+            plainWorks = true
+            notes.append("Estimates: working — the key and connection are fine.")
+        } catch {
+            notes.append("Estimates: failing — \(error.localizedDescription)")
+        }
+
+        var groundedWorks = false
+        do {
+            let _: Ping = try await performGenerate(
+                parts: [["text": #"Reply with this JSON exactly: {"ok":"yes"}"#]],
+                grounded: true)
+            groundedWorks = true
+            resumeGrounding()
+            notes.append("Web-checked lookups: working. Numbers get checked against published data, and recipe links can be read.")
+        } catch let error as EstimatorError {
+            if case .badResponse = error {
+                // Grounded replies come back as prose often enough that an
+                // unparsed ping says nothing about the quota.
+                groundedWorks = true
+                resumeGrounding()
+                notes.append("Web-checked lookups: working.")
+            } else if case .quotaExhausted = error {
+                parkGrounding()
+                notes.append("Web-checked lookups: out of free quota. Estimates still work — they just fall back to the model's own knowledge, badged “Best guess”. Reading a recipe link needs this quota, so that feature waits for the reset.")
+            } else {
+                notes.append("Web-checked lookups: failing — \(error.localizedDescription)")
+            }
+        } catch {
+            notes.append("Web-checked lookups: failing — \(error.localizedDescription)")
+        }
+
+        if plainWorks && !mine {
+            notes.append("This is the key bundled with the app, shared by everyone using it — paste your own above for a private quota of your own.")
+        }
+        return KeyCheck(plainWorks: plainWorks, groundedWorks: groundedWorks,
+                        usingUserKey: mine, notes: notes)
     }
 
     /// Grounded replies come back as prose-wrapped or fenced JSON — take the
@@ -990,6 +1359,42 @@ extension AIFoodEstimator {
                 {"suggestions": [{"name": "<short dish name>", \
                 "why": "<one short sentence: why this fits right now>", \
                 "assumed": "<short: the exact portion assumed>", \
+                "food": {\(nutritionSchema)}}]}
+                """),
+            PromptInfo(
+                id: "restaurants",
+                title: "Feeling Restaurants?",
+                whenUsed: "When you tap Restaurants in What Should I Eat — and only then.",
+                sends: "The neighbourhood name your location resolves to (never coordinates, and nothing is stored), plus the same meal target, logged foods and preferences as the ideas above. Runs with web search so the places and menu items are real ones.",
+                grounded: true,
+                template: """
+                Find 3 genuinely good ‹meal› options on the menus of real \
+                restaurants, cafés or fast-casual chains in or very near \
+                ‹your neighbourhood›. Search for their actual published menus \
+                and nutrition information — only name places that really exist \
+                there, and only dishes that are really on their menu. If you \
+                can't verify a place has the dish, leave it out rather than \
+                guessing.
+                This is specifically their ‹meal›, and it has its own target: \
+                about ‹calories› calories, ‹carbs› g carbs, ‹protein› g \
+                protein, ‹fat› g fat.
+                Already eaten today: ‹foods logged today›. Don't repeat these.
+                ‹when you refresh one idea: do NOT suggest the ones already on \
+                screen›
+                Hard exclusions — never suggest these: ‹foods you excluded›.
+                Prefer things that are ordinary orders rather than obscure \
+                hacks, and say plainly how to order each one so the numbers \
+                hold (what to leave off, what to ask for on the side, what size).
+                \(nutritionGuidance)
+                Use the restaurant's own published numbers when they exist, and \
+                say so in "assumed"; otherwise estimate from the ingredients \
+                and say that instead.
+                Respond with only JSON:
+                {"suggestions": [{"name": "<the menu item, as they call it>", \
+                "restaurant": "<the restaurant or chain name, and its neighbourhood>", \
+                "order": "<one short sentence: how to order it>", \
+                "why": "<one short sentence: why this fits right now>", \
+                "assumed": "<short: published numbers, or what you estimated from>", \
                 "food": {\(nutritionSchema)}}]}
                 """),
             PromptInfo(

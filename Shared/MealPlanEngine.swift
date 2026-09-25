@@ -996,10 +996,12 @@ enum MealPlanEngine {
             entries[i].fat = facts.fatGrams
             entries[i].protein = Double(day.protein(for: entries[i].meal))
 
-            // When it actually went in, if that's knowable.
+            // When it actually went in, if that's knowable. `occurredAt` is
+            // the corrected time when the log was stamped late, so a meal
+            // eaten at one and logged at three sits at one.
             if let first = day.foods(for: entries[i].meal).first,
-               calendar.isDate(first.createdAt, inSameDayAs: day.date) {
-                let c = calendar.dateComponents([.hour, .minute], from: first.createdAt)
+               calendar.isDate(first.occurredAt, inSameDayAs: day.date) {
+                let c = calendar.dateComponents([.hour, .minute], from: first.occurredAt)
                 let actual = (c.hour ?? 0) * 60 + (c.minute ?? 0)
                 if abs(actual - entries[i].minutesOfDay) >= 20 {
                     entries[i].shiftedFrom = entries[i].minutesOfDay

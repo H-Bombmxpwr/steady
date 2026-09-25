@@ -49,6 +49,9 @@ final class SavedMeal {
     /// Totals for the whole batch as stored.
     var totalCalories: Int { items.reduce(0) { $0 + $1.calories } }
     var totalProtein: Int { items.reduce(0) { $0 + $1.proteinGrams } }
+    var totalFacts: NutritionFacts {
+        items.reduce(into: NutritionFacts()) { $0.add($1.facts) }
+    }
 
     /// Totals for one serving — what the row in Add Food should actually say.
     var caloriesPerServing: Int { Int((Double(totalCalories) / max(0.25, servings)).rounded()) }
@@ -57,6 +60,32 @@ final class SavedMeal {
     /// The fraction of the stored batch represented by `count` servings.
     func factor(forServings count: Double) -> Double {
         count / max(0.25, servings)
+    }
+
+    /// Servings ⇄ percent of the batch. Meal prep gets logged both ways: a
+    /// tray divided into four is servings, and the container you took half of
+    /// is a percentage. They're the same arithmetic from opposite ends, so the
+    /// sheet offers both rather than making anyone convert.
+    func servings(forPercent percent: Double) -> Double {
+        max(0.25, servings) * percent / 100
+    }
+
+    func percent(forServings count: Double) -> Double {
+        guard servings > 0 else { return 100 }
+        return count / servings * 100
+    }
+
+    /// Change what the batch makes, keeping the stored totals put — this is a
+    /// correction to the yield ("it was really six, not four"), so every
+    /// per-serving number moves and nothing about the batch does.
+    func setServings(_ count: Double) {
+        servings = min(48, max(0.25, count))
+        try? modelContext?.save()
+    }
+
+    /// The nutrition panel for one serving.
+    var factsPerServing: NutritionFacts {
+        totalFacts.scaled(by: 1 / max(0.25, servings))
     }
 
     /// Fresh logs for however many servings are being eaten. Every number —

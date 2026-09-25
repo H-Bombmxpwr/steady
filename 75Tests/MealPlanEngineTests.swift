@@ -716,6 +716,132 @@ final class MealPlanEngineTests: XCTestCase {
                                     "dinner should keep its distance from a very late lunch")
     }
 
+    /// The point of a corrected time: the log lands at three, the food was
+    /// eaten at one, and the plan has to believe the correction — otherwise
+    /// logging late drags dinner along behind it.
+    func testACorrectedTimeBeatsWhenItWasLogged() {
+        let p = plan()
+        let day = DayLog(date: noon)
+        let cal = Calendar.current
+
+        // Eaten at one, typed in at three.
+        let lunch = FoodLog(name: "Lunch, logged late", calories: 800, proteinGrams: 45,
+                            meal: .lunch, facts: NutritionFacts(carbsGrams: 90, fatGrams: 25))
+        lunch.createdAt = cal.date(bySettingHour: 15, minute: 0, second: 0, of: day.date)!
+        lunch.setEatenTime(cal.date(bySettingHour: 13, minute: 0, second: 0, of: day.date)!,
+                           onDayOf: day.date)
+        day.foods.append(lunch)
+
+        let now = cal.date(bySettingHour: 16, minute: 0, second: 0, of: day.date)!
+        let result = build(day: day, plan: p, targets: targets(), now: now)
+
+        guard let row = result.meals.first(where: { $0.meal == .lunch }) else {
+            return XCTFail("lunch should be on the plan")
+        }
+        XCTAssertEqual(row.minutesOfDay, 13 * 60,
+                       "the row should follow the corrected time, not the log's timestamp")
+    }
+
+    /// Resetting the correction puts it back on the timestamp — the override is
+    /// the only thing that moved.
+    func testClearingTheCorrectionFallsBackToWhenItWasLogged() {
+        let cal = Calendar.current
+        let day = DayLog(date: noon)
+        let food = FoodLog(name: "Snack", calories: 200, proteinGrams: 10, meal: .lunch)
+        food.createdAt = cal.date(bySettingHour: 15, minute: 30, second: 0, of: day.date)!
+        day.foods.append(food)
+
+        food.setEatenTime(cal.date(bySettingHour: 13, minute: 0, second: 0, of: day.date)!,
+                          onDayOf: day.date)
+        XCTAssertEqual(food.minutesOfDay, 13 * 60)
+        XCTAssertTrue(food.timeWasAdjusted)
+
+        food.eatenAt = nil
+        XCTAssertEqual(food.minutesOfDay, 15 * 60 + 30)
+        XCTAssertFalse(food.timeWasAdjusted)
+    }
+
+    /// A meal moved wholesale keeps its items in order rather than stacking
+    /// them all on the same minute.
+    func testMovingAWholeMealKeepsTheItemsInOrder() {
+        let cal = Calendar.current
+        let day = DayLog(date: noon)
+        for (i, name) in ["Rice", "Chicken", "Broccoli"].enumerated() {
+            let f = FoodLog(name: name, calories: 200, proteinGrams: 20, meal: .dinner)
+            f.createdAt = cal.date(byAdding: .minute, value: i,
+                                   to: cal.date(bySettingHour: 21, minute: 0, second: 0,
+                                                of: day.date)!)!
+            day.foods.append(f)
+        }
+
+        day.setMealTime(.dinner, to: cal.date(bySettingHour: 18, minute: 0, second: 0,
+                                              of: day.date)!)
+
+        let times = day.foods(for: .dinner).map(\.minutesOfDay)
+        XCTAssertEqual(times, [18 * 60, 18 * 60 + 1, 18 * 60 + 2])
+        XCTAssertEqual(day.foods(for: .dinner).map(\.name), ["Rice", "Chicken", "Broccoli"],
+                       "the order within the meal should survive the move")
+    }
+
+    /// Back-filling an earlier day can't use "now" — it isn't that day.
+    func testBackfillingAnEarlierDayLandsAtTheMealsUsualTime() {
+        let cal = Calendar.current
+        let yesterday = cal.date(byAdding: .day, value: -1, to: noon)!
+        let day = DayLog(date: yesterday)
+        day.addFood(FoodLog(name: "Yesterday's dinner", calories: 700, proteinGrams: 40),
+                    meal: .dinner)
+
+        guard let logged = day.foods.first else { return XCTFail("nothing logged") }
+        XCTAssertEqual(logged.minutesOfDay, Meal.dinner.typicalMinutesOfDay)
+        XCTAssertTrue(cal.isDate(logged.occurredAt, inSameDayAs: yesterday),
+                      "a back-filled log belongs on its own day")
+    }
+
+    // MARK: - Batches
+
+    /// Meal prep, both ways round: four servings stored once, and a third of it
+    /// eaten on Wednesday scales every number — micronutrients included.
+    func testABatchScalesByServingsAndByPercent() {
+        let batch = SavedMeal(name: "Sunday chili", servings: 4)
+        batch.items.append(SavedMealItem(name: "Chili", calories: 2000, proteinGrams: 160,
+                                         grams: 2400,
+                                         facts: NutritionFacts(carbsGrams: 200, fatGrams: 60,
+                                                               fiberGrams: 40, ironMg: 20)))
+
+        XCTAssertEqual(batch.caloriesPerServing, 500)
+        XCTAssertEqual(batch.proteinPerServing, 40)
+        XCTAssertEqual(batch.factsPerServing.ironMg, 5, accuracy: 0.001)
+
+        // One serving is a quarter of the batch, said either way.
+        XCTAssertEqual(batch.percent(forServings: 1), 25, accuracy: 0.001)
+        XCTAssertEqual(batch.servings(forPercent: 25), 1, accuracy: 0.001)
+
+        let logs = batch.makeLogs(servings: 1, meal: .dinner)
+        XCTAssertEqual(logs.count, 1)
+        XCTAssertEqual(logs[0].calories, 500)
+        XCTAssertEqual(logs[0].proteinGrams, 40)
+        XCTAssertEqual(logs[0].grams ?? 0, 600, accuracy: 0.001)
+        XCTAssertEqual(logs[0].facts.fiberGrams, 10, accuracy: 0.001)
+        XCTAssertEqual(logs[0].meal, .dinner)
+
+        // "I ate 30% of the container."
+        let third = batch.makeLogs(servings: batch.servings(forPercent: 30), meal: .lunch)
+        XCTAssertEqual(third[0].calories, 600)
+    }
+
+    /// Correcting the yield moves every per-serving number and leaves the batch
+    /// alone — that's what makes it a correction rather than a re-entry.
+    func testFixingTheYieldRedividesTheBatch() {
+        let batch = SavedMeal(name: "Tray bake", servings: 4)
+        batch.items.append(SavedMealItem(name: "Tray bake", calories: 2400, proteinGrams: 120))
+        XCTAssertEqual(batch.caloriesPerServing, 600)
+
+        batch.setServings(6)
+        XCTAssertEqual(batch.totalCalories, 2400, "the batch itself doesn't change")
+        XCTAssertEqual(batch.caloriesPerServing, 400)
+        XCTAssertEqual(batch.percent(forServings: 1), 100.0 / 6, accuracy: 0.001)
+    }
+
     // MARK: - Calling a session off
 
     /// The row going grey is the least of it. A session that isn't happening

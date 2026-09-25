@@ -92,6 +92,8 @@ struct StatsView: View {
                         foodTiles
                         caloriesChart
                         proteinChart
+                        energyByTimeChart
+                        mealTimingCard
                         densityChart
                         fiberChart
                         sodiumChart
@@ -484,6 +486,139 @@ struct StatsView: View {
             }
             .chartYScale(domain: .automatic(includesZero: false))
             .chartLegend(position: .bottom, spacing: 8)
+        }
+    }
+
+    // MARK: - When the eating happens
+    //
+    // The day plan made logging times real — a meal knows when it was eaten,
+    // not just when it was typed in — and these are the two charts that fall
+    // out of that. They answer a question no total can: at what hours does the
+    // day's food actually land, and what kind of food is it when it does.
+
+    /// Calories across the clock, stacked by macro. Averaged per logging day,
+    /// so a week and a quarter read the same.
+    ///
+    /// Not a `ChartCard`: this one needs its own x-axis. The shared card thins
+    /// a *date* axis to four labels, and twelve clock labels in that width
+    /// print on top of each other.
+    private var energyByTimeChart: some View {
+        let buckets = EatingRhythm.byTimeOfDay(days: daysInRange)
+        let hasFood = buckets.contains { $0.totalCalories > 0 }
+        let lateShare = EatingRhythm.shareAfter(hour: 20, days: daysInRange)
+        return Card(title: "When You Eat (avg day)", icon: "clock.badge.checkmark",
+                    tint: Theme.foodTint) {
+            if !hasFood {
+                Text("Log a few meals and this fills in — it reads the time each food was eaten, so fixing a late log fixes this too.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textDim)
+            } else {
+                Chart {
+                    ForEach(buckets) { b in
+                        macroBar(b, b.carbCalories, "Carbs")
+                        macroBar(b, b.proteinCalories, "Protein")
+                        macroBar(b, b.fatCalories, "Fat")
+                        macroBar(b, b.unattributedCalories, "Unlabelled")
+                    }
+                }
+                .chartForegroundStyleScale([
+                    "Carbs": Theme.foodTint,
+                    "Protein": Theme.workoutTint,
+                    "Fat": Theme.alcoholTint,
+                    "Unlabelled": Theme.textDim
+                ])
+                .chartLegend(position: .bottom, spacing: 6)
+                .chartXScale(domain: -1...24)
+                .chartXAxis {
+                    AxisMarks(values: [0, 6, 12, 18]) { value in
+                        AxisValueLabel {
+                            Text(Self.hourLabel(value.as(Int.self) ?? 0))
+                                .foregroundStyle(Theme.textDim)
+                        }
+                        AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks {
+                        AxisValueLabel().foregroundStyle(Theme.textDim)
+                        AxisGridLine().foregroundStyle(.white.opacity(0.06))
+                    }
+                }
+                .frame(height: 170)
+
+                if let lateShare {
+                    Text("\(Int((lateShare * 100).rounded()))% of the day's calories land after 8 PM.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// One macro's slice of one two-hour bucket. Zero-height slices are still
+    /// emitted so the legend keeps all four colors in the same order.
+    private func macroBar(_ bucket: EatingRhythm.Bucket, _ calories: Double,
+                          _ series: String) -> some ChartContent {
+        BarMark(x: .value("Hour", Double(bucket.startMinutes) / 60 + Double(bucket.widthMinutes) / 120),
+                y: .value("cal", calories),
+                width: .fixed(14))
+            .foregroundStyle(by: .value("Macro", series))
+            .cornerRadius(2)
+    }
+
+    private static func hourLabel(_ hour: Int) -> String {
+        let comps = DateComponents(hour: hour % 24)
+        let date = Calendar.current.date(from: comps) ?? Date()
+        return date.formatted(.dateTime.hour())
+    }
+
+    /// Each meal's real clock time and size — when breakfast actually happens,
+    /// not when the schedule says it should.
+    private var mealTimingCard: some View {
+        let timings = EatingRhythm.timings(days: daysInRange)
+        let window = EatingRhythm.window(days: daysInRange)
+        return Card(title: "Meal Times", icon: "clock.fill", tint: Theme.foodTint) {
+            if timings.isEmpty {
+                Text("Once meals are logged with their times, each one's typical hour and size shows up here.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textDim)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let window {
+                        Text("First food around \(window.firstString), last around \(window.lastString) — a \(window.hours.formatted(.number.precision(.fractionLength(0...1))))-hour window across \(window.daysCounted) day\(window.daysCounted == 1 ? "" : "s").")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Divider().opacity(0.4)
+                    }
+                    ForEach(timings) { t in
+                        HStack(spacing: 8) {
+                            Image(systemName: t.meal.icon)
+                                .font(.caption)
+                                .foregroundStyle(t.meal.color)
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(t.meal.label)
+                                    .font(.subheadline.weight(.medium))
+                                Text("\(t.daysLogged) day\(t.daysLogged == 1 ? "" : "s") · \(t.averageCalories) cal · \(t.averageProtein) g protein")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(t.timeString)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(t.meal.color)
+                                if let swing = t.swingString {
+                                    Text(swing)
+                                        .font(.caption2)
+                                        .foregroundStyle(Theme.textDim)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

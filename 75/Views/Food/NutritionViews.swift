@@ -96,6 +96,26 @@ struct FoodNutritionSheet: View {
                             Label(m.label, systemImage: m.icon).tag(m)
                         }
                     }
+                    // Logging runs behind eating. The plan moves a meal to
+                    // when it was eaten and pushes everything after it along,
+                    // so a log stamped two hours late has to be fixable — and
+                    // this is the one screen every logged food can reach.
+                    DatePicker("Eaten at",
+                               selection: Binding(
+                                    get: { food.occurredAt },
+                                    set: { food.setEatenTime($0, onDayOf: food.occurredAt) }
+                               ),
+                               displayedComponents: .hourAndMinute)
+                    if food.timeWasAdjusted {
+                        HStack {
+                            Text("Logged at \(food.createdAt.formatted(date: .omitted, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Reset") { food.eatenAt = nil }
+                                .font(.caption.bold())
+                        }
+                    }
                     HStack {
                         Text("Portion (g)")
                         Spacer()

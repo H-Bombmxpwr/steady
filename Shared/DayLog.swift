@@ -185,7 +185,9 @@ final class DayLog {
     }
 
     func foods(for meal: Meal?) -> [FoodLog] {
-        foods.filter { $0.meal == meal }.sorted { $0.createdAt < $1.createdAt }
+        // In the order they were eaten, not the order they were typed in — a
+        // meal logged late belongs where it happened.
+        foods.filter { $0.meal == meal }.sorted { $0.occurredAt < $1.occurredAt }
     }
 
     func calories(for meal: Meal?) -> Int {
@@ -282,11 +284,38 @@ final class DayLog {
     // object in `foods` until some later save — that was the "delete never
     // works until I relaunch" bug.
 
-    func addFood(_ log: FoodLog, meal: Meal?) {
+    /// `at` is when the food was actually eaten, when that isn't now.
+    ///
+    /// Back-filling a past day gets the same treatment automatically: a log
+    /// created today but hanging off last Tuesday has a `createdAt` from the
+    /// wrong day entirely, and nothing downstream can read a sensible clock
+    /// time out of that, so it lands at the meal's usual hour on its own day.
+    func addFood(_ log: FoodLog, meal: Meal?, at time: Date? = nil) {
         if let meal { log.meal = meal }
+        if let time {
+            log.setEatenTime(time, onDayOf: date)
+        } else if !Calendar.current.isDate(date, inSameDayAs: Date()) {
+            let typical = (log.meal ?? .lunch).typicalMinutesOfDay
+            log.eatenAt = Calendar.current.date(bySettingHour: typical / 60,
+                                                minute: typical % 60,
+                                                second: 0,
+                                                of: Calendar.current.startOfDay(for: date))
+        }
         foods.append(log)
         try? modelContext?.save()
         WidgetSnapshot.refreshTotals(from: self)
+    }
+
+    /// Move everything logged under one meal to a clock time — the "I logged
+    /// lunch at three, it was one" correction in a single gesture. The spread
+    /// within the meal is kept: items stay in order, a minute apart.
+    func setMealTime(_ meal: Meal?, to time: Date) {
+        let cal = Calendar.current
+        for (offset, food) in foods(for: meal).enumerated() {
+            let shifted = cal.date(byAdding: .minute, value: offset, to: time) ?? time
+            food.setEatenTime(shifted, onDayOf: date)
+        }
+        try? modelContext?.save()
     }
 
     func removeFood(_ log: FoodLog) {
@@ -396,6 +425,16 @@ final class FoodLog {
     var mealRaw: String = ""          // Meal.rawValue; "" on logs predating meals
     var favorite: Bool = false        // pinned to Quick Log in Add Food
     var createdAt: Date
+    /// When the food was actually eaten, when that isn't when it got logged.
+    ///
+    /// Logging is always behind eating — you finish lunch, you log it at two.
+    /// Everything downstream reads a clock time out of the log (the plan moves
+    /// a meal to when it was eaten, the eating window is measured between the
+    /// first and last food), so a log stamped two hours late moved the meal
+    /// two hours late and pushed the rest of the day along with it. Nil means
+    /// "when it was logged"; setting this corrects it without touching
+    /// `createdAt`, which is still the audit trail.
+    var eatenAt: Date? = nil
 
     // Micronutrients for this portion (all 0 when the source didn't know).
     var carbsGrams: Double = 0
@@ -428,6 +467,33 @@ final class FoodLog {
     var meal: Meal? {
         get { Meal(rawValue: mealRaw) }
         set { mealRaw = newValue?.rawValue ?? "" }
+    }
+
+    /// When this food counts as eaten — the corrected time when there is one,
+    /// otherwise the moment it was logged. Everything that cares about *when*
+    /// food went in should read this rather than `createdAt`.
+    var occurredAt: Date { eatenAt ?? createdAt }
+
+    /// True when the time was corrected by hand, so the UI can say so.
+    var timeWasAdjusted: Bool { eatenAt != nil }
+
+    var minutesOfDay: Int {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: occurredAt)
+        return (c.hour ?? 12) * 60 + (c.minute ?? 0)
+    }
+
+    var timeString: String {
+        occurredAt.formatted(date: .omitted, time: .shortened)
+    }
+
+    /// Move this food to a clock time, keeping it on the day it belongs to.
+    /// The picker hands over a full date; only its hour and minute matter,
+    /// because the day is decided by which `DayLog` the food hangs off.
+    func setEatenTime(_ time: Date, onDayOf day: Date) {
+        let cal = Calendar.current
+        let c = cal.dateComponents([.hour, .minute], from: time)
+        eatenAt = cal.date(bySettingHour: c.hour ?? 12, minute: c.minute ?? 0,
+                           second: 0, of: cal.startOfDay(for: day))
     }
 
     var facts: NutritionFacts {

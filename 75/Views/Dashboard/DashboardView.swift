@@ -8,11 +8,34 @@ struct MainTabView: View {
     var profile: UserProfile
 
     @State private var tab = 0
+    @Environment(\.scenePhase) private var scenePhase
 
-    // Widget deep links (seventyfive://log-food, log-workout, today)
-    @State private var showFoodLog = false
-    @State private var showWorkoutLog = false
-    @State private var showToday = false
+    // Widget deep links (seventyfive://log-food, log-workout, today).
+    //
+    // One slot, not three flags: tapping a widget on a cold launch delivers
+    // the URL while the launch screen is still up and the tab view is mid
+    // transition, and asking SwiftUI to present a sheet in that window either
+    // does nothing or lands on top of the splash. So the link is *parked* and
+    // presented once the app is genuinely on screen, and only ever one at a
+    // time — two flags going true together is what produced the "attempt to
+    // present while a presentation is in progress" failure.
+    @State private var link: DeepLink?
+    @State private var pending: DeepLink?
+    @State private var readyForLinks = false
+
+    enum DeepLink: String, Identifiable {
+        case food, workout, today
+        var id: String { rawValue }
+
+        init?(host: String?) {
+            switch host {
+            case "log-food": self = .food
+            case "log-workout": self = .workout
+            case "today": self = .today
+            default: return nil
+            }
+        }
+    }
 
     // Five tabs, no overflow. Photos used to share the last slot with
     // Workouts behind a picker, which meant a sheet every time you wanted the
@@ -57,32 +80,47 @@ struct MainTabView: View {
             }
         }
         .onOpenURL { url in
-            switch url.host {
-            case "log-food": showFoodLog = true
-            case "log-workout": showWorkoutLog = true
-            case "today": showToday = true
-            default: break
-            }
+            guard let incoming = DeepLink(host: url.host) else { return }
+            pending = incoming
+            presentPendingLinkIfReady()
         }
-        .sheet(isPresented: $showToday) {
+        .task {
+            // The launch screen owns the first beat and a half of the app's
+            // life; anything presented before it finishes is presented over a
+            // splash screen.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            readyForLinks = true
+            presentPendingLinkIfReady()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Returning from the background with a link waiting (the app was
+            // already running when the widget was tapped) presents it now.
+            if phase == .active { presentPendingLinkIfReady() }
+        }
+        .sheet(item: $link) { destination in
             NavigationStack {
-                DayDetailView(plan: plan, profile: profile,
-                              date: Calendar.current.startOfDay(for: Date()))
+                switch destination {
+                case .today:
+                    DayDetailView(plan: plan, profile: profile,
+                                  date: Calendar.current.startOfDay(for: Date()))
+                case .food:
+                    FoodSearchView(day: ensureDay(plan: plan, date: Date()))
+                case .workout:
+                    WorkoutFormView(day: ensureDay(plan: plan, date: Date()), plan: plan)
+                }
             }
             .themedRoot()
         }
-        .sheet(isPresented: $showFoodLog) {
-            NavigationStack {
-                FoodSearchView(day: ensureDay(plan: plan, date: Date()))
-            }
-            .themedRoot()
-        }
-        .sheet(isPresented: $showWorkoutLog) {
-            NavigationStack {
-                WorkoutFormView(day: ensureDay(plan: plan, date: Date()), plan: plan)
-            }
-            .themedRoot()
-        }
+    }
+}
+
+extension MainTabView {
+    /// Present a parked deep link, but only when there's somewhere to present
+    /// it and nothing already up.
+    fileprivate func presentPendingLinkIfReady() {
+        guard readyForLinks, link == nil, let next = pending else { return }
+        pending = nil
+        link = next
     }
 }
 

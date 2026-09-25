@@ -1,8 +1,10 @@
 import Foundation
 
 /// Eating-window tracking (16:8-style, opt-in). No new logging: the window
-/// is derived from when foods were logged — first food opens it, last food
-/// closes it, and the fast is simply the time since the last food.
+/// is derived from when foods were *eaten* — first food opens it, last food
+/// closes it, and the fast is simply the time since the last food. It reads
+/// `occurredAt` throughout, so logging dinner at midnight doesn't wipe out
+/// four hours of fasting that actually happened.
 enum Fasting {
     static let enabledKey = "fasting.enabled"
     static let targetHoursKey = "fasting.targetHours"
@@ -33,11 +35,11 @@ enum Fasting {
         let recentFoods = plan.days
             .filter { $0.date >= cutoff }
             .flatMap(\.foods)
-            .filter { $0.createdAt <= now }
-        guard let lastFood = recentFoods.map(\.createdAt).max() else { return nil }
+            .filter { $0.occurredAt <= now }
+        guard let lastFood = recentFoods.map(\.occurredAt).max() else { return nil }
         let firstToday = recentFoods
-            .filter { cal.isDate($0.createdAt, inSameDayAs: now) }
-            .map(\.createdAt).min()
+            .filter { cal.isDate($0.occurredAt, inSameDayAs: now) }
+            .map(\.occurredAt).min()
         return Status(lastFood: lastFood, firstFoodToday: firstToday)
     }
 
@@ -45,7 +47,7 @@ enum Fasting {
     /// history. Days with one food count as a zero-length window.
     static func eatingWindows(days: [DayLog]) -> [(date: Date, hours: Double)] {
         days.compactMap { day in
-            let times = day.foods.map(\.createdAt)
+            let times = day.foods.map(\.occurredAt)
             guard let first = times.min(), let last = times.max() else { return nil }
             return (date: day.date, hours: last.timeIntervalSince(first) / 3600)
         }

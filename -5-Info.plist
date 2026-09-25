@@ -20,7 +20,7 @@
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>To save your logged weight, water, nutrition, and workouts to Apple Health.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>To check the temperature and humidity where you're training, so your hydration and sodium targets match the conditions. Your location is used for the weather lookup only — never stored, never shared.</string>
+	<string>Two things ask for this, both only when you use them: the temperature and humidity where you're training, so your hydration and sodium targets match the conditions, and finding healthy things to eat at restaurants near you. Your location is used for that lookup and nothing else — never stored, never shared.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>To dictate your meal so AI can estimate its calories and protein.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

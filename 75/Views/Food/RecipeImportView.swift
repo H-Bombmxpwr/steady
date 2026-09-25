@@ -15,6 +15,9 @@ struct RecipeImportView: View {
 
     @State private var savedName = ""
     @State private var didSave = false
+    /// Kept so correcting the yield after saving updates the stored batch
+    /// rather than stranding the wrong number in Add Food.
+    @State private var savedMeal: SavedMeal?
 
     @State private var url = ""
     @State private var importing = false
@@ -38,6 +41,15 @@ struct RecipeImportView: View {
 
     private var totalCalories: Int { items.reduce(0) { $0 + scaled($1).calories } }
     private var totalProtein: Int { items.reduce(0) { $0 + scaled($1).proteinGrams } }
+
+    /// The whole batch divided by what it makes — what the recipe is worth per
+    /// sitting, independent of today's portion.
+    private var perServingCalories: Int {
+        Int((Double(items.reduce(0) { $0 + $1.calories }) / Double(max(1, recipeServings))).rounded())
+    }
+    private var perServingProtein: Int {
+        Int((Double(items.reduce(0) { $0 + $1.proteinGrams }) / Double(max(1, recipeServings))).rounded())
+    }
 
     var body: some View {
         NavigationStack {
@@ -77,19 +89,53 @@ struct RecipeImportView: View {
 
                 if !items.isEmpty {
                     // --- Servings
+                    //
+                    // Two numbers, and they're different questions. What the
+                    // recipe *makes* is a property of the recipe — Gemini
+                    // guesses it off the page and is often a serving or two
+                    // out, so it's editable. What you're *eating* is today's
+                    // portion. Getting the yield right is what makes every
+                    // portion after this one correct.
                     Section {
+                        Stepper(value: $recipeServings, in: 1...48, step: 1) {
+                            HStack {
+                                Text("Makes")
+                                Spacer()
+                                Text("\(recipeServings) serving\(recipeServings == 1 ? "" : "s")")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .onChange(of: recipeServings) { _, new in
+                            // Never leave the portion above the batch.
+                            servingsToLog = min(servingsToLog, Double(max(1, new)))
+                            savedMeal?.setServings(Double(max(1, new)))
+                        }
+                        HStack {
+                            Text("Each serving")
+                            Spacer()
+                            Text("\(perServingCalories) cal · \(perServingProtein) g protein")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.foodTint)
+                        }
                         Stepper(value: $servingsToLog,
                                 in: 0.5...Double(max(1, recipeServings)), step: 0.5) {
                             HStack {
-                                Text("Log")
+                                Text("Eating now")
+                                Spacer()
                                 Text("\(servingsToLog.formatted()) serving\(servingsToLog == 1 ? "" : "s")")
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        HStack {
+                            Text("Which is")
+                            Spacer()
+                            Text("\(Int((factor * 100).rounded()))% of the batch")
+                                .foregroundStyle(.secondary)
+                        }
                     } header: {
                         Text("Servings")
                     } footer: {
-                        Text("This recipe makes about \(recipeServings) serving\(recipeServings == 1 ? "" : "s"). The numbers below are for the servings you're logging — step it up to log more, or the whole batch.")
+                        Text("“Makes” is read off the recipe and is a guess — fix it and every serving below re-divides. The item numbers are for what you're eating now; save the meal and the whole batch is stored with its yield, so next time it's a stepper.")
                     }
 
                     // --- Keep it
@@ -111,7 +157,7 @@ struct RecipeImportView: View {
                     } header: {
                         Text("Save as a Meal")
                     } footer: {
-                        Text("Stores the whole batch and how many servings it makes, so next time it's one tap and a servings stepper instead of reading the link again. Saving doesn't log it — that's the button below.")
+                        Text("Stores the whole batch as \(recipeServings) serving\(recipeServings == 1 ? "" : "s"), so next time it's one tap and a servings-or-percentage stepper instead of reading the link again. Saving doesn't log it — that's the button below.")
                     }
 
                     // --- Items (whole recipe, scaled to servingsToLog)
@@ -227,6 +273,7 @@ struct RecipeImportView: View {
         }
         context.insert(meal)
         try? context.save()
+        savedMeal = meal
         didSave = true
         Haptics.success()
     }
@@ -242,6 +289,7 @@ struct RecipeImportView: View {
             recipeServings = recipe.servings
             servingsToLog = 1
             if savedName.isEmpty { savedName = recipe.title }
+            savedMeal = nil
             didSave = false
             assumed = recipe.assumed
             note = recipe.note
