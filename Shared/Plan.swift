@@ -124,6 +124,47 @@ final class Plan {
         return schedule.filter { $0.weekday == weekday }
     }
 
+    /// The recurring slots a built workout put on the week.
+    ///
+    /// Matched by name because a schedule entry copies the name rather than
+    /// pointing at the preset — the schedule has to be able to hold a one-off
+    /// that was never built as a workout at all. The cost of that is that a
+    /// deleted or renamed workout leaves its weekday slots behind unless
+    /// somebody goes looking for them, which is what this is for.
+    func scheduleEntries(named name: String) -> [WorkoutScheduleEntry] {
+        let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return [] }
+        return schedule.filter {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == key
+        }
+    }
+
+    /// Take recurring slots off the week for good.
+    ///
+    /// Handing the objects to `context.delete` is not enough on its own: the
+    /// plan's own array keeps a live reference, so the entry goes on being
+    /// returned by `scheduledWorkouts(on:)` — and every screen downstream
+    /// reads the week through that. Deleting a workout from the library used
+    /// to do only the first half, which is how a workout you deleted kept
+    /// turning up on its weekdays.
+    ///
+    /// The caller is still responsible for the two things that live outside
+    /// the store — the synced calendar event and the pending notification.
+    func removeScheduleEntries(_ entries: [WorkoutScheduleEntry]) {
+        guard !entries.isEmpty else { return }
+        let doomed = Set(entries.map(\.persistentModelID))
+        schedule.removeAll { doomed.contains($0.persistentModelID) }
+        entries.forEach { modelContext?.delete($0) }
+    }
+
+    /// Point a weekday slot at a workout's new name, so renaming in the
+    /// library doesn't strand the schedule on a name that no longer exists.
+    func renameScheduleEntries(from old: String, to new: String) {
+        let next = new.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !next.isEmpty, next != old.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        scheduleEntries(named: old).forEach { $0.name = next }
+    }
+
     // MARK: - Sessions
 
     func plannedWorkouts(on date: Date) -> [PlannedWorkout] {

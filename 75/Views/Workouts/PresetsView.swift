@@ -113,7 +113,7 @@ struct WorkoutsView: View {
                 } header: {
                     Text("2 · Weekly Schedule")
                 } footer: {
-                    Text("Workouts only count against your daily goals on scheduled days — everything else is a rest day.")
+                    Text("Workouts only count against your daily goals on scheduled days — everything else is a rest day. Swipe a row left to take a day off the week; this list is the whole of what's recurring, so anything still turning up on a weekday is here.")
                 }
 
                 Section {
@@ -256,9 +256,13 @@ struct WorkoutsView: View {
 
     private func deleteScheduleEntries(_ idx: IndexSet) {
         let sorted = plan.schedule.sorted(by: { ($0.weekday, $0.hour) < ($1.weekday, $1.hour) })
-        idx.map { sorted[$0] }.forEach { context.delete($0) }
+        let entries = idx.map { sorted[$0] }
+        // Identifiers first: the objects don't outlive the delete below.
+        let eventIDs = entries.compactMap(\.calendarEventID)
+        plan.removeScheduleEntries(entries)
         try? context.save()
         NotificationManager.rescheduleAll(plan: plan)
+        Task { await CalendarSync.removeEvents(ids: eventIDs) }
     }
 
     private func syncCalendar() async {
@@ -336,6 +340,12 @@ struct WorkoutDetailView: View {
     @State private var scheduleWeekday = 2
     @State private var scheduleTime = Calendar.current.date(from: DateComponents(hour: 7, minute: 0))!
     @State private var scheduledConfirm: String?
+    /// The name this workout had on the way in. A weekday slot stores the
+    /// name rather than a reference, so a rename has to be carried across to
+    /// the schedule or the week keeps advertising a workout that's gone.
+    /// Captured once and applied on the way out, so it doesn't chase every
+    /// keystroke in the text field.
+    @State private var nameOnEntry: String?
 
     var body: some View {
         Form {
@@ -423,7 +433,17 @@ struct WorkoutDetailView: View {
             }
             .themedRoot()
         }
-        .onDisappear { try? context.save() }
+        .onAppear { if nameOnEntry == nil { nameOnEntry = preset.name } }
+        .onDisappear {
+            let renamed = nameOnEntry.map { $0 != preset.name } ?? false
+            if let old = nameOnEntry, renamed {
+                plan.renameScheduleEntries(from: old, to: preset.name)
+                nameOnEntry = preset.name
+            }
+            try? context.save()
+            // Only when the name actually moved — the reminder text quotes it.
+            if renamed { NotificationManager.rescheduleAll(plan: plan) }
+        }
     }
 }
 

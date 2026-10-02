@@ -94,6 +94,16 @@ struct DayPlanView: View {
         parts.append(String(plan.plannedWorkouts.count))
         parts.append(String(plan.schedule.count))
         parts.append(String(plan.days.count))
+        // The meal schedule is the first thing the plan is built from, and it
+        // was the one thing missing here — so switching a meal off in "my
+        // usual meal times", or moving one, left this screen serving the
+        // cached plan it built before you changed anything. The toggle worked;
+        // nothing downstream was told. Counts won't do it: enabling a meal
+        // leaves the count alone, so the fingerprint has to be the contents.
+        parts.append(plan.mealSlots
+            .sorted { $0.orderIndex < $1.orderIndex }
+            .map { "\($0.mealRaw)\($0.enabled ? "+" : "-")\($0.minutesOfDay)@\(Int(($0.share * 100).rounded()))\($0.customName ?? "")" }
+            .joined(separator: ","))
         if let w = weather.effective {
             parts.append(String(Int(w.tempF)) + "-" + String(Int(w.humidityPercent)))
         }

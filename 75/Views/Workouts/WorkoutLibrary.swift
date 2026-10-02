@@ -69,6 +69,11 @@ struct WorkoutLibraryView: View {
 
     @State private var query = ""
 
+    /// Workouts swiped away that still hold weekday slots — held here while
+    /// the confirmation is up, because deleting them silently is what left
+    /// the schedule talking about a workout that no longer exists.
+    @State private var pendingDelete: [WorkoutPreset] = []
+
     private var results: [WorkoutPreset] { WorkoutLibrary.sorted(plan.presets, matching: query) }
     private var dupes: Set<String> { WorkoutLibrary.duplicateNames(plan.presets) }
 
@@ -90,8 +95,15 @@ struct WorkoutLibraryView: View {
                 }
             }
             .onDelete { idx in
-                idx.map { results[$0] }.forEach { context.delete($0) }
-                try? context.save()
+                let targets = idx.map { results[$0] }
+                // Deleting the workout has to take its weekday slots with it,
+                // and that's a bigger deal than deleting a workout nobody
+                // scheduled — so say so rather than quietly changing the week.
+                if targets.contains(where: { !plan.scheduleEntries(named: $0.name).isEmpty }) {
+                    pendingDelete = targets
+                } else {
+                    delete(targets)
+                }
             }
         }
         .overlay {
@@ -104,6 +116,51 @@ struct WorkoutLibraryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "Search workouts")
+        .confirmationDialog(scheduleWarningTitle,
+                            isPresented: Binding(get: { !pendingDelete.isEmpty },
+                                                 set: { if !$0 { pendingDelete = [] } }),
+                            titleVisibility: .visible) {
+            Button("Delete Workout and Schedule", role: .destructive) {
+                delete(pendingDelete)
+                pendingDelete = []
+            }
+            Button("Keep", role: .cancel) { pendingDelete = [] }
+        } message: {
+            Text(scheduleWarningMessage)
+        }
+    }
+
+    /// "Pickleball is on your week" — named, because the whole point of the
+    /// prompt is telling you which days are about to change.
+    private var scheduleWarningTitle: String {
+        guard let first = pendingDelete.first else { return "On your weekly schedule" }
+        return pendingDelete.count == 1
+            ? "\(first.name) is on your weekly schedule"
+            : "These workouts are on your weekly schedule"
+    }
+
+    private var scheduleWarningMessage: String {
+        let days = pendingDelete
+            .flatMap { plan.scheduleEntries(named: $0.name) }
+            .sorted { $0.weekday < $1.weekday }
+            .map(\.weekdayName)
+        let unique = NSOrderedSet(array: days).array as? [String] ?? days
+        let list = ListFormatter.localizedString(byJoining: unique)
+        return unique.isEmpty
+            ? "Deleting also clears its weekly schedule slots."
+            : "Deleting also clears \(list) — otherwise it keeps showing up on those days."
+    }
+
+    private func delete(_ presets: [WorkoutPreset]) {
+        let entries = presets.flatMap { plan.scheduleEntries(named: $0.name) }
+        // Read the calendar identifiers now — the entries are gone by the
+        // time the async cleanup gets a turn.
+        let eventIDs = entries.compactMap(\.calendarEventID)
+        plan.removeScheduleEntries(entries)
+        presets.forEach { context.delete($0) }
+        try? context.save()
+        NotificationManager.rescheduleAll(plan: plan)
+        Task { await CalendarSync.removeEvents(ids: eventIDs) }
     }
 }
 
