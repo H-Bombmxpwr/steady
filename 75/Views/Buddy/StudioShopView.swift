@@ -2,7 +2,7 @@ import SwiftUI
 
 struct StudioShopView: View {
     enum Tab: String, CaseIterable, Identifiable {
-        case gear = "Gear", records = "Records", buddy = "Buddy"
+        case gear = "Gear", promo = "Promo", records = "Records", buddy = "Buddy"
         var id: String { rawValue }
     }
 
@@ -12,13 +12,13 @@ struct StudioShopView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var store: BuddyStore { .shared }
-    private var balance: Int { store.balance(plan: plan, targets: targets) }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    StudioScene(store: store, mood: .content, height: 210)
+                    StudioScene(store: store, mood: .content,
+                                health: BuddyHealth(score: store.state.health), height: 210)
                     Picker("Section", selection: $tab) {
                         ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
                     }
@@ -26,6 +26,7 @@ struct StudioShopView: View {
 
                     switch tab {
                     case .gear: GearShop(plan: plan, targets: targets)
+                    case .promo: PromoView(plan: plan, targets: targets)
                     case .records: CrateView(plan: plan, targets: targets)
                     case .buddy: BuddyEditor(plan: plan, targets: targets)
                     }
@@ -42,7 +43,7 @@ struct StudioShopView: View {
             .navigationTitle("\(store.state.name)'s Studio")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { NotesBadge(notes: balance) }
+                ToolbarItem(placement: .topBarLeading) { NotesBadge(notes: store.notes).fixedSize() }
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
         }
@@ -61,10 +62,10 @@ private struct GearShop: View {
     var body: some View {
         let owned = Set(store.state.owned)
         VStack(alignment: .leading, spacing: 18) {
-            if let deal = StudioCatalog.dailyDeal(owned: owned) {
+            if let deal = StudioCatalog.dailyDeal(owned: owned, progress: store.progress) {
                 VStack(alignment: .leading, spacing: 8) {
                     sectionTitle("Today's pick · 40% off")
-                    GearRow(gear: deal.gear, price: deal.price, plan: plan, targets: targets, failed: $failed)
+                    GearRow(gear: deal.gear, price: deal.price, plan: plan, failed: $failed)
                         .padding(12)
                         .background(RoundedRectangle(cornerRadius: 14).fill(Theme.warn.opacity(0.12)))
                 }
@@ -85,7 +86,7 @@ private struct GearShop: View {
                         }
                     }
                     ForEach(items) { gear in
-                        GearRow(gear: gear, price: gear.price, plan: plan, targets: targets, failed: $failed)
+                        GearRow(gear: gear, price: StudioCatalog.price(gear), plan: plan, failed: $failed)
                     }
                 }
             }
@@ -95,15 +96,15 @@ private struct GearShop: View {
 
 private struct GearRow: View {
     let gear: Gear
-    let price: Int
+    let price: Double
     let plan: Plan
-    let targets: DailyTargets
     @Binding var failed: String?
     private var store: BuddyStore { .shared }
 
     var body: some View {
         let owned = store.owns(gear)
         let placed = store.placed(in: gear.slot)?.id == gear.id
+        let locked = !owned && (gear.exclusive || !store.isUnlocked(gear))
         HStack(spacing: 12) {
             Group {
                 if let asset = gear.asset {
@@ -115,9 +116,9 @@ private struct GearRow: View {
                         .frame(width: 40, height: 40)
                 }
             }
-            .opacity(gear.exclusive && !owned ? 0.35 : 1)
+            .opacity(locked ? 0.35 : 1)
             .overlay(alignment: .bottomTrailing) {
-                if gear.exclusive && !owned {
+                if locked {
                     Image(systemName: "lock.fill").font(.caption2.bold()).foregroundStyle(Theme.textDim)
                 }
             }
@@ -136,18 +137,135 @@ private struct GearRow: View {
                 Text("Track \(track)").font(.caption.bold()).foregroundStyle(Theme.textDim)
             } else if gear.id == StudioCatalog.trophy.id {
                 Text("Goal").font(.caption.bold()).foregroundStyle(Theme.textDim)
+            } else if locked {
+                // Gated by weight, not by notes: it opens when the trend gets there.
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("at \(lb(IdleEngine.unlockWeight(StudioCatalog.unlockAt(gear), plan: plan))) lb")
+                        .font(.caption.bold()).foregroundStyle(Theme.textDim)
+                    Text(IdleEngine.format(price)).font(.caption2).foregroundStyle(Theme.textDim)
+                }
             } else {
                 Button {
-                    if withAnimation(.spring, { store.buy(gear, price: price, plan: plan, targets: targets) }) {
+                    if withAnimation(.spring, { store.buy(gear, price: price) }) {
                         Haptics.success()
                         failed = nil
                     } else {
-                        failed = "Not enough notes yet — the sound check pays up to \(Chore.dailyMax) a day."
+                        failed = "Not enough notes yet — collect the jar, or buy some promo to earn faster."
                     }
                 } label: {
                     HStack(spacing: 3) {
                         Sprite("musical_note", size: 13)
-                        Text("\(price)").monospacedDigit()
+                        Text(IdleEngine.format(price)).monospacedDigit()
+                    }
+                }
+                .buttonStyle(.borderedProminent).tint(Theme.accent).font(.caption.bold())
+            }
+        }
+    }
+}
+
+private func lb(_ x: Double) -> String { x.formatted(.number.precision(.fractionLength(1))) }
+
+// MARK: - Promo
+
+/// The idle game proper: generators that pay notes per second, every copy 15%
+/// dearer than the last, unlocked — and capped — by progress toward the goal.
+/// The multipliers are shown in full, because the point is that you can see
+/// which of them is yours to move.
+private struct PromoView: View {
+    let plan: Plan
+    let targets: DailyTargets
+    private var store: BuddyStore { .shared }
+    @State private var failed: String?
+
+    var body: some View {
+        let m = store.multipliers(plan: plan, targets: targets)
+        let rate = store.rate(plan: plan, targets: targets)
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    sectionTitle("Earning")
+                    Spacer()
+                    Text("\(IdleEngine.format(rate))/s").font(.headline).monospacedDigit()
+                }
+                multiplierRow("chart_increasing", "Progress to goal",
+                              "\(Int(store.progress * 100))% of the way · ×20 at the goal, ×40 once you're there", m.progress)
+                multiplierRow(BuddyHealth(score: store.state.health).sprite, "Health",
+                              "From the food you've logged this week · ×0.5 to ×1.5", m.health)
+                multiplierRow("musical_note", "Hype",
+                              "+5% per sound-check item today · resets at midnight", m.hype)
+                multiplierRow("sparkles", "Collection",
+                              "+3% per piece of gear, +10% per bandmate", m.collection)
+                Text("Generators unlock as your trend weight gets closer to the goal, and each one caps at \(store.levelCap) copies for now — \(Generator.levelCap(progress: 1)) at the goal. If the scale stops moving, so does the studio.")
+                    .font(.caption).foregroundStyle(Theme.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let failed { Text(failed).font(.footnote).foregroundStyle(Theme.danger) }
+
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle("Promo")
+                ForEach(IdleEngine.generators) { g in
+                    generatorRow(g, multiplier: m.total)
+                }
+            }
+        }
+    }
+
+    private func multiplierRow(_ sprite: String, _ title: String, _ detail: String, _ value: Double) -> some View {
+        HStack(spacing: 10) {
+            Sprite(sprite, size: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.subheadline.bold())
+                Text(detail).font(.caption).foregroundStyle(Theme.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Text("×\(value < 10 ? String(format: "%.2f", value) : IdleEngine.format(value))")
+                .font(.subheadline.bold()).monospacedDigit()
+                .foregroundStyle(value < 1 ? Theme.danger : Theme.accent)
+        }
+    }
+
+    private func generatorRow(_ g: Generator, multiplier: Double) -> some View {
+        let level = store.level(g)
+        let unlocked = store.isUnlocked(g)
+        let capped = level >= store.levelCap
+        let cost = g.cost(level: level)
+        return HStack(spacing: 12) {
+            Sprite(g.sprite, size: 40)
+                .opacity(unlocked ? 1 : 0.35)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(g.name).font(.subheadline.bold())
+                    if level > 0 {
+                        Text("×\(level)").font(.caption.bold()).foregroundStyle(Theme.accent)
+                    }
+                }
+                Text(unlocked
+                     ? "+\(IdleEngine.format(g.baseRate * multiplier))/s each · \(g.blurb)"
+                     : g.blurb)
+                    .font(.caption).foregroundStyle(Theme.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 6)
+            if !unlocked {
+                Text("at \(lb(IdleEngine.unlockWeight(g.unlockAt, plan: plan))) lb")
+                    .font(.caption.bold()).foregroundStyle(Theme.textDim)
+            } else if capped {
+                Text("Max for now").font(.caption.bold()).foregroundStyle(Theme.textDim)
+            } else {
+                Button {
+                    if withAnimation(.spring, { store.buy(g, plan: plan, targets: targets) }) {
+                        Haptics.success()
+                        failed = nil
+                    } else {
+                        failed = "Not enough notes yet — collect the jar first."
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Sprite("musical_note", size: 13)
+                        Text(IdleEngine.format(cost)).monospacedDigit()
                     }
                 }
                 .buttonStyle(.borderedProminent).tint(Theme.accent).font(.caption.bold())
@@ -242,7 +360,7 @@ private struct CrateView: View {
     private var buyRecord: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                if store.buyRecord(plan: plan, targets: targets) {
+                if store.buyRecord(rate: store.rate(plan: plan, targets: targets)) {
                     Haptics.success()
                     failed = nil
                 } else {
@@ -253,7 +371,7 @@ private struct CrateView: View {
                     Text("Buy a record dig")
                     Spacer()
                     Sprite("musical_note", size: 14)
-                    Text("\(StudioCatalog.recordPrice)").monospacedDigit()
+                    Text(IdleEngine.format(store.recordPrice(rate: store.rate(plan: plan, targets: targets)))).monospacedDigit()
                 }
             }
             .buttonStyle(.bordered).tint(Theme.accent)
@@ -525,7 +643,7 @@ private struct BuddyEditor: View {
                         .font(.footnote).foregroundStyle(Theme.textDim)
                 }
                 Button {
-                    if store.buyEncore(plan: plan, targets: targets) {
+                    if store.buyEncore(rate: store.rate(plan: plan, targets: targets)) {
                         Haptics.success(); failed = nil
                     } else {
                         failed = store.state.encores >= StudioCatalog.maxEncores
@@ -536,7 +654,7 @@ private struct BuddyEditor: View {
                         Text("Buy an Encore")
                         Spacer()
                         Sprite("musical_note", size: 14)
-                        Text("\(StudioCatalog.encorePrice)").monospacedDigit()
+                        Text(IdleEngine.format(store.encorePrice(rate: store.rate(plan: plan, targets: targets)))).monospacedDigit()
                     }
                 }
                 .buttonStyle(.bordered).tint(Theme.accent)

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import UIKit
+import WidgetKit
 
 /// Which animal runs the studio. Fluent Emoji 3D sprites, chosen for being
 /// full-bodied and readable at small sizes.
@@ -82,8 +83,23 @@ struct BuddyState: Codable {
     var tourStart: Double?
     var tourStartDate: Date?
 
-    // Notes. Day-to-day notes are derived from the log; this is everything
-    // else (one-off awards, gifts), banked so it can never be taken back.
+    // The balance. Idle income can't be derived from the log the way the
+    // first version's notes were, so it's stored; `nil` means this state
+    // predates the idle layer and gets migrated on the next sync.
+    var notes: Double?
+    var lifetimeNotes: Double = 0
+    var generators: [String: Int] = [:]
+    /// When the royalty jar was last emptied.
+    var jarSince: Date?
+    /// Sound-check items already paid, as "yyyy-MM-dd|chore". Recent days only.
+    var paidChores: [String] = []
+    /// The furthest the trend has ever got toward the goal, 0…1. Unlocks are
+    /// against this, so a rebound never re-locks anything.
+    var peakProgress: Double = 0
+    /// Last computed food health, 0…1, for the widget.
+    var health: Double = 0.5
+
+    // Pre-idle bookkeeping, kept so old states migrate.
     var bank: Int = 0
     var spent: Int = 0
     var awarded: [String] = []
@@ -104,6 +120,45 @@ struct BuddyState: Codable {
     /// Spotify albums waiting to be earned, least-listened first.
     var spotifyQueue: [CollectedRecord] = []
     var spotifyRefreshed: Date?
+
+    init() {}
+
+    // Field by field, every one optional: a synthesized decoder fails the
+    // whole state when a field it expects is missing, and a failed decode
+    // here means a player's studio silently resets. Adding a field must
+    // never cost anyone their progress.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = BuddyState()
+        func v<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+            ((try? c.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+        }
+        species = v(.species, d.species)
+        name = v(.name, d.name)
+        tourNumber = v(.tourNumber, d.tourNumber)
+        tourStart = v(.tourStart, d.tourStart)
+        tourStartDate = v(.tourStartDate, d.tourStartDate)
+        notes = v(.notes, d.notes)
+        lifetimeNotes = v(.lifetimeNotes, d.lifetimeNotes)
+        generators = v(.generators, d.generators)
+        jarSince = v(.jarSince, d.jarSince)
+        paidChores = v(.paidChores, d.paidChores)
+        peakProgress = v(.peakProgress, d.peakProgress)
+        health = v(.health, d.health)
+        bank = v(.bank, d.bank)
+        spent = v(.spent, d.spent)
+        awarded = v(.awarded, d.awarded)
+        lastSeenEarned = v(.lastSeenEarned, d.lastSeenEarned)
+        owned = v(.owned, d.owned)
+        placed = v(.placed, d.placed)
+        records = v(.records, d.records)
+        digs = v(.digs, d.digs)
+        encores = v(.encores, d.encores)
+        lastGiftDay = v(.lastGiftDay, d.lastGiftDay)
+        newLowDay = v(.newLowDay, d.newLowDay)
+        spotifyQueue = v(.spotifyQueue, d.spotifyQueue)
+        spotifyRefreshed = v(.spotifyRefreshed, d.spotifyRefreshed)
+    }
 }
 
 /// Something worth a toast.
@@ -114,7 +169,7 @@ struct BuddyAward: Identifiable, Equatable {
 }
 
 enum GiftResult {
-    case notes(Int)
+    case notes(Double)
     case dig
 }
 
@@ -184,11 +239,13 @@ final class BuddyStore {
         s.name = trimmed.isEmpty ? species.defaultName : trimmed
         s.tourStart = startWeight
         s.tourStartDate = Calendar.current.startOfDay(for: startDate)
-        // A head start — the endowed-progress effect. Enough for one small
-        // thing on day one, so the shop is a place you've already been.
-        s.bank = 60
+        // A head start — the endowed-progress effect. Enough for the first
+        // busker and a little something, so the shop is a place you've
+        // already been.
+        s.notes = 60
+        s.lifetimeNotes = 60
+        s.jarSince = Date()
         s.awarded = ["starter"]
-        s.lastSeenEarned = 60
         state = s
     }
 
@@ -209,16 +266,88 @@ final class BuddyStore {
         RecordPlayer.shared.stop()
         state = BuddyState()
         SpotifyLink.shared.unlink()
+        UserDefaults(suiteName: appGroupID)?.removeObject(forKey: BuddyWidgetStats.key)
     }
 
-    // MARK: Notes
+    // MARK: The economy
 
-    func earned(plan: Plan, targets: DailyTargets) -> Int {
-        BuddyEngine.notesFromLogs(plan: plan, targets: targets) + state.bank
+    var notes: Double { state.notes ?? 0 }
+    var progress: Double { state.peakProgress }
+
+    private var bandmates: Int {
+        state.owned.compactMap(StudioCatalog.gear).filter { $0.slot == .band }.count
     }
 
-    func balance(plan: Plan, targets: DailyTargets) -> Int {
-        max(0, earned(plan: plan, targets: targets) - state.spent)
+    private var gearCount: Int {
+        state.owned.filter { !StudioCatalog.starter.contains($0) }.count - bandmates
+    }
+
+    func today(_ plan: Plan) -> DayLog? {
+        plan.days.first { Calendar.current.isDateInToday($0.date) }
+    }
+
+    func multipliers(plan: Plan, targets: DailyTargets) -> IdleEngine.Multipliers {
+        var m = IdleEngine.Multipliers()
+        m.progress = IdleEngine.progressMultiplier(state.peakProgress)
+        m.health = IdleEngine.healthMultiplier(state.health)
+        let done = today(plan).map { BuddyEngine.choresDone(day: $0, targets: targets).count } ?? 0
+        m.hype = IdleEngine.hypeMultiplier(choresDone: done)
+        m.collection = IdleEngine.collectionMultiplier(gear: gearCount, bandmates: bandmates)
+        return m
+    }
+
+    /// Notes per second right now.
+    func rate(plan: Plan, targets: DailyTargets) -> Double {
+        IdleEngine.baseRate(levels: state.generators) * multipliers(plan: plan, targets: targets).total
+    }
+
+    var jarCapacity: TimeInterval { IdleEngine.jarHours * 3600 }
+
+    /// What's in the jar at `date`, at `rate`.
+    func jar(rate: Double, at date: Date = Date()) -> Double {
+        let since = state.jarSince ?? date
+        return rate * min(jarCapacity, max(0, date.timeIntervalSince(since)))
+    }
+
+    func jarFullAt() -> Date { (state.jarSince ?? Date()).addingTimeInterval(jarCapacity) }
+
+    private func earn(_ amount: Double, into s: inout BuddyState) {
+        s.notes = (s.notes ?? 0) + amount
+        s.lifetimeNotes += amount
+    }
+
+    /// Empty the jar into the balance.
+    @discardableResult
+    func collect(plan: Plan, targets: DailyTargets) -> Double {
+        let amount = jar(rate: rate(plan: plan, targets: targets))
+        var s = state
+        earn(amount, into: &s)
+        s.jarSince = Date()
+        state = s
+        publishWidget(plan: plan, targets: targets)
+        return amount
+    }
+
+    // MARK: Promo (generators)
+
+    func level(_ g: Generator) -> Int { state.generators[g.id] ?? 0 }
+
+    func isUnlocked(_ g: Generator) -> Bool { g.unlockAt <= state.peakProgress + 1e-9 }
+
+    var levelCap: Int { Generator.levelCap(progress: state.peakProgress) }
+
+    func buy(_ g: Generator, plan: Plan, targets: DailyTargets) -> Bool {
+        let cost = g.cost(level: level(g))
+        guard isUnlocked(g), level(g) < levelCap else { return false }
+        // Bank what's accrued at the old rate before the rate changes.
+        collect(plan: plan, targets: targets)
+        guard notes >= cost else { return false }
+        var s = state
+        s.notes = notes - cost
+        s.generators[g.id, default: 0] += 1
+        state = s
+        publishWidget(plan: plan, targets: targets)
+        return true
     }
 
     // MARK: Tour
@@ -243,24 +372,30 @@ final class BuddyStore {
         return Calendar.current.isDateInToday(d)
     }
 
+    private static let dayKey: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
     // MARK: Sync
 
     /// Pay out everything the log has earned since last time. Idempotent:
-    /// every one-off award has a key, and a key only ever pays once.
+    /// every award has a key, and a key only ever pays once.
     @discardableResult
     func sync(plan: Plan, targets: DailyTargets) -> [BuddyAward] {
         var s = state
         var awards: [BuddyAward] = []
+        let now = Date()
+        let cal = Calendar.current
 
         // Existing users meet the studio for the first time: their tour starts
-        // where their plan did, with the same head start a new user gets.
+        // where their plan did.
         if s.tourStart == nil {
             s.tourStart = plan.startingWeight
-            s.tourStartDate = Calendar.current.startOfDay(for: plan.startDate)
-        }
-        if !s.awarded.contains("starter") {
-            s.awarded.append("starter")
-            s.bank += 60
+            s.tourStartDate = cal.startOfDay(for: plan.startDate)
         }
         for id in StudioCatalog.starter where !s.owned.contains(id) {
             s.owned.append(id)
@@ -268,6 +403,30 @@ final class BuddyStore {
                 s.placed[g.slot.rawValue] = id
             }
         }
+
+        // Progress and health first — everything below is priced off them.
+        s.peakProgress = max(s.peakProgress, IdleEngine.goalProgress(plan: plan))
+        s.health = IdleEngine.health(plan: plan, today: now)
+        state = s
+        let rate = self.rate(plan: plan, targets: targets)
+
+        // Migrating a pre-idle state: the old balance carries over, and the
+        // sound check it already paid for isn't paid twice.
+        if s.notes == nil {
+            if !s.awarded.contains("starter") { s.bank += 60; s.awarded.append("starter") }
+            let old = BuddyEngine.notesFromLogs(plan: plan, targets: targets) + s.bank - s.spent
+            s.notes = Double(max(0, old))
+            s.lifetimeNotes = Double(max(0, old))
+            s.jarSince = now
+            for back in 0...1 {
+                guard let d = cal.date(byAdding: .day, value: -back, to: now),
+                      let day = plan.days.first(where: { cal.isDate($0.date, inSameDayAs: d) }) else { continue }
+                let key = Self.dayKey.string(from: d)
+                s.paidChores += BuddyEngine.choresDone(day: day, targets: targets).map { "\(key)|\($0.rawValue)" }
+            }
+        }
+        if s.jarSince == nil { s.jarSince = now }
+
         var awarded = Set(s.awarded)
         func pay(_ key: String, _ body: () -> Void) {
             guard !awarded.contains(key) else { return }
@@ -276,29 +435,55 @@ final class BuddyStore {
             body()
         }
 
+        // The sound check: each item pays a slice of the studio's output, once.
+        var soundCheck = 0.0
+        var paid = Set(s.paidChores)
+        for back in 0...1 {
+            guard let d = cal.date(byAdding: .day, value: -back, to: now),
+                  let day = plan.days.first(where: { cal.isDate($0.date, inSameDayAs: d) }) else { continue }
+            let key = Self.dayKey.string(from: d)
+            for chore in BuddyEngine.choresDone(day: day, targets: targets) {
+                let id = "\(key)|\(chore.rawValue)"
+                guard !paid.contains(id) else { continue }
+                paid.insert(id)
+                s.paidChores.append(id)
+                soundCheck += IdleEngine.payout(for: chore, rate: rate)
+            }
+        }
+        // Keep the ledger to the last couple of weeks.
+        if let cutoff = cal.date(byAdding: .day, value: -14, to: now) {
+            let oldest = Self.dayKey.string(from: cutoff)
+            s.paidChores.removeAll { $0 < oldest }
+        }
+        if soundCheck > 0 {
+            earn(soundCheck, into: &s)
+            awards.append(BuddyAward(text: "+\(IdleEngine.format(soundCheck)) notes from the sound check"))
+        }
+
         let tour = BuddyEngine.tour(plan: plan, number: s.tourNumber,
                                     start: s.tourStart ?? plan.startingWeight,
                                     since: s.tourStartDate ?? plan.startDate)
 
-        // Every whole pound off the trend: a record.
+        // Every whole pound off the trend: a record, and an hour of output.
         if tour.poundsBanked > 0 {
             for lb in 1...tour.poundsBanked {
                 pay("t\(s.tourNumber).lb\(lb)") {
                     s.digs += 1
-                    s.bank += 20
-                    s.newLowDay = Date()
+                    earn(max(20, rate * 3600), into: &s)
+                    s.newLowDay = now
                     awards.append(BuddyAward(text: "New low — \(lb) lb down. A record is yours.", big: true))
                 }
             }
         }
 
-        // Every finished track: notes and the track's exclusive gear. The last
-        // track of a tour also gets the most-played album, if Spotify's linked.
+        // Every finished track: six hours of output and the track's gear. The
+        // last track also gets the most-played album, if Spotify's linked.
         if tour.total > 0, tour.tracksDone > 0 {
             for t in 1...tour.tracksDone {
                 pay("t\(s.tourNumber).track\(t)") {
-                    s.bank += 100
-                    var text = "Finished “\(Tour.trackName(t))”. +100 notes"
+                    let bonus = max(100, rate * 6 * 3600)
+                    earn(bonus, into: &s)
+                    var text = "Finished “\(Tour.trackName(t))”. +\(IdleEngine.format(bonus)) notes"
                     if let gear = StudioCatalog.exclusive(forTrack: t, of: tour.trackCount),
                        !s.owned.contains(gear.id) {
                         s.owned.append(gear.id)
@@ -311,7 +496,7 @@ final class BuddyStore {
                     if t == tour.trackCount, let headliner = s.spotifyQueue.popLast() {
                         var r = headliner
                         r.reason = "Tour \(s.tourNumber) headliner"
-                        r.addedAt = Date()
+                        r.addedAt = now
                         s.records.append(r)
                         text += " — plus your most-played album"
                     }
@@ -324,8 +509,9 @@ final class BuddyStore {
         let stats = CalorieEngine.streakStats(plan: plan, targets: targets)
         for days in [3, 7, 14, 30, 50, 75, 100, 150, 200, 365] where stats.current >= days {
             pay("streak\(days)") {
-                s.bank += days >= 30 ? 100 : 40
-                awards.append(BuddyAward(text: "\(days)-day streak. +\(days >= 30 ? 100 : 40) notes"))
+                let bonus = max(days >= 30 ? 100 : 40, rate * 2 * 3600)
+                earn(bonus, into: &s)
+                awards.append(BuddyAward(text: "\(days)-day streak. +\(IdleEngine.format(bonus)) notes"))
             }
         }
 
@@ -339,30 +525,30 @@ final class BuddyStore {
                 : "Two Encores covered the gap. Streak's still alive."))
         }
 
-        // Daily notes: report what's new since the last look.
-        let earnedNow = BuddyEngine.notesFromLogs(plan: plan, targets: targets) + s.bank
-        if let seen = s.lastSeenEarned, earnedNow > seen, awards.isEmpty {
-            awards.append(BuddyAward(text: "+\(earnedNow - seen) notes"))
-        }
-        s.lastSeenEarned = earnedNow
-
         state = s
-        return awards
+        publishWidget(plan: plan, targets: targets)
+        return awards.sorted { $0.big && !$1.big }
     }
 
     // MARK: Shop
 
     func owns(_ gear: Gear) -> Bool { state.owned.contains(gear.id) }
 
+    func isUnlocked(_ gear: Gear) -> Bool {
+        StudioCatalog.unlockAt(gear) <= state.peakProgress + 1e-9
+    }
+
     func placed(in slot: StudioSlot) -> Gear? {
         state.placed[slot.rawValue].flatMap(StudioCatalog.gear)
     }
 
-    func buy(_ gear: Gear, price: Int, plan: Plan, targets: DailyTargets) -> Bool {
-        guard !owns(gear), !gear.exclusive, balance(plan: plan, targets: targets) >= price else { return false }
-        state.spent += price
-        state.owned.append(gear.id)
-        state.placed[gear.slot.rawValue] = gear.id
+    func buy(_ gear: Gear, price: Double) -> Bool {
+        guard !owns(gear), !gear.exclusive, isUnlocked(gear), notes >= price else { return false }
+        var s = state
+        s.notes = notes - price
+        s.owned.append(gear.id)
+        s.placed[gear.slot.rawValue] = gear.id
+        state = s
         return true
     }
 
@@ -376,18 +562,28 @@ final class BuddyStore {
         state.placed[slot.rawValue] = nil
     }
 
-    func buyEncore(plan: Plan, targets: DailyTargets) -> Bool {
-        guard state.encores < StudioCatalog.maxEncores,
-              balance(plan: plan, targets: targets) >= StudioCatalog.encorePrice else { return false }
-        state.spent += StudioCatalog.encorePrice
-        state.encores += 1
+    /// Records and Encores never run out, so they're priced in hours of the
+    /// studio's output — always worth something, never out of reach.
+    func encorePrice(rate: Double) -> Double { max(Double(StudioCatalog.encorePrice), rate * 3600 * 1.5) }
+    func recordPrice(rate: Double) -> Double { max(Double(StudioCatalog.recordPrice), rate * 3600 * 3) }
+
+    func buyEncore(rate: Double) -> Bool {
+        let price = encorePrice(rate: rate)
+        guard state.encores < StudioCatalog.maxEncores, notes >= price else { return false }
+        var s = state
+        s.notes = notes - price
+        s.encores += 1
+        state = s
         return true
     }
 
-    func buyRecord(plan: Plan, targets: DailyTargets) -> Bool {
-        guard balance(plan: plan, targets: targets) >= StudioCatalog.recordPrice else { return false }
-        state.spent += StudioCatalog.recordPrice
-        state.digs += 1
+    func buyRecord(rate: Double) -> Bool {
+        let price = recordPrice(rate: rate)
+        guard notes >= price else { return false }
+        var s = state
+        s.notes = notes - price
+        s.digs += 1
+        state = s
         return true
     }
 
@@ -399,24 +595,26 @@ final class BuddyStore {
     /// it can't be rerolled.
     func giftAvailable(plan: Plan, targets: DailyTargets) -> Bool {
         if let last = state.lastGiftDay, Calendar.current.isDateInToday(last) { return false }
-        let today = Calendar.current.startOfDay(for: Date())
-        guard let day = plan.days.first(where: { Calendar.current.isDate($0.date, inSameDayAs: today) })
-        else { return false }
+        guard let day = today(plan) else { return false }
         return !BuddyEngine.choresDone(day: day, targets: targets).isEmpty
     }
 
-    func openGift() -> GiftResult {
+    func openGift(rate: Double) -> GiftResult {
         let day = Calendar.current.ordinality(of: .day, in: .era, for: Date()) ?? 0
         var rng = SplitMix(seed: UInt64(day) &* 0x9E3779B97F4A7C15)
-        state.lastGiftDay = Date()
+        var s = state
+        s.lastGiftDay = Date()
         if rng.next() % 100 < 12 {
-            state.digs += 1
+            s.digs += 1
+            state = s
             return .dig
         }
-        let notes = [10, 15, 15, 20, 20, 25, 30, 40][Int(rng.next() % 8)]
-        state.bank += notes
-        state.lastSeenEarned = (state.lastSeenEarned ?? 0) + notes
-        return .notes(notes)
+        // 10 minutes to an hour of output.
+        let minutes = [10.0, 15, 15, 20, 20, 30, 40, 60][Int(rng.next() % 8)]
+        let amount = max(minutes, rate * 60 * minutes)
+        earn(amount, into: &s)
+        state = s
+        return .notes(amount)
     }
 
     // MARK: Records
@@ -450,6 +648,30 @@ final class BuddyStore {
         state.spotifyQueue = albums.filter { !have.contains($0.id) }
         state.spotifyRefreshed = Date()
     }
+
+    // MARK: Widget
+
+    /// What the home-screen widget shows. Written whenever the economy moves;
+    /// the widget extrapolates the jar from `rate` and `jarSince` on its own.
+    func publishWidget(plan: Plan, targets: DailyTargets) {
+        let tour = tour(plan: plan)
+        let stats = BuddyWidgetStats(
+            name: state.name,
+            asset: state.species.asset,
+            notes: notes,
+            rate: rate(plan: plan, targets: targets),
+            jarSince: state.jarSince ?? Date(),
+            jarHours: IdleEngine.jarHours,
+            health: BuddyHealth(score: state.health).rawValue,
+            healthMultiplier: IdleEngine.healthMultiplier(state.health),
+            records: state.records.count,
+            track: tour.currentTrack,
+            trackCount: tour.trackCount,
+            toNextTrack: tour.toNextTrack,
+            progress: state.peakProgress)
+        stats.save()
+        WidgetCenter.shared.reloadTimelines(ofKind: "TodayWidget")
+    }
 }
 
 #if DEBUG
@@ -476,7 +698,8 @@ extension BuddyStore {
         s.owned += gear
         for id in gear { if let g = StudioCatalog.gear(id) { s.placed[g.slot.rawValue] = id } }
         s.digs = 1
-        s.bank = 400
+        s.notes = 25_000
+        s.generators = ["busk": 10, "openmic": 6]
         state = s
     }
 }

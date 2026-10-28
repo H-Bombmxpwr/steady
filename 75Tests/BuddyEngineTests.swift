@@ -16,11 +16,13 @@ final class BuddyEngineTests: XCTestCase {
         Tour(number: 1, start: start, goal: goal, current: current, best: best ?? current)
     }
 
-    func testTracksAreFivePoundsWithAShortLastTrack() {
-        let t = tour(goal: 222, current: 235)          // 13 lb: 5 + 5 + 3
-        XCTAssertEqual(t.trackCount, 3)
-        XCTAssertEqual(t.trackEnd(1), 5)
-        XCTAssertEqual(t.trackEnd(3), 13)
+    /// Ten tracks whatever the distance: 13 lb to lose is ten 1.3-lb tracks,
+    /// so a small goal unlocks the same gear as a big one.
+    func testTracksAreTenthsOfTheDistance() {
+        let t = tour(goal: 222, current: 235)
+        XCTAssertEqual(t.trackCount, 10)
+        XCTAssertEqual(t.trackEnd(1), 1.3, accuracy: 1e-9)
+        XCTAssertEqual(t.trackEnd(10), 13, accuracy: 1e-9)
     }
 
     func testNothingFinishedAtTheStart() {
@@ -217,15 +219,4 @@ final class BuddyEngineTests: XCTestCase {
         }
     }
 
-    // MARK: Economy
-
-    /// Six months of steady logging should take most of the shop — not all
-    /// of it in two months, and not none of it.
-    func testShopLastsRoughlySixMonths() {
-        let shop = StudioCatalog.forSale.reduce(0) { $0 + $1.price }
-        let typicalDay = 50   // most of the sound check, most days
-        let sixMonths = typicalDay * 180
-        XCTAssertGreaterThan(shop, sixMonths)          // there's always something left to want
-        XCTAssertLessThan(shop, sixMonths * 3)         // but it's reachable
-    }
 }

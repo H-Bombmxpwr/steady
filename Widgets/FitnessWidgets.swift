@@ -140,13 +140,18 @@ struct TodayProvider: TimelineProvider {
         let cal = Calendar.current
         let midnight = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: now) ?? now)
 
-        let entries = [
+        var entries = [
             TodayTimelineEntry(date: now, snapshot: .load(asOf: now)),
             // Renders itself with progress zeroed: `load(asOf:)` sees the
             // cache's dayDate no longer matches, so the day resets on time
             // with no reload required.
             TodayTimelineEntry(date: midnight, snapshot: .load(asOf: midnight)),
         ]
+        // The studio's jar filling up is the one other unattended change.
+        if let full = BuddyWidgetStats.load()?.jarFullAt, full > now, full < midnight {
+            entries.append(TodayTimelineEntry(date: full, snapshot: .load(asOf: full)))
+            entries.sort { $0.date < $1.date }
+        }
         completion(Timeline(entries: entries, policy: .after(midnight)))
     }
 }
@@ -286,9 +291,18 @@ struct TodayWidgetView: View {
         case .accessoryCircular: circularView
         case .accessoryRectangular: rectangularView
         case .accessoryInline: inlineView
-        case .systemMedium: mediumView
-        case .systemLarge: largeView
-        default: smallView
+        default:
+            // Weight-loss mode has a studio buddy; the home-screen sizes are
+            // its dashboard. Everyone else keeps the numbers.
+            if let buddy = BuddyWidgetStats.load() {
+                BuddyHomeWidget(stats: buddy, date: entry.date, family: family)
+            } else {
+                switch family {
+                case .systemMedium: mediumView
+                case .systemLarge: largeView
+                default: smallView
+                }
+            }
         }
     }
 
@@ -465,6 +479,204 @@ struct TodayWidgetView: View {
     }
 }
 
+// MARK: - Buddy home widget
+
+/// The studio at a glance: the buddy and how it's feeling, what the studio's
+/// earning, and three doors — log food, log weight, open the studio.
+private struct BuddyHomeWidget: View {
+    let stats: BuddyWidgetStats
+    let date: Date
+    let family: WidgetFamily
+
+    private var jar: Double { stats.jar(at: date) }
+    private var jarFull: Bool { date >= stats.jarFullAt }
+
+    private var healthSprite: String {
+        switch stats.health {
+        case "thriving": return "Studio/smiling_face_with_hearts"
+        case "healthy": return "Studio/slightly_smiling_face"
+        case "queasy": return "Studio/nauseated_face"
+        case "sick": return "Studio/face_with_thermometer"
+        default: return "Studio/neutral_face"
+        }
+    }
+
+    private var unwell: Bool { stats.health == "queasy" || stats.health == "sick" }
+
+    var body: some View {
+        content
+            .containerBackground(for: .widget) {
+                LinearGradient(colors: [hex(0x312E81), hex(0x1E1B4B)], startPoint: .top, endPoint: .bottom)
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch family {
+        case .systemSmall: small
+        case .systemLarge: large
+        default: medium
+        }
+    }
+
+    // MARK: Pieces
+
+    private func buddy(_ size: CGFloat) -> some View {
+        Image(stats.asset).resizable().scaledToFit()
+            .frame(width: size, height: size)
+            .saturation(stats.health == "sick" ? 0.55 : 1)
+            .overlay(alignment: .topTrailing) {
+                Image(healthSprite).resizable().scaledToFit()
+                    .frame(width: size * 0.36, height: size * 0.36)
+                    .offset(x: size * 0.1, y: -size * 0.05)
+            }
+    }
+
+    private func stat(_ sprite: String, _ value: String, _ label: String, tint: Color = .white) -> some View {
+        HStack(spacing: 6) {
+            Image("Studio/\(sprite)").resizable().scaledToFit().frame(width: 18, height: 18)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value).font(.system(.subheadline, design: .rounded).bold())
+                    .foregroundStyle(tint).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                Text(label).font(.system(size: 9)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+            }
+        }
+    }
+
+    private func door(_ url: String, _ icon: String, _ label: String?, _ color: Color) -> some View {
+        Link(destination: URL(string: url)!) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.caption.bold())
+                if let label {
+                    Text(label).font(.system(.caption2, design: .rounded).bold()).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.12)))
+            .foregroundStyle(color)
+        }
+    }
+
+    private func doors(labels: Bool) -> some View {
+        HStack(spacing: 6) {
+            door("seventyfive://log-food", "fork.knife", labels ? "Food" : nil, .orange)
+            door("seventyfive://log-weight", "scalemass.fill", labels ? "Weight" : nil, hex(0xA78BFA))
+            door("seventyfive://studio", "music.note.house.fill", labels ? "Studio" : nil, accent)
+        }
+    }
+
+    private var jarText: String {
+        jarFull ? "Jar full!" : "+\(fmt(jar))"
+    }
+
+    private var healthLine: String {
+        "\(stats.health.capitalized) ×\(String(format: "%.2f", stats.healthMultiplier))"
+    }
+
+    // MARK: Sizes
+
+    private var small: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                buddy(46)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(fmt(stats.notes)).font(.system(.headline, design: .rounded).bold())
+                        .foregroundStyle(.white).monospacedDigit()
+                    Text("notes").font(.system(size: 9)).foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            Text(jarFull ? "\(stats.name)'s jar is full" : "\(stats.name) · \(healthLine)")
+                .font(.caption2.bold())
+                .foregroundStyle(jarFull ? .orange : (unwell ? hex(0xFCA5A5) : .white.opacity(0.85)))
+                .lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+            doors(labels: false)
+        }
+    }
+
+    private var medium: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                VStack(spacing: 2) {
+                    buddy(56)
+                    Text(stats.name).font(.caption.bold()).foregroundStyle(.white).lineLimit(1)
+                }
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+                    GridRow {
+                        stat("musical_note", fmt(stats.notes), "notes")
+                        stat("chart_increasing", "\(fmt(stats.rate))/s", "earning")
+                    }
+                    GridRow {
+                        stat("honey_pot", jarText, jarFull ? "collect it" : "in the jar",
+                             tint: jarFull ? .orange : .white)
+                        stat("optical_disk", "\(stats.records)", "records")
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            doors(labels: true)
+        }
+    }
+
+    private var large: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                buddy(72)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(stats.name)'s Studio").font(.headline).foregroundStyle(.white)
+                    Text(healthLine).font(.caption.bold())
+                        .foregroundStyle(unwell ? hex(0xFCA5A5) : good)
+                    if let t = stats.track {
+                        Text("Track \(t) of \(stats.trackCount)" +
+                             (stats.toNextTrack.map { String(format: " · %.1f lb to go", $0) } ?? ""))
+                            .font(.caption).foregroundStyle(.white.opacity(0.7))
+                    } else {
+                        Text("Tour complete").font(.caption).foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            // Progress to goal, as a fraction — never the weight itself.
+            VStack(alignment: .leading, spacing: 3) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.12))
+                        Capsule().fill(gradient).frame(width: max(6, geo.size.width * stats.progress))
+                    }
+                }
+                .frame(height: 8)
+                Text("\(Int(stats.progress * 100))% of the way to goal")
+                    .font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+            }
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                GridRow {
+                    stat("musical_note", fmt(stats.notes), "notes")
+                    stat("chart_increasing", "\(fmt(stats.rate))/s", "earning")
+                }
+                GridRow {
+                    stat("honey_pot", jarText, jarFull ? "collect it" : "in the jar",
+                         tint: jarFull ? .orange : .white)
+                    stat("optical_disk", "\(stats.records)", "records on the wall")
+                }
+            }
+            Spacer(minLength: 0)
+            doors(labels: true)
+        }
+    }
+}
+
+/// The app's number format, for a target that can't see `IdleEngine`.
+private func fmt(_ x: Double) -> String {
+    guard x.isFinite else { return "∞" }
+    if x < 1000 { return x < 10 ? String(format: "%.1f", x) : "\(Int(x))" }
+    let units = ["K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"]
+    var v = x, i = -1
+    while v >= 1000 && i < units.count - 1 { v /= 1000; i += 1 }
+    return String(format: v < 10 ? "%.2f" : (v < 100 ? "%.1f" : "%.0f"), v) + units[i]
+}
+
 // MARK: - Widget declarations
 
 struct TodayWidget: Widget {
@@ -473,7 +685,7 @@ struct TodayWidget: Widget {
             TodayWidgetView(entry: entry)
         }
         .configurationDisplayName("Today's Goals")
-        .description("Streak, calories, protein, and water — with one-tap logging.")
+        .description("Your studio buddy, its health and earnings, with doors to log food and weight — or streak, calories, protein, and water outside weight-loss mode.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge,
                             .accessoryCircular, .accessoryRectangular, .accessoryInline])
     }

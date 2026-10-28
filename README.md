@@ -104,14 +104,20 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 
 ### The Studio (motivation)
 
-Weight-loss mode's dashboard leads with a buddy and its music studio — a reward layer modelled on Focus Friend / Finch, pointed at the behaviours that predict weight loss. Full write-up: [docs/studio.md](docs/studio.md).
+Weight-loss mode's dashboard leads with a buddy and its music studio: a reward layer modelled on Focus Friend and Finch, with a Cookie Clicker-style idle economy, pointed at the behaviours that predict weight loss. Full write-up: [docs/studio.md](docs/studio.md).
 
-- **Buddy** — six Fluent Emoji 3D animals, picked and named at onboarding; look and name changeable any time without losing progress; any of them can be the app icon (`Icon-Buddy-*`). Hand-written lines filled from real numbers, a mood derived from the day (`BuddyEngine.mood`) — no AI.
-- **Notes ♪** — the daily *sound check* (`Chore`): weigh-in, food, 3 meals, under budget (only after 3 meals), protein, water, move, photo — up to 75/day. **Derived from the log** (`BuddyEngine.notesFromLogs`), never stored, so edits and rewards can't drift. One-off awards (streak milestones, gifts, pounds, tracks) are **banked** under idempotent keys in `BuddyStore.sync`.
-- **Records** — each new 1 lb low on the EWMA trend's *best* point earns a dig: any album via the iTunes Search API, or the next one from a linked **Spotify** queue (top tracks long/medium/short-term weighted by rank + saved albums, sorted least-played first; the most-played album is reserved for finishing a tour). Covers hang around the room; tap to play a 30-s Apple Music preview.
-- **Tour** — goal distance in 5-lb tracks (`Tour`); each finished track unlocks tour-exclusive gear, the last one a trophy. Fresh-start offer when the trend is above the tour's start.
-- **Shop** — ~76 items across 10 slots incl. bandmates (450–1,600) and a daily 40%-off pick; ~17.7k notes of gear vs. ~13k earnable in six months. **Encores** (streak cover, `Plan.protectedDays`) bridge a missed day without counting as a met day.
-- **Nothing is lost** — no decay, no pet death, welcome-back mood after a gap.
+- **Buddy**: six Fluent Emoji 3D animals, picked and named at onboarding. The look and name can change any time without losing progress, and any of them can be the app icon (`Icon-Buddy-*`). Its lines are hand-written and filled from real numbers, and its mood is derived from the day (`BuddyEngine.mood`). No AI.
+- **Idle economy** (`IdleEngine`): generators pay notes/s, with cost `base × 1.15ⁿ`. `rate = Σ(level × base) × progress × health × hype × collection`. A 12-hour royalty jar is collected by tapping.
+  - **Progress** is `20^p` (×2 on arrival). `p` is the fraction of the way from `Plan.startingWeight` to `goalWeight` at the trend's best point.
+  - **Health** is ×0.5–1.5, from calorie-weighted food quality: density, fiber, added sugar, drinks, as an EWMA over 7 days (`BuddyHealth`).
+  - **Hype** is +5% per sound-check item today.
+  - **Collection** is +3% per gear, +10% per bandmate.
+- **Normalized to the goal, gated on weight**: generators and the 10 gear tiers unlock at fractions of `p`, the last of each only at `p = 1`, and generator levels are capped at `10 + 90p`. A stalled trend means a flat studio. `IdleEngineTests` simulates 2/4/6/12-month paces: each ends on its goal day, a stall at 30% stays flat for 7 months, and no loss never ends.
+- **Sound check** (`Chore`): each logging behaviour pays minutes of current output (`IdleEngine.payout`), once, via a dated ledger (`paidChores`). The balance is stored, and `BuddyState` decodes field-by-field so new fields never reset a save.
+- **Records**: each new 1 lb low on the EWMA trend's *best* point earns a dig. Pick any album via the iTunes Search API, or reveal the next one from a linked **Spotify** queue (least-played first; the most-played album is reserved for finishing a tour). Covers hang around the room, and tapping one plays a 30-s Apple Music preview.
+- **Tour**: always 10 tracks, a tenth of the distance each (`Tour`). Each finished track unlocks tour-exclusive gear, and the last one a trophy. There's a fresh-start offer when the trend is above the tour's start.
+- **Encores** (`Plan.protectedDays`) bridge a missed day without counting as a met day.
+- **Nothing is lost**: no decay, no pet death, a welcome-back mood after a gap. Being sick slows earning but takes nothing away.
 
 ### Mealtime check-ins
 
@@ -183,7 +189,7 @@ BeReal-style, without a push server:
 
 - **Apple Health (two-way)** — writes weight/water/nutrition/workouts; reads steps, sleep, and external weigh-ins (Garmin / Watch / smart scales flow in via Health).
 - **Workout import** — anything written to Health (Watch, Garmin Connect, Strava…) imports into the day log once (UUID remembered), mapped to categories, counting toward minutes and the streak.
-- **Widgets** — small / medium / large home screen + lock-screen (circular, rectangular, inline), plus the **Mealtime** widget. The large widget shows calories, protein, water, **weight, carbs, and workout**. Widgets follow the in-app accent palette and offer one-tap water logging.
+- **Widgets** — small / medium / large home screen + lock-screen (circular, rectangular, inline), plus the **Mealtime** widget. In weight-loss mode the home-screen sizes become the buddy's dashboard (`BuddyWidgetStats`): health, notes, rate, jar, records, track, and **Food / Weight / Studio** doors (`seventyfive://log-food`, `log-weight`, `studio`). The large widget shows calories, protein, water, **weight, carbs, and workout**. Widgets follow the in-app accent palette and offer one-tap water logging.
 - **Siri shortcuts** — "log water," "log a meal" (spoken, itemized, totals read back), "open today."
 - **Live Activity** *(on by default)* — the buddy's mealtime check-in plus remaining calories, protein, and water on the Lock Screen / Dynamic Island. See [Mealtime check-ins](#mealtime-check-ins).
 - **Spotify** *(optional, OAuth PKCE, read-only)* — top tracks + saved albums decide which records the Studio awards. Refresh token in the Keychain.
@@ -229,13 +235,15 @@ Widgets/       WidgetKit extension (home + lock screen, interactive logging,
   Services/    Backup, FoodDatabase (Open Food Facts), ExerciseDatabase,
                AIFoodEstimator (Gemini), HealthKit, InsightsEngine
                (on-device patterns), Notifications, CalendarSync, Timelapse,
-               BuddyEngine (chores, tour, moods, lines), BuddyStore (studio
-               state + award sync), StudioCatalog, MusicServices (iTunes,
-               player, Spotify), LiveActivityManager
+               BuddyEngine (chores, tour, moods, lines), IdleEngine
+               (generators, multipliers, food health), BuddyStore (studio
+               state, economy, award sync), StudioCatalog (gear + tiers),
+               MusicServices (iTunes, player, Spotify), LiveActivityManager
   Views/
     Onboarding/  Multi-step plan setup (incl. optional AI key step)
     Dashboard/   Rings, trend chart, streak, fuel card, tab bar (+ Settings)
-    Buddy/       Studio scene, buddy + tour cards, shop / crate / Spotify
+    Buddy/       Studio scene, buddy + tour cards, shop (gear / promo /
+                 records / buddy), quick weigh-in
     Stats/       Time-range charts for every tracked series
     Day/         Day detail logging + workout form
     Food/        Search, portion picker, describe/photo/recipe, barcode

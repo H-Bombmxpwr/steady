@@ -25,7 +25,7 @@ struct MainTabView: View {
     @State private var readyForLinks = false
 
     enum DeepLink: String, Identifiable {
-        case food, workout, today
+        case food, workout, today, weight, studio
         var id: String { rawValue }
 
         init?(host: String?) {
@@ -33,6 +33,8 @@ struct MainTabView: View {
             case "log-food": self = .food
             case "log-workout": self = .workout
             case "today": self = .today
+            case "log-weight": self = .weight
+            case "studio": self = .studio
             default: return nil
             }
         }
@@ -82,6 +84,8 @@ struct MainTabView: View {
         }
         .onOpenURL { url in
             guard let incoming = DeepLink(host: url.host) else { return }
+            // The studio and the weigh-in both live with the dashboard.
+            if incoming == .studio || incoming == .weight { tab = 0 }
             pending = incoming
             presentPendingLinkIfReady()
         }
@@ -98,19 +102,36 @@ struct MainTabView: View {
             // already running when the widget was tapped) presents it now.
             if phase == .active { presentPendingLinkIfReady() }
         }
-        .sheet(item: $link) { destination in
-            NavigationStack {
-                switch destination {
-                case .today:
-                    DayDetailView(plan: plan, profile: profile,
-                                  date: Calendar.current.startOfDay(for: Date()))
-                case .food:
-                    FoodSearchView(day: ensureDay(plan: plan, date: Date()))
-                case .workout:
-                    WorkoutFormView(day: ensureDay(plan: plan, date: Date()), plan: plan)
+        .sheet(item: $link, onDismiss: {
+            // Whatever was just logged from a widget door pays out now,
+            // rather than whenever the dashboard next appears.
+            BuddyStore.shared.sync(plan: plan, targets: CalorieEngine.targets(profile: profile, plan: plan))
+            try? context.save()
+        }) { destination in
+            switch destination {
+            case .studio:
+                // Has its own navigation stack and theming.
+                StudioShopView(plan: plan,
+                               targets: CalorieEngine.targets(profile: profile, plan: plan),
+                               tab: .gear)
+            case .weight:
+                QuickWeightView(plan: plan)
+                    .presentationDetents([.medium])
+                    .themedRoot()
+            default:
+                NavigationStack {
+                    switch destination {
+                    case .today:
+                        DayDetailView(plan: plan, profile: profile,
+                                      date: Calendar.current.startOfDay(for: Date()))
+                    case .food:
+                        FoodSearchView(day: ensureDay(plan: plan, date: Date()))
+                    default:
+                        WorkoutFormView(day: ensureDay(plan: plan, date: Date()), plan: plan)
+                    }
                 }
+                .themedRoot()
             }
-            .themedRoot()
         }
     }
 }
@@ -273,6 +294,9 @@ struct DashboardView: View {
             .onAppear {
                 celebrateNewMilestones()
                 syncStudio()
+                #if DEBUG
+                if CommandLine.arguments.contains("-openPromo") { shopTab = .promo }
+                #endif
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { syncStudio() }

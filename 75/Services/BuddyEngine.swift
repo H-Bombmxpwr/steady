@@ -78,12 +78,13 @@ enum BuddyMood: Equatable {
     case sleeping, waiting, peckish, content, proud, newLow, welcomeBack
 }
 
-/// The weight journey as a record: every 5 lb between where this tour started
-/// and the goal is a track. Small, finishable chunks — the goal-gradient effect
-/// says effort picks up as the next finish line gets close, and 50 lb away is
-/// never close.
+/// The weight journey as a record of ten tracks, each a tenth of the way from
+/// where this tour started to the goal — 1.5 lb each with 15 to lose, 5 lb
+/// each with 50. Small, finishable chunks: the goal-gradient effect says effort
+/// picks up as the next finish line gets close, and the goal itself is never
+/// close. Ten every time, so everyone unlocks the same gear on the way.
 struct Tour: Equatable {
-    static let trackPounds = 5.0
+    static let trackCount = 10
 
     let number: Int
     let start: Double
@@ -94,7 +95,8 @@ struct Tour: Equatable {
     let best: Double
 
     var total: Double { max(0, start - goal) }
-    var trackCount: Int { max(1, Int((total / Self.trackPounds).rounded(.up))) }
+    var trackCount: Int { Self.trackCount }
+    var trackPounds: Double { total / Double(Self.trackCount) }
 
     /// Pounds down on the trend right now (negative when up).
     var lostNow: Double { start - current }
@@ -104,7 +106,7 @@ struct Tour: Equatable {
 
     var progress: Double { total > 0 ? min(1, max(0, lostNow / total)) : 1 }
 
-    func trackEnd(_ index: Int) -> Double { min(total, Double(index) * Self.trackPounds) }
+    func trackEnd(_ index: Int) -> Double { total * Double(index) / Double(Self.trackCount) }
 
     var tracksDone: Int {
         guard total > 0 else { return trackCount }
@@ -276,6 +278,7 @@ enum BuddyEngine {
         var nowPlaying: String?
         /// Change in the trend over the last week, if there's a week of it.
         var weekDelta: Double?
+        var health: BuddyHealth = .okay
     }
 
     static func line(_ c: LineContext, seed: Int) -> String {
@@ -338,6 +341,22 @@ enum BuddyEngine {
                         : "\(c.records) record\(c.records == 1 ? "" : "s") in the crate. Every one of them is a pound you lost.",
                     "Steady beats loud. Log the next thing you eat."
                 ]
+            }
+        }
+        // Health speaks up during the day, but never over a new low or a
+        // welcome back — those matter more than what was for lunch.
+        if c.mood == .content || c.mood == .proud || c.mood == .peckish {
+            switch c.health {
+            case .sick:
+                pool = ["Not feeling great. Too much orange-and-red on the plate lately. One green meal and I'm back.",
+                        "I'm running at half speed. It's the food, not you. Well — it's the food.",
+                        "Under the weather. Something with a vegetable in it would sort me right out."]
+            case .queasy:
+                pool = ["Bit queasy. A few heavy meals in a row will do that.",
+                        "Earnings are down a little. A green lunch fixes it faster than you'd think."]
+            case .thriving where c.mood != .peckish:
+                pool.append("Whatever you've been eating, keep it up. I've never sounded better.")
+            default: break
             }
         }
         if let song = c.nowPlaying, c.mood != .sleeping {

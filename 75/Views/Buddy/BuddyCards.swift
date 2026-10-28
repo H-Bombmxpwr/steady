@@ -21,6 +21,8 @@ struct BuddyCard: View {
         day.map { BuddyEngine.choresDone(day: $0, targets: targets) } ?? []
     }
     private var tour: Tour { store.tour(plan: plan) }
+    private var rate: Double { store.rate(plan: plan, targets: targets) }
+    private var health: BuddyHealth { BuddyHealth(score: store.state.health) }
 
     private var mood: BuddyMood {
         BuddyEngine.mood(done: done,
@@ -43,7 +45,8 @@ struct BuddyCard: View {
                                           tour: tour, records: store.state.records.count,
                                           daysAway: BuddyEngine.daysAway(plan: plan),
                                           nowPlaying: playing.map { "“\($0.title)”" },
-                                          weekDelta: weekDelta)
+                                          weekDelta: weekDelta,
+                                          health: health)
         let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: today) ?? 0
         return BuddyEngine.line(ctx, seed: dayOfYear + tapSeed)
     }
@@ -51,8 +54,8 @@ struct BuddyCard: View {
     var body: some View {
         Card {
             HStack(spacing: 8) {
-                // Tap the name to change the buddy's look or name.
-                Button { openShop(.buddy) } label: {
+                // Tap the name to open the studio — the gear, first.
+                Button { openShop(.gear) } label: {
                     HStack(spacing: 4) {
                         Text("\(store.state.name)'s Studio")
                             .font(.system(.headline, design: .rounded))
@@ -72,13 +75,13 @@ struct BuddyCard: View {
                     .background(Capsule().fill(Theme.surface2))
                 }
                 .buttonStyle(.plain)
-                Button { openShop(.gear) } label: {
-                    NotesBadge(notes: store.balance(plan: plan, targets: targets))
+                Button { openShop(.promo) } label: {
+                    NotesBadge(notes: store.notes)
                 }
                 .buttonStyle(.plain)
             }
 
-            StudioScene(store: store, mood: mood,
+            StudioScene(store: store, mood: mood, health: health,
                         onDeckTap: deckTapped,
                         onRoomTap: { openShop(.gear) })
                 .simultaneousGesture(TapGesture().onEnded { tapSeed += 1 })
@@ -95,9 +98,91 @@ struct BuddyCard: View {
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface2))
 
+            economy
+
             waiting
 
             soundCheck
+        }
+    }
+
+    // MARK: The idle economy
+
+    /// The jar, the rate, and the buddy's health — the three numbers the
+    /// idle game runs on, with a live counter so the jar visibly fills.
+    private var economy: some View {
+        let rate = rate
+        let m = store.multipliers(plan: plan, targets: targets)
+        return VStack(spacing: 8) {
+            if rate <= 0 {
+                // Nothing earning yet: the first busker is the whole tutorial.
+                Button { openShop(.promo) } label: {
+                    banner(sprite: "guitar", title: "Start earning",
+                           detail: "Buy your first busker in Promo — then the jar fills on its own.",
+                           tint: Theme.warn)
+                }
+                .buttonStyle(.pressable)
+            } else {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let jar = store.jar(rate: rate, at: context.date)
+                let full = context.date >= store.jarFullAt()
+                Button {
+                    let got = store.collect(plan: plan, targets: targets)
+                    if got > 0 { Haptics.success() }
+                } label: {
+                    HStack(spacing: 10) {
+                        Sprite("honey_pot", size: 34)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("+\(IdleEngine.format(jar)) in the jar")
+                                .font(.subheadline.bold()).monospacedDigit()
+                                .foregroundStyle(.primary)
+                            Text(full ? "Full — collect it, it's not filling any more"
+                                      : "\(IdleEngine.format(rate))/s · full \(store.jarFullAt().formatted(.relative(presentation: .named)))")
+                                .font(.caption)
+                                .foregroundStyle(full ? Theme.warn : Theme.textDim)
+                        }
+                        Spacer()
+                        Text("Collect").font(.caption.bold())
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Capsule().fill(Theme.accent.opacity(jar >= 1 ? 0.25 : 0.08)))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Theme.warn.opacity(full ? 0.18 : 0.08)))
+                }
+                .buttonStyle(.pressable)
+                .disabled(jar < 1)
+            }
+            }
+
+            Button { openShop(.promo) } label: {
+                HStack(spacing: 10) {
+                    Sprite(health.sprite, size: 28)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(store.state.name) is \(health.label.lowercased()) · ×\(String(format: "%.2f", m.health))")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(health.isUnwell ? Theme.danger : .primary)
+                        Text(healthLine)
+                            .font(.caption).foregroundStyle(Theme.textDim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(Theme.textDim)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surface2))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var healthLine: String {
+        switch health {
+        case .thriving: return "Eating like this, the studio earns 50% more. Whole foods, mostly green."
+        case .healthy: return "Good week of food. The studio's earning a bit extra."
+        case .okay: return "Middle of the road. More greens and fewer reds tips it up."
+        case .queasy: return "Heavy on the reds lately — the studio's earning less. A green meal helps fast."
+        case .sick: return "Feeling rough. Earnings are halved until the food picks up — one good day turns it."
         }
     }
 
@@ -146,8 +231,8 @@ struct BuddyCard: View {
     private func openGift() {
         Haptics.success()
         let text: String
-        switch store.openGift() {
-        case .notes(let n): text = "+\(n) notes"
+        switch store.openGift(rate: rate) {
+        case .notes(let n): text = "+\(IdleEngine.format(n)) notes"
         case .dig: text = "A whole record!"
         }
         withAnimation(.spring) { giftResult = text }
@@ -156,14 +241,14 @@ struct BuddyCard: View {
     // MARK: Sound check
 
     private var soundCheck: some View {
-        let earned = done.reduce(0) { $0 + $1.notes }
+        let rate = rate
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("SOUND CHECK")
                     .font(.caption.bold()).kerning(1.2)
                     .foregroundStyle(Theme.textDim)
                 Spacer()
-                Text("\(earned)/\(Chore.dailyMax) notes today")
+                Text("\(done.count)/\(Chore.allCases.count) · hype ×\(String(format: "%.2f", IdleEngine.hypeMultiplier(choresDone: done.count)))")
                     .font(.caption).monospacedDigit()
                     .foregroundStyle(Theme.textDim)
             }
@@ -181,7 +266,7 @@ struct BuddyCard: View {
                                 .foregroundStyle(isDone ? .primary : Theme.textDim)
                                 .lineLimit(1)
                             Spacer(minLength: 2)
-                            Text("+\(chore.notes)")
+                            Text("+\(IdleEngine.format(IdleEngine.payout(for: chore, rate: rate)))")
                                 .font(.caption2.bold()).monospacedDigit()
                                 .foregroundStyle(isDone ? Theme.accent : Theme.textDim)
                         }

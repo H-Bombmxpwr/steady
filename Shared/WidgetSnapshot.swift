@@ -235,3 +235,43 @@ extension WidgetSnapshot {
     }
 }
 
+
+// MARK: - Buddy stats (home-screen widget)
+
+/// The studio at a glance, written by the app whenever the economy moves.
+/// The jar is extrapolated at render time from `rate` and `jarSince`, so the
+/// widget's number climbs without a reload.
+struct BuddyWidgetStats: Codable {
+    static let key = "buddy.widget"
+
+    var name: String
+    var asset: String
+    var notes: Double
+    var rate: Double
+    var jarSince: Date
+    var jarHours: Double
+    var health: String
+    var healthMultiplier: Double
+    var records: Int
+    var track: Int?
+    var trackCount: Int
+    var toNextTrack: Double?
+    var progress: Double
+
+    func jar(at date: Date) -> Double {
+        rate * min(jarHours * 3600, max(0, date.timeIntervalSince(jarSince)))
+    }
+
+    var jarFullAt: Date { jarSince.addingTimeInterval(jarHours * 3600) }
+
+    static func load() -> BuddyWidgetStats? {
+        guard let data = UserDefaults(suiteName: appGroupID)?.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(BuddyWidgetStats.self, from: data)
+    }
+
+    func save() {
+        if let data = try? JSONEncoder().encode(self) {
+            UserDefaults(suiteName: appGroupID)?.set(data, forKey: Self.key)
+        }
+    }
+}

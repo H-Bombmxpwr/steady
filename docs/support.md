@@ -88,6 +88,12 @@ No. The look and the name are cosmetic. Records, gear, notes, and the tour all s
 **I gained weight. Did I lose records or tracks?**
 Never. Records and tracks are paid against your trend's *best* point, so a rebound takes nothing back. If the trend climbs above where the tour started, the Tour card offers a fresh tour from today.
 
+**My buddy is sick.**
+The food's been heavy on red (calorie-dense) items lately. A sick buddy halves the studio's earnings until the food picks up, but it never takes anything away. A day or two of greener meals turns it around. See [Health](studio#health).
+
+**The studio stopped growing.**
+That's by design when the trend weight isn't moving. Generators and gear unlock, and generator levels are capped, by how far you've got toward your goal. Keep logging and the next unlock opens when the trend reaches the weight shown next to it.
+
 **Why didn't I get notes for being under budget?**
 It counts once three meals are logged, so breakfast alone doesn't qualify.
 

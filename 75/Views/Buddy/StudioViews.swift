@@ -93,6 +93,8 @@ struct BuddySprite: View {
     var size: CGFloat
     var mood: BuddyMood
     var dancing: Bool
+    /// Unwell buddies look it: a little green, a little washed out, slower.
+    var health: BuddyHealth = .okay
 
     @State private var hop: CGFloat = 0
     @State private var hearts = 0
@@ -100,7 +102,7 @@ struct BuddySprite: View {
     var body: some View {
         TimelineView(.animation) { context in
             let t = context.date.timeIntervalSinceReferenceDate
-            let speed = dancing ? 7.0 : (mood == .sleeping ? 1.2 : 2.2)
+            let speed = dancing ? 7.0 : (mood == .sleeping || health.isUnwell ? 1.2 : 2.2)
             let bob = mood == .sleeping ? 0 : sin(t * speed) * (dancing ? 4 : 2)
             let breathe = 1 + sin(t * (mood == .sleeping ? 1.2 : 2.2)) * 0.02
             let sway = dancing ? sin(t * speed / 2) * 7 : (mood == .newLow ? sin(t * 5) * 5 : 0)
@@ -115,6 +117,8 @@ struct BuddySprite: View {
                     .rotationEffect(.degrees(sway), anchor: .bottom)
                     .offset(y: bob + hop)
                     .opacity(mood == .sleeping ? 0.85 : 1)
+                    .saturation(health == .sick ? 0.55 : (health == .queasy ? 0.8 : 1))
+                    .colorMultiply(health.isUnwell ? Color(red: 0.82, green: 1, blue: 0.82) : .white)
             }
             .overlay(alignment: .topTrailing) { moodBadge(t: t) }
             .overlay(alignment: .top) {
@@ -136,6 +140,15 @@ struct BuddySprite: View {
     @ViewBuilder
     private func moodBadge(t: Double) -> some View {
         let float = sin(t * 2) * 3
+        if health.isUnwell, mood != .sleeping, mood != .newLow, !dancing {
+            Sprite(health.sprite, size: size * 0.3).offset(x: size * 0.12, y: -size * 0.05 + float)
+        } else {
+            moodOnlyBadge(t: t, float: float)
+        }
+    }
+
+    @ViewBuilder
+    private func moodOnlyBadge(t: Double, float: Double) -> some View {
         switch mood {
         case .sleeping:
             Sprite("zzz", size: size * 0.32).offset(x: size * 0.1, y: -size * 0.1 + float)
@@ -174,6 +187,7 @@ struct BuddySprite: View {
 struct StudioScene: View {
     let store: BuddyStore
     var mood: BuddyMood
+    var health: BuddyHealth = .okay
     var height: CGFloat = 250
     var onDeckTap: () -> Void = {}
     var onRoomTap: () -> Void = {}
@@ -275,7 +289,7 @@ struct StudioScene: View {
                 }
 
                 BuddySprite(species: store.state.species, size: 78, mood: mood,
-                            dancing: player.isPlaying)
+                            dancing: player.isPlaying, health: health)
                     .position(x: w * 0.76, y: h * 0.81)
             }
             .frame(width: w, height: h)
@@ -359,11 +373,11 @@ private struct Bandmate: View {
 // MARK: - Notes badge
 
 struct NotesBadge: View {
-    let notes: Int
+    let notes: Double
     var body: some View {
         HStack(spacing: 4) {
             Sprite("musical_note", size: 16)
-            Text("\(notes)")
+            Text(IdleEngine.format(notes))
                 .font(.system(.subheadline, design: .rounded).bold())
                 .monospacedDigit()
                 .contentTransition(.numericText())

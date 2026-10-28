@@ -252,13 +252,45 @@ enum StudioCatalog {
         return all.first { $0.track == track }
     }
 
+    // MARK: Tiers — normalized to the goal
+
+    /// Every item for sale sits in one of ten tiers by price. Tier t unlocks
+    /// at t/9 of the way from starting weight to goal, so the top tier — the
+    /// last bandmates — only opens at the goal itself.
+    static let tierCount = 10
+
+    private static let tiers: [String: Int] = {
+        let sorted = forSale.sorted { ($0.price, $0.id) < ($1.price, $1.id) }
+        var out: [String: Int] = [:]
+        for (i, gear) in sorted.enumerated() {
+            out[gear.id] = min(tierCount - 1, i * tierCount / max(1, sorted.count))
+        }
+        return out
+    }()
+
+    static func tier(_ gear: Gear) -> Int { tiers[gear.id] ?? 0 }
+
+    static func unlockAt(_ gear: Gear) -> Double {
+        gear.exclusive ? 1 : Double(tier(gear)) / Double(tierCount - 1)
+    }
+
+    /// The studio's output grows exponentially as the goal gets closer, so
+    /// prices do too — each tier costs about what a few hours of the studio
+    /// make at the point it unlocks. Calibrated by `IdleSimulationTests`.
+    static let tierScale: [Double] = [5e3, 1.1e5, 1.1e6, 2.1e6, 1.5e7, 1.6e8, 2.0e8, 1.8e9, 1.3e9, 2.3e9]
+
+    static func price(_ gear: Gear) -> Double {
+        Double(gear.price) * tierScale[min(tierCount - 1, tier(gear))]
+    }
+
     /// One item a day at 40% off. Seeded by the date so it's the same deal all
     /// day, and something new to look at tomorrow.
-    static func dailyDeal(owned: Set<String>, on date: Date = Date()) -> (gear: Gear, price: Int)? {
-        let pool = forSale.filter { !owned.contains($0.id) }
+    static func dailyDeal(owned: Set<String>, progress: Double,
+                          on date: Date = Date()) -> (gear: Gear, price: Double)? {
+        let pool = forSale.filter { !owned.contains($0.id) && unlockAt($0) <= progress + 1e-9 }
         guard !pool.isEmpty else { return nil }
         let day = Calendar.current.ordinality(of: .day, in: .era, for: date) ?? 0
         let gear = pool[(day &* 7919) % pool.count]
-        return (gear, Int((Double(gear.price) * 0.6).rounded()))
+        return (gear, price(gear) * 0.6)
     }
 }

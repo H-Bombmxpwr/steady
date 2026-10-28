@@ -350,6 +350,10 @@ Worth calling out separately in the build's "What to Test" box, since it's a new
 > - **App icon.** In the Studio's Buddy tab, or Settings → Appearance, try your buddy as the icon.
 > - **Spotify** *(if you were added as a tester on the Spotify app)*: link it in Studio → Records. The records you earn should be albums you actually listen to.
 >
+> - **The idle game.** The studio earns on its own. Buy promo in the Promo tab, collect the jar, and watch the multipliers. Does it feel like weight loss moves it, and logging boosts it?
+> - **Health.** Log a few red, calorie-dense foods and your buddy should get queasy and earn less. Log green foods and it recovers.
+> - **Home-screen widget.** Weight-loss mode turns the home widget into the buddy's dashboard, with Food / Weight / Studio buttons. Tap **Weight** and log a number.
+>
 > Also fixed: "Gemini is too busy" and "took too long" now retry, and fall back to the other model, before showing an error.
 
 **Spotify for testers:** until the Spotify app gets an extended-quota approval, Spotify only lets accounts listed under *User Management* in the Spotify developer dashboard sign in, and caps that list at 25. Add each tester's Spotify email there before telling them to link. Anyone not on the list gets "account isn't on the app's allowlist." Everything else in the Studio works without Spotify.
