@@ -33,9 +33,11 @@ The first launch walks through a short setup. Nothing here is permanent — ever
 
 **6 · Hydration.** Your daily water goal and the size of the bottle or glass you usually drink from, so logging water is one tap rather than typing an amount.
 
-**7 · AI key** *(optional)*. Steady's AI food logging works out of the box. If you'd rather use your own free Google Gemini key, you can add it here or later. See [AI features](ai-features).
+**7 · Your studio** *(weight loss)*. Pick a buddy, name it, and decide whether it should check in on your Lock Screen at mealtimes. If Spotify is set up, you can sign in here too. See [The Studio](studio).
 
-**8 · Photo privacy.** Whether progress photos require Face ID to view. Recommended on — see [Photos & your data](photos-and-data).
+**8 · AI key** *(optional)*. Steady's AI food logging works out of the box. If you'd rather use your own free Google Gemini key, you can add it here or later. See [AI features](ai-features).
+
+**9 · Photo privacy.** Whether progress photos require Face ID to view. Recommended on — see [Photos & your data](photos-and-data).
 
 ## Permissions
 
@@ -50,6 +52,7 @@ Steady asks for these as you first use the feature that needs them, not all at o
 | **Photos (add only)** | Saving a progress photo to your library when you explicitly export one |
 | **Calendar (write only)** | Adding your planned workouts as repeating calendar events |
 | **Notifications** | Reminders you schedule yourself — weigh-in, hydration, workouts, supplements |
+| **Live Activities** | Your buddy's mealtime check-in on the Lock Screen and Dynamic Island |
 
 Steady never asks for permission to *read* your photo library, and it can't see photos you haven't handed it.
 
@@ -59,6 +62,7 @@ The app is most useful once it has data to reason about, so the first week looks
 
 - **Weigh in daily if you can.** Daily weight is noisy — water, salt, and timing move it pounds at a time — so Steady charts a smoothed trend line rather than reacting to any single morning. It needs a handful of readings before that trend means anything.
 - **Log food even when it's ugly.** A rough estimate beats a blank day. The adaptive budget needs about two weeks of logs before it starts correcting your burn rate, and it only counts days you actually logged.
+- **Do the sound check.** The Studio pays for logging, not for the scale, so a heavy morning still earns notes. Your first new low on the trend fills the first frame on the wall.
 - **Don't chase the daily number.** One day over budget changes almost nothing. The weekly average is what moves the scale.
 
 After roughly two weeks of consistent logging, Steady switches from *estimating* your metabolism to *measuring* it. That's when the budget starts getting personal — see [Your calorie budget](calorie-budget).

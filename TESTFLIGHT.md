@@ -181,7 +181,7 @@ And the App Group `group.com.hunter.seventyfivehard` must exist and be checked o
 
 App Store Connect → your app → **App Privacy**. This is **mandatory before external testing** and it's a questionnaire, not a document. For Steady, the honest answers are:
 
-- **Do you collect data?** → No, if the Gemini calls are the only network traffic and you never receive that data yourself. Apple's definition of "collect" is *transmitted off device and retained by you or your third-party partners* — you retain nothing.
+- **Do you collect data?** → No, if you never receive any of it yourself. The network traffic (Gemini, Open Food Facts, the iTunes Search API for album art and previews, and the optional Spotify read of top tracks and saved albums) all goes directly from the device to those services, and none of it is retained by you. Apple's definition of "collect" is *transmitted off device and retained by you or your third-party partners* — you retain nothing.
 - Answer **No** to tracking, and declare no third-party advertising SDKs.
 
 If you'd rather over-declare: *Health & Fitness* → *Not linked to the user* → *App Functionality*.
@@ -334,6 +334,25 @@ Worth calling out separately in the build's "What to Test" box, since it's a new
 > Full docs — how the adaptive budget works, every way to log food, fueling, privacy: **https://h-bombmxpwr.github.io/steady/**
 >
 > Report bugs with the **screenshot → share → TestFlight** flow, or shake the phone to send feedback.
+
+### What's new in 1.3 — the Studio
+
+> **New: your buddy and the Studio.** Weight-loss mode now opens on a little music studio run by a buddy you pick and name during setup. Logging (the "sound check") earns notes ♪ for gear, instruments, decor and bandmates. Every new pound off your *trend* weight earns a real album for the wall, with a 30-second preview on the turntable. Every 5 lb finishes a "track" and unlocks gear you can't buy. Nothing is ever taken away for a missed day.
+>
+> Please try:
+>
+> - **Onboarding → Your Studio.** Pick a buddy and a name. Later, tap the studio's name on the dashboard to change either one. Your progress should stay put.
+> - **The sound check.** Weigh in and log a meal, then come back to the dashboard. The notes should go up with a little toast.
+> - **Today's gift.** It appears after your first log of the day.
+> - **Records.** Pick an album, then tap it (or the turntable) to play it. Your buddy should dance.
+> - **The shop.** Buy something and place it, and check out Today's pick. Is the pace of earning fun or grindy?
+> - **Mealtime check-ins.** Add the **Mealtime** widget to your Lock Screen. At your meal times (Settings → Meal Schedule), it should flip to a countdown until you log. The Live Activity does the same on the Lock Screen and in the Dynamic Island. Open the app once a day so iOS lets it start.
+> - **App icon.** In the Studio's Buddy tab, or Settings → Appearance, try your buddy as the icon.
+> - **Spotify** *(if you were added as a tester on the Spotify app)*: link it in Studio → Records. The records you earn should be albums you actually listen to.
+>
+> Also fixed: "Gemini is too busy" and "took too long" now retry, and fall back to the other model, before showing an error.
+
+**Spotify for testers:** until the Spotify app gets an extended-quota approval, Spotify only lets accounts listed under *User Management* in the Spotify developer dashboard sign in, and caps that list at 25. Add each tester's Spotify email there before telling them to link. Anyone not on the list gets "account isn't on the app's allowlist." Everything else in the Studio works without Spotify.
 
 Requires **iOS 18.0 or later**, iPhone only. Worth stating up front so nobody installs TestFlight for nothing.
 

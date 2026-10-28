@@ -11,7 +11,7 @@ summary: Water, weight, alcohol, supplements, measurements, fasting, blood work,
 
 **Water** — logged in whatever bottle or glass size you set during onboarding, so it's one tap rather than typing ounces. On training days the goal rises to cover the session's fluid needs.
 
-**Weight** — one number a day, ideally at the same time each morning. Steady charts a smoothed trend rather than reacting to any single reading; see [Your calorie budget](calorie-budget) for why that matters. Weigh-ins from a smart scale, Apple Watch, or Garmin flow in automatically through Apple Health.
+**Weight** — one number a day, ideally at the same time each morning. In weight-loss mode, every new 1 lb low on the trend also earns a record in [the Studio](studio). Steady charts a smoothed trend rather than reacting to any single reading; see [Your calorie budget](calorie-budget) for why that matters. Weigh-ins from a smart scale, Apple Watch, or Garmin flow in automatically through Apple Health.
 
 **Alcohol** — logged in standard drinks, counted at roughly 98 calories each. Tracking it honestly matters more than most things here, because alcohol is both easy to forget and unusually good at stalling weight loss.
 

@@ -20,6 +20,8 @@ Steady started life as a 75 Hard tracker and grew into a general weight-loss app
   - [Plan & adaptive budget](#plan--adaptive-budget)
   - [Food logging](#food-logging)
   - [AI (Gemini)](#ai-gemini)
+  - [The Studio (motivation)](#the-studio-motivation)
+  - [Mealtime check-ins](#mealtime-check-ins)
   - [Workouts & fueling](#workouts--fueling)
   - [Athlete mode](#athlete-mode)
   - [Cycle tracking (opt-in, locked, device-only)](#cycle-tracking-opt-in-locked-device-only)
@@ -39,6 +41,7 @@ Steady started life as a 75 Hard tracker and grew into a general weight-loss app
 ## Highlights
 
 - 🍽️ **AI food logging** — describe a meal, photograph a plate, or **paste a recipe link** and Gemini itemizes every ingredient with a full nutrition panel.
+- 🎧 **The Studio** — a buddy and a music room that logging fills with gear, while every new pound off the trend puts a real album on the wall (optionally from your Spotify). Mealtimes put the buddy on your Lock Screen with a countdown until you log.
 - 📉 **Adaptive budget** — learns your real burn rate from intake vs. your weight trend, instead of trusting a textbook formula.
 - 🏋️ **Workout fueling** — carbs-per-hour, pre/post, and fluids for a session; training days add their burn back to the budget.
 - 🚴 **Athlete mode** — imports your plan from **TrainingPeaks**, periodizes carbs to each day's training load, and sets hydration from **your own measured sweat rate** scaled to the local heat index.
@@ -97,6 +100,26 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 - **Bring your own key (optional)** — a shared key is bundled so it works out of the box; add your own free key during onboarding or in **Settings → AI & Estimates**. A built-in guide links straight to Google AI Studio and walks through creating, formatting, and pasting a key.
 - **Transparent** — the AI settings screen lists exactly what's sent, and shows the verbatim prompt for every feature with your input rendered as `‹placeholders›`.
 - **Private** — only food text/photos and pasted links leave the device (to Google). Weight, progress photos, and everything else stay local.
+- **Resilient** — 503 overloads retry with backoff (twice), then fall back to the other model (Flash ↔ Flash-Lite); a timeout on the thinking model falls back the same way. Per-minute 429s (`rateLimited`) are retried after Google's `RetryInfo` delay and told apart from per-day quota. Grounded calls never retry — they're racing a 6 s deadline.
+
+### The Studio (motivation)
+
+Weight-loss mode's dashboard leads with a buddy and its music studio — a reward layer modelled on Focus Friend / Finch, pointed at the behaviours that predict weight loss. Full write-up: [docs/studio.md](docs/studio.md).
+
+- **Buddy** — six Fluent Emoji 3D animals, picked and named at onboarding; look and name changeable any time without losing progress; any of them can be the app icon (`Icon-Buddy-*`). Hand-written lines filled from real numbers, a mood derived from the day (`BuddyEngine.mood`) — no AI.
+- **Notes ♪** — the daily *sound check* (`Chore`): weigh-in, food, 3 meals, under budget (only after 3 meals), protein, water, move, photo — up to 75/day. **Derived from the log** (`BuddyEngine.notesFromLogs`), never stored, so edits and rewards can't drift. One-off awards (streak milestones, gifts, pounds, tracks) are **banked** under idempotent keys in `BuddyStore.sync`.
+- **Records** — each new 1 lb low on the EWMA trend's *best* point earns a dig: any album via the iTunes Search API, or the next one from a linked **Spotify** queue (top tracks long/medium/short-term weighted by rank + saved albums, sorted least-played first; the most-played album is reserved for finishing a tour). Covers hang around the room; tap to play a 30-s Apple Music preview.
+- **Tour** — goal distance in 5-lb tracks (`Tour`); each finished track unlocks tour-exclusive gear, the last one a trophy. Fresh-start offer when the trend is above the tour's start.
+- **Shop** — ~76 items across 10 slots incl. bandmates (450–1,600) and a daily 40%-off pick; ~17.7k notes of gear vs. ~13k earnable in six months. **Encores** (streak cover, `Plan.protectedDays`) bridge a missed day without counting as a met day.
+- **Nothing is lost** — no decay, no pet death, welcome-back mood after a gap.
+
+### Mealtime check-ins
+
+BeReal-style, without a push server:
+
+- **Mealtime widget** (`Widgets/MealtimeWidget.swift`) — lock-screen rectangular/circular/inline + small. The timeline has an entry at every meal window's open and close (`WidgetSnapshot.mealBoundaries`), so it flips to *"Lunch time · 1:12:40 to log"* on its own; logging reloads it.
+- **Live Activity** — buddy + next meal + budget on the Lock Screen / Dynamic Island. `staleDate` is set to the next meal's start, and the view renders `isStale` as the prompt — the time-triggered flip with no push. Restarted in the foreground after 6 h to stay ahead of the 8 h cap. On by default.
+- Windows come from **Settings → Meal Schedule** (`WidgetSnapshot.mealMoments`): 90 minutes, clipped at the next meal (`MealState`).
 
 ### Workouts & fueling
 
@@ -142,6 +165,7 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 
 ### Streak
 
+- **Encores** from the Studio cover a missed day automatically (`Plan.protectedDays`) — they bridge the streak but don't count toward consistency.
 - The dashboard flame counts **any day you log something** by default (food, water, weight, workout, photo). Switch to a **strict streak** (must meet the day's goals) at onboarding or in Settings.
 - Recomputed from data every time, so **backfilling a missed day** (Calendar → that day → log anything) reconnects it retroactively.
 
@@ -159,17 +183,18 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 
 - **Apple Health (two-way)** — writes weight/water/nutrition/workouts; reads steps, sleep, and external weigh-ins (Garmin / Watch / smart scales flow in via Health).
 - **Workout import** — anything written to Health (Watch, Garmin Connect, Strava…) imports into the day log once (UUID remembered), mapped to categories, counting toward minutes and the streak.
-- **Widgets** — small / medium / large home screen + lock-screen (circular, rectangular, inline). The large widget shows calories, protein, water, **weight, carbs, and workout**. Widgets follow the in-app accent palette and offer one-tap water logging.
+- **Widgets** — small / medium / large home screen + lock-screen (circular, rectangular, inline), plus the **Mealtime** widget. The large widget shows calories, protein, water, **weight, carbs, and workout**. Widgets follow the in-app accent palette and offer one-tap water logging.
 - **Siri shortcuts** — "log water," "log a meal" (spoken, itemized, totals read back), "open today."
-- **Live Activity** *(optional)* — remaining calories, protein, and water on the Lock Screen / Dynamic Island.
-- **Notifications** — morning weigh-in, hydration nudges (with a log-water action), workout reminders, a smart streak-at-risk guard, supplement reminders.
+- **Live Activity** *(on by default)* — the buddy's mealtime check-in plus remaining calories, protein, and water on the Lock Screen / Dynamic Island. See [Mealtime check-ins](#mealtime-check-ins).
+- **Spotify** *(optional, OAuth PKCE, read-only)* — top tracks + saved albums decide which records the Studio awards. Refresh token in the Keychain.
+- **Notifications** — morning weigh-in (from the buddy), hydration nudges (with a log-water action), workout reminders, a smart streak-at-risk guard, supplement reminders.
 
 ### Privacy, security & design
 
 - **Face ID protects progress photos** (app entry is open) with an optional **backup PIN** (salted hash in the Keychain). Photos live in the app's Documents, invisible to the Photos app unless you export them.
 - **Themed launch & app-switcher cover** — branded Steady screens, not a lock screen.
 - **Photo timelapse** — builds an MP4 from progress photos on-device.
-- **Themes & brand** — five accent palettes + light/dark/system, applied live; matching app icons (light & dark per palette); per-domain card tints; the native Liquid Glass tab bar on iOS 26.
+- **Themes & brand** — five accent palettes + light/dark/system, applied live; matching app icons (light & dark per palette, plus six buddy icons); per-domain card tints; the native Liquid Glass tab bar on iOS 26.
 - **Micro-interactions** — colored shadows, spring-settling rings/bars, and haptics on key taps and confirmations.
 - **Backup export** — a single JSON with embedded photos. All data persists across rebuilds (same bundle ID) in the App Group container.
 
@@ -181,8 +206,10 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 |---|---|
 | Min OS / UI | iOS 18.0+, SwiftUI |
 | Persistence | SwiftData in an App Group container (shared with widgets) |
-| Frameworks | WidgetKit, HealthKit, EventKit, AVFoundation, Vision, LocalAuthentication, AppIntents |
+| Frameworks | WidgetKit, ActivityKit, HealthKit, EventKit, AVFoundation, Vision, LocalAuthentication, AppIntents, AuthenticationServices |
 | AI | Google Gemini (text + vision + `url_context`), Google Search grounding |
+| Music | iTunes Search API (art + previews), Spotify Web API (optional) |
+| Art | [Fluent Emoji 3D](https://github.com/microsoft/fluentui-emoji) (MIT) — see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
 | Dependencies | None required |
 | Photos | `Documents/Photos` (local, Face ID-gated) |
 
@@ -193,17 +220,22 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 ```
 Shared/        SwiftData models, CalorieEngine, FuelingEngine, Persistence,
                WidgetSnapshot — compiled into BOTH app + widget
-Widgets/       WidgetKit extension (home + lock screen, interactive logging)
+Widgets/       WidgetKit extension (home + lock screen, interactive logging,
+               Mealtime widget, Live Activity) + its own small sprite catalog
 75/
   App/         Entry point, photo lock (Face ID + PIN), launch/privacy
                screens, Theme (colors, cards, haptics, button styles)
   Resources/   Exercises.json (free-exercise-db), Secrets.plist (git-ignored)
   Services/    Backup, FoodDatabase (Open Food Facts), ExerciseDatabase,
                AIFoodEstimator (Gemini), HealthKit, InsightsEngine
-               (on-device patterns), Notifications, CalendarSync, Timelapse
+               (on-device patterns), Notifications, CalendarSync, Timelapse,
+               BuddyEngine (chores, tour, moods, lines), BuddyStore (studio
+               state + award sync), StudioCatalog, MusicServices (iTunes,
+               player, Spotify), LiveActivityManager
   Views/
     Onboarding/  Multi-step plan setup (incl. optional AI key step)
     Dashboard/   Rings, trend chart, streak, fuel card, tab bar (+ Settings)
+    Buddy/       Studio scene, buddy + tour cards, shop / crate / Spotify
     Stats/       Time-range charts for every tracked series
     Day/         Day detail logging + workout form
     Food/        Search, portion picker, describe/photo/recipe, barcode
@@ -223,8 +255,10 @@ Widgets/       WidgetKit extension (home + lock screen, interactive logging)
 
 1. **Open** `75.xcodeproj` in Xcode 16+.
 2. **Gemini key** *(optional)* — a shared key is bundled. To use your own, either paste one in **Settings → AI & Estimates** at runtime, or create `75/Resources/Secrets.plist` (git-ignored) with a `GeminiAPIKey` string. Free keys: [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
-3. **First device build** — let Xcode register the App Group + HealthKit capabilities (automatic signing).
-4. **Run on device.** Free provisioning = 7-day installs; the paid Apple Developer Program ≈ 12-month installs and unlocks TestFlight.
+3. **Spotify** *(optional)* — to make "Sign in with Spotify" one tap for everyone, register an app at [developer.spotify.com](https://developer.spotify.com/dashboard) with redirect URI `seventyfive://spotify-callback` and add a `SpotifyClientID` string to the same `Secrets.plist`. Development-mode apps only accept accounts listed under *User Management* (max 25). Without it, users can paste their own Client ID in the Records tab.
+4. **Simulator hooks** *(Debug)* — `-resetStore -seedDemo -seedStudio` launches into a furnished studio with records on the wall.
+5. **First device build** — let Xcode register the App Group + HealthKit capabilities (automatic signing).
+6. **Run on device.** Free provisioning = 7-day installs; the paid Apple Developer Program ≈ 12-month installs and unlocks TestFlight.
 
 ### TestFlight
 

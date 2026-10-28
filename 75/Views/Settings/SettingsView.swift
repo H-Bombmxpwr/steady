@@ -32,11 +32,12 @@ struct SettingsView: View {
     @State private var healthMessage: String?
 
     // Live Activity (Lock Screen / Dynamic Island)
-    @AppStorage(LiveActivityManager.enabledKey) private var liveActivity = false
+    @AppStorage(LiveActivityManager.enabledKey) private var liveActivity = true
 
     // Alternate app icon — stores the alternate icon's asset name, or "" for
     // the primary icon (which follows the system light/dark appearance).
     @AppStorage("ui.appIcon") private var appIconChoice = ""
+    @State private var showStudio = false
     @State private var iconMessage: String?
 
     // Lab-aware coaching
@@ -457,7 +458,7 @@ struct SettingsView: View {
                     if let iconMessage {
                         Text(iconMessage).font(.footnote).foregroundStyle(.secondary)
                     }
-                    Toggle("Live Activity", isOn: $liveActivity)
+                    Toggle("Mealtime Live Activity", isOn: $liveActivity)
                         .onChange(of: liveActivity) { on in
                             if on {
                                 LiveActivityManager.sync(plan: plan, profile: profile)
@@ -472,6 +473,30 @@ struct SettingsView: View {
                 }
 
                 // --- Notifications
+                Section {
+                    Button { showStudio = true } label: {
+                        HStack(spacing: 12) {
+                            Sprite(BuddyStore.shared.state.species.asset, size: 30)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("\(BuddyStore.shared.state.name)'s Studio").foregroundStyle(.primary)
+                                Text(SpotifyLink.shared.isLinked
+                                     ? "Buddy, records · Spotify linked"
+                                     : "Change your buddy · link Spotify")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary)
+                        }
+                    }
+                } header: {
+                    Text("Studio & Music")
+                }
+                .sheet(isPresented: $showStudio) {
+                    StudioShopView(plan: plan,
+                                   targets: CalorieEngine.targets(profile: profile, plan: plan),
+                                   tab: SpotifyLink.shared.isLinked ? .buddy : .records)
+                }
+
                 Section("Notifications") {
                     Toggle("Morning weigh-in", isOn: $weighInEnabled)
                     if weighInEnabled {
@@ -947,6 +972,28 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
 
+            // The studio buddies, on the same purple as the studio walls.
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Studio buddies").font(.subheadline)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Species.allCases) { species in
+                            Button { selectIcon(species.iconName) } label: {
+                                Sprite(species.asset, size: 34)
+                                    .frame(width: 44, height: 44)
+                                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(LinearGradient(colors: [Color(hex: 0x312E81), Color(hex: 0x1E1B4B)],
+                                                             startPoint: .top, endPoint: .bottom)))
+                                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(appIconChoice == species.iconName ? Theme.accent : .clear,
+                                                lineWidth: 2.5))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+
             ForEach(ThemePalette.allCases) { p in
                 HStack(spacing: 12) {
                     Text(p.label)
@@ -1057,6 +1104,8 @@ struct SettingsView: View {
         }
         try? context.save()
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+        BuddyStore.shared.eraseAll()
+        UserDefaults.standard.removeObject(forKey: "milestones.celebrated")
 
         // Delete photos directory
         try? FileManager.default.removeItem(at: photosDir())

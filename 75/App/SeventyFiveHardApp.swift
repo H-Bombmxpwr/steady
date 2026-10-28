@@ -41,6 +41,15 @@ struct SeventyFiveHardApp: App {
         if CommandLine.arguments.contains("-seedHealth") {
             Self.seedGeneralHealthData()
         }
+        if CommandLine.arguments.contains("-seedStudio") {
+            let context = ModelContext(PersistenceController.shared.container)
+            if let plan = try? context.fetch(FetchDescriptor<Plan>()).first {
+                MainActor.assumeIsolated {
+                    BuddyStore.shared.debugSeedStudio(startWeight: plan.startingWeight,
+                                                      startDate: plan.startDate)
+                }
+            }
+        }
         #endif
     }
 

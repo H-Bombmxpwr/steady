@@ -31,7 +31,15 @@ struct WidgetSnapshot: Codable {
     var carbs = 0                    // today's carbs (g)
     var workoutMinutes = 0           // today's logged workout minutes
 
+    // Mealtime check-ins (lock-screen widget + Live Activity). Optional so a
+    // snapshot written before these existed still decodes.
+    var meals: [MealMoment]?
+    var mealsLogged: [String]?
+
     static let key = "widget.snapshot"
+    /// Mirrored by the app's studio so widgets can draw the buddy.
+    static let buddySpeciesKey = "buddy.species"
+    static let buddyNameKey = "buddy.name"
 
     static func load() -> WidgetSnapshot? {
         guard let data = UserDefaults(suiteName: appGroupID)?.data(forKey: key) else { return nil }
@@ -77,6 +85,7 @@ extension WidgetSnapshot {
         cached.waterOz = day.waterOunces
         cached.carbs = Int(day.totalFacts.carbsGrams.rounded())
         cached.workoutMinutes = day.workouts.reduce(0) { $0 + $1.minutes }
+        cached.mealsLogged = Self.loggedMeals(day)
         // A weigh-in logged today is the newest weight there is, and the large
         // widget shows it — waiting for the next full build means the widget
         // disagrees with the app all morning.
@@ -107,6 +116,122 @@ extension WidgetSnapshot {
         s.startingWeight = plan.startingWeight
         s.carbs = Int((today?.totalFacts.carbsGrams ?? 0).rounded())
         s.workoutMinutes = today?.workouts.reduce(0) { $0 + $1.minutes } ?? 0
+        s.meals = mealMoments(plan: plan)
+        s.mealsLogged = today.map(loggedMeals) ?? []
         return s
     }
+
+    static func loggedMeals(_ day: DayLog) -> [String] {
+        Array(Set(day.foods.map(\.mealRaw).filter { !$0.isEmpty }))
+    }
+
+    /// The meals this person actually eats, from their meal schedule (or the
+    /// default one if they never opened it).
+    static func mealMoments(plan: Plan) -> [MealMoment] {
+        let slots = plan.mealSlots.isEmpty ? MealSlot.defaultSchedule() : plan.mealSlots
+        return slots.filter(\.enabled)
+            .sorted { $0.minutesOfDay < $1.minutesOfDay }
+            .map { MealMoment(meal: $0.mealRaw, label: $0.label, minutes: $0.minutesOfDay) }
+    }
 }
+
+// MARK: - Mealtime
+
+/// One scheduled meal: which, what it's called, minutes past midnight.
+struct MealMoment: Codable, Hashable {
+    var meal: String
+    var label: String
+    var minutes: Int
+}
+
+/// Where a moment in the day sits against the meal schedule. The lock-screen
+/// widget and the Live Activity both render from this, so they always agree.
+enum MealState: Equatable {
+    /// A meal's window is open and nothing's logged for it yet.
+    case due(MealMoment, start: Date, end: Date)
+    /// The window is open and it's already logged.
+    case logged(MealMoment, next: (MealMoment, Date)?)
+    /// Between meals.
+    case upcoming(MealMoment, at: Date)
+    /// Last meal's window has closed.
+    case wrapped
+
+    static func == (a: MealState, b: MealState) -> Bool {
+        switch (a, b) {
+        case let (.due(m1, s1, e1), .due(m2, s2, e2)): return m1 == m2 && s1 == s2 && e1 == e2
+        case let (.logged(m1, _), .logged(m2, _)): return m1 == m2
+        case let (.upcoming(m1, d1), .upcoming(m2, d2)): return m1 == m2 && d1 == d2
+        case (.wrapped, .wrapped): return true
+        default: return false
+        }
+    }
+}
+
+extension WidgetSnapshot {
+    /// How long after a meal's time it stays "due" — like BeReal's window,
+    /// but long enough to actually eat. Never runs into the next meal.
+    static let mealWindow: TimeInterval = 90 * 60
+
+    private func windows(on day: Date) -> [(MealMoment, Date, Date)] {
+        let start = Calendar.current.startOfDay(for: day)
+        let moments = (meals ?? []).sorted { $0.minutes < $1.minutes }
+        return moments.enumerated().map { i, m in
+            let begin = start.addingTimeInterval(TimeInterval(m.minutes * 60))
+            var end = begin.addingTimeInterval(Self.mealWindow)
+            if i + 1 < moments.count {
+                end = min(end, start.addingTimeInterval(TimeInterval(moments[i + 1].minutes * 60)))
+            }
+            return (m, begin, end)
+        }
+    }
+
+    func isLogged(_ meal: MealMoment, on date: Date) -> Bool {
+        guard let day = dayDate, Calendar.current.isDate(day, inSameDayAs: date) else { return false }
+        return (mealsLogged ?? []).contains(meal.meal)
+    }
+
+    func mealState(at date: Date) -> MealState {
+        let today = windows(on: date)
+        for (m, begin, end) in today where begin <= date && date < end {
+            if isLogged(m, on: date) {
+                let next = today.first { $0.1 > date }.map { ($0.0, $0.1) }
+                return .logged(m, next: next)
+            }
+            return .due(m, start: begin, end: end)
+        }
+        if let next = today.first(where: { $0.1 > date }) {
+            return .upcoming(next.0, at: next.1)
+        }
+        return .wrapped
+    }
+
+    /// Meals logged out of those scheduled, for the day `date` falls on.
+    func mealProgress(at date: Date) -> (logged: Int, planned: Int) {
+        let moments = meals ?? []
+        return (moments.filter { isLogged($0, on: date) }.count, moments.count)
+    }
+
+    /// Every moment the meal state can change between `from` and `to` —
+    /// windows opening and closing, and midnight. The widget timeline puts an
+    /// entry at each, so it flips at mealtime with no reload and no push.
+    func mealBoundaries(from: Date, to: Date) -> [Date] {
+        var out: [Date] = []
+        var day = Calendar.current.startOfDay(for: from)
+        while day < to {
+            out.append(day)
+            for (_, begin, end) in windows(on: day) { out += [begin, end] }
+            day = Calendar.current.date(byAdding: .day, value: 1, to: day) ?? to
+        }
+        return out.filter { $0 > from && $0 <= to }.sorted()
+    }
+
+    static var buddyAsset: String {
+        let raw = UserDefaults(suiteName: appGroupID)?.string(forKey: buddySpeciesKey) ?? "penguin"
+        return raw == "blackCat" ? "Studio/black_cat" : "Studio/\(raw)"
+    }
+
+    static var buddyName: String {
+        UserDefaults(suiteName: appGroupID)?.string(forKey: buddyNameKey) ?? "Pip"
+    }
+}
+

@@ -71,6 +71,8 @@ Each one imports **exactly once** (Steady remembers the identifier), gets mapped
 
 **Lock screen** — circular, rectangular, and inline.
 
+**Mealtime** — your studio buddy on the Lock Screen (rectangular, circular, inline) or Home Screen. At each meal time it flips to a countdown until that meal is logged, and tapping it opens food logging. See [The Studio](studio#mealtime-check-ins).
+
 Widgets follow whichever accent palette you've picked in the app, and support **one-tap water logging** without opening Steady at all.
 
 Widgets refresh on a schedule iOS controls, not one Steady picks. Opening the app always forces an update. If a widget goes stale or blank, remove it and add it back — that's the standard fix and it works.
@@ -87,9 +89,19 @@ The meal one is genuinely useful hands-free: describe dinner while you're cleani
 
 ## Live Activity
 
-Optional, off by default. Turn it on in **Settings → Appearance** and your remaining calories, protein, and water live on the **Lock Screen and Dynamic Island**.
+On by default; switch it off with **Settings → Appearance → Mealtime Live Activity**. Your buddy, your next meal, and your remaining calories, protein, and water live on the **Lock Screen and Dynamic Island**. When a meal time arrives, it flips to that meal with a countdown until it's logged.
 
-It refreshes whenever the app runs. There's no push server behind it — everything is scheduled locally on your device.
+There's no push server behind it. The flip at mealtime uses the activity's own stale date, and everything else refreshes whenever the app runs. iOS ends a Live Activity after 8 hours, so Steady starts a fresh one when you open the app.
+
+## Spotify
+
+Optional. Link it from **Studio → Records** or **Settings → Studio & Music**, and the records you earn in [the Studio](studio#spotify-optional) come from your own listening: least-played first, with your most-played album saved for finishing a tour.
+
+It's a standard Spotify sign-in, done in a secure browser sheet. Steady never sees your password and keeps only a refresh token, in the Keychain. It requests read-only scopes (`user-top-read`, `user-library-read`) and reads your top tracks and saved albums. Nothing is written back. Unlink it any time.
+
+## Apple Music previews
+
+Record covers and 30-second previews come from Apple's public iTunes Search API. No account or key is needed, and only the album search you type (or the album being played) is sent.
 
 ## Notifications
 
@@ -97,7 +109,7 @@ All local. Nothing is sent from any server, because there isn't one.
 
 | Notification | When |
 |---|---|
-| **Morning weigh-in** | A time you pick |
+| **Morning weigh-in** | A time you pick — from your buddy |
 | **Hydration nudges** | Through the day, with a *log water* action right in the notification |
 | **Workout reminders** | Before scheduled sessions |
 | **Streak at risk** | Late in the day, only if you haven't logged anything yet |

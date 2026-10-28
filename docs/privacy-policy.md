@@ -15,7 +15,8 @@ Steady ("the app") is a personal health and fitness tracker for iPhone. It is bu
 
 - **We do not collect your data.** There is no Steady server. Nothing you log is transmitted to the developer.
 - **No accounts, no analytics, no advertising, no tracking**, and no third-party analytics or ad SDKs are embedded in the app.
-- A handful of optional features talk to outside services, and **only when you turn them on** — see [Optional network features](#optional-network-features).
+- A handful of optional features talk to outside services, and **only when you turn them on** — see [Optional network features](#optional-network-features). That includes linking Spotify, which is entirely optional.
+- **Your Studio** (buddy, notes, records, gear) is stored only on your device, and your rewards are computed from your own log.
 - Your Health data is never used for advertising and is never sold or shared.
 - **Cycle tracking never leaves your device at all** — not to us, not to Apple Health, not to any AI feature. See [Cycle tracking](#cycle-tracking).
 
@@ -55,6 +56,14 @@ If — and only if — you supply your own Google Gemini API key in Settings, de
 - Requests go directly from your device to Google, using **your** key. They do not pass through any server of ours, and we never see the contents.
 - Google's handling of that data is governed by the [Google APIs Terms of Service](https://developers.google.com/terms) and the [Google Privacy Policy](https://policies.google.com/privacy), under the terms attached to your own API key.
 - If you never add a key, this feature is inert and nothing is ever sent.
+
+### Spotify (optional)
+
+If you link a Spotify account in the Studio, Steady signs in through Spotify's own login page (OAuth with PKCE) and asks only for read access to your **top tracks** and **saved albums**. These are used on your device to choose which albums you earn as records. The refresh token is stored in your device's Keychain, and nothing is written to your Spotify account. Spotify's handling is governed by the [Spotify Privacy Policy](https://www.spotify.com/legal/privacy-policy/). Unlink at any time from the Studio.
+
+### Album art and previews (Apple iTunes Search API)
+
+When you search for an album to add to your Studio, or play one, the search text or album name is sent to Apple's public iTunes Search API to fetch cover art and a 30-second preview. No identifier or account is attached.
 
 ### Barcode lookup (Open Food Facts)
 

@@ -16,7 +16,7 @@ struct OnboardingView: View {
     /// mode changes, so the flow has no dead branches in it.
     private enum Step: Hashable {
         case mode, profile, goal, budget, baseline, training, trainingPeaks, schedule
-        case sweat, hydration, cycle, labs, ai, privacy
+        case sweat, hydration, buddy, cycle, labs, ai, privacy
 
         var title: String {
             switch self {
@@ -30,6 +30,7 @@ struct OnboardingView: View {
             case .schedule: return "Workout Days"
             case .sweat: return "Sweat & Weather"
             case .hydration: return "Hydration"
+            case .buddy: return "Your Studio"
             case .cycle: return "Cycle Tracking"
             case .labs: return "Blood Work"
             case .ai: return "AI Assist"
@@ -91,6 +92,9 @@ struct OnboardingView: View {
     @State private var workoutTime = Calendar.current.date(from: DateComponents(hour: 7, minute: 0))!
 
     // Hydration
+    @State private var buddySpecies: Species = .penguin
+    @AppStorage(LiveActivityManager.enabledKey) private var mealtimeLive = true
+    @State private var buddyName = ""
     @State private var waterGoal = 96
     @State private var waterStep = 8
 
@@ -115,7 +119,7 @@ struct OnboardingView: View {
         var steps: [Step] = [.mode, .profile]
         switch mode {
         case .weightLoss:
-            steps += [.goal, .budget, .schedule, .hydration]
+            steps += [.goal, .budget, .schedule, .hydration, .buddy]
         case .athlete:
             steps += [.training, .trainingPeaks, .schedule, .sweat, .hydration]
         case .generalHealth:
@@ -163,6 +167,7 @@ struct OnboardingView: View {
                 case .schedule: scheduleStep
                 case .sweat: sweatStep
                 case .hydration: hydrationStep
+                case .buddy: buddyStep
                 case .cycle: cycleStep
                 case .labs: labsStep
                 case .ai: aiStep
@@ -648,6 +653,81 @@ struct OnboardingView: View {
         }
     }
 
+    // MARK: Buddy
+
+    /// The studio buddy is introduced at setup, not discovered later: the
+    /// whole point is that day one already has somebody waiting on the scale.
+    private var buddyStep: some View {
+        Form {
+            Section {
+                SpeciesPicker(selection: $buddySpecies)
+                    .listRowInsets(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
+                Text(buddySpecies.bio)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                TextField(buddySpecies.defaultName, text: $buddyName)
+                    .textInputAutocapitalization(.words)
+                    .focused($weightFocused)
+            } header: {
+                Text("Pick who runs your studio")
+            }
+
+            Section {
+                Toggle("Mealtime check-ins", isOn: $mealtimeLive)
+                if !SpotifyLink.clientID.isEmpty {
+                    Button {
+                        Task { await SpotifyLink.shared.link() }
+                    } label: {
+                        Label(SpotifyLink.shared.isLinked ? "Spotify linked" : "Sign in with Spotify",
+                              systemImage: SpotifyLink.shared.isLinked ? "checkmark.circle.fill" : "music.note")
+                    }
+                    .tint(Color(hex: 0x1DB954))
+                    .disabled(SpotifyLink.shared.isLinked || SpotifyLink.shared.busy)
+                }
+            } footer: {
+                Text("At each of your meal times, \(displayBuddyName) shows up on your Lock Screen and in the Dynamic Island with a countdown until it's logged. Add the Mealtime widget to your Lock Screen too, for the same thing without the Live Activity."
+                     + (SpotifyLink.clientID.isEmpty ? "" : " Link Spotify and the records you earn come from what you actually listen to."))
+            }
+
+            Section {
+                howItWorks("scalemass.fill", "Weigh in and log your food",
+                           "Each day's sound check pays notes ♪. Spend them on gear, instruments and decor for the studio.")
+                howItWorks("opticaldisc.fill", "Every new pound off your trend",
+                           "earns a record — any album you like, or one from your Spotify. It goes up on the studio wall.")
+                howItWorks("music.note.list", "Every 5 lb finishes a track",
+                           "and unlocks gear you can't buy. Your goal weight finishes the tour.")
+                howItWorks("heart.fill", "Miss a day?",
+                           "Nothing's lost. An Encore can cover the streak, and \(displayBuddyName) is just glad you're back.")
+            } header: {
+                Text("How it works")
+            } footer: {
+                Text("Rewards come from logging, not the scale's daily mood — the smoothed trend is the only number that pays out, so a salty dinner can't take anything back.")
+            }
+
+            Section {
+                Button("Continue") { advance() }
+            }
+        }
+    }
+
+    private var displayBuddyName: String {
+        let trimmed = buddyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? buddySpecies.defaultName : trimmed
+    }
+
+    private func howItWorks(_ icon: String, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(Theme.accent)
+                .frame(width: 22)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.bold())
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     // MARK: AI assist
 
     private var geminiKeyEntered: Bool {
@@ -801,6 +881,11 @@ struct OnboardingView: View {
         context.insert(profile)
         context.insert(plan)
         try? context.save()
+
+        // A brand-new studio and tour, whatever mode — a restart after
+        // "Erase All Data" shouldn't inherit the last buddy's crate.
+        BuddyStore.shared.setUp(species: buddySpecies, name: buddyName,
+                                startWeight: c, startDate: plan.startDate)
 
         // Pull the training plan in right away, so the first dashboard the
         // athlete sees already has today's session on it.

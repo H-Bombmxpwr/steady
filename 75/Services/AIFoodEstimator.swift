@@ -764,6 +764,9 @@ enum AIFoodEstimator {
         case quotaExhausted(grounded: Bool)
         /// Gemini is over capacity (503). Nothing to fix; try again.
         case overloaded
+        /// Too many requests this *minute* — the free tier's per-minute cap,
+        /// not the daily quota. Clears in seconds.
+        case rateLimited
         case offline
         case timedOut
         /// Anything else Google said, passed through rather than swallowed.
@@ -790,7 +793,9 @@ enum AIFoodEstimator {
                     ? "The free tier's quota for web-checked lookups is used up for now. Plain estimates still work — this only affects reading links and checking numbers against published data. It resets on Google's clock (usually within the day), or paste your own key in Settings → AI & Estimates."
                     : "The free tier's request quota is used up for now. It resets on Google's clock — usually within a day — or paste your own key in Settings → AI & Estimates to use your own."
             case .overloaded:
-                return "Gemini is over capacity right now — that's on Google's end, not your key. Try again in a minute."
+                return "Gemini is over capacity right now — that's on Google's end, not your key. It was retried on both models; try again in a minute."
+            case .rateLimited:
+                return "Too many AI requests in the last minute — the free tier caps how many go through per minute. Wait a few seconds and try again."
             case .offline:
                 return "No connection. Custom Food still works offline — type the numbers in and fix them later."
             case .timedOut:
@@ -804,7 +809,7 @@ enum AIFoodEstimator {
         /// True when trying again later is the whole answer.
         var isTransient: Bool {
             switch self {
-            case .overloaded, .timedOut, .offline, .quotaExhausted: return true
+            case .overloaded, .rateLimited, .timedOut, .offline, .quotaExhausted: return true
             default: return false
             }
         }
@@ -827,6 +832,11 @@ enum AIFoodEstimator {
         let code = body?.status ?? ""
         switch status {
         case 429:
+            // A per-minute cap says so in its quota id and asks for a retry in
+            // seconds. Only a per-day cap is "used up for today".
+            if !grounded, !isDailyQuota(data), (retryDelay(data) ?? 0) <= 60 {
+                return .rateLimited
+            }
             return .quotaExhausted(grounded: grounded)
         case 400 where (message ?? "").localizedCaseInsensitiveContains("api key")
                     || code == "INVALID_ARGUMENT" && (message ?? "").localizedCaseInsensitiveContains("key"):
@@ -837,6 +847,63 @@ enum AIFoodEstimator {
             return .overloaded
         default:
             return .server(code: status, message: message)
+        }
+    }
+
+    /// Google's `RetryInfo.retryDelay` ("7s", "0.5s"), when it sent one.
+    private static func retryDelay(_ data: Data) -> TimeInterval? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = json["error"] as? [String: Any],
+              let details = error["details"] as? [[String: Any]] else { return nil }
+        for d in details {
+            if let delay = d["retryDelay"] as? String,
+               let seconds = TimeInterval(delay.trimmingCharacters(in: CharacterSet(charactersIn: "s"))) {
+                return seconds
+            }
+        }
+        return nil
+    }
+
+    /// Whether a 429 names a per-day quota rather than a per-minute one.
+    private static func isDailyQuota(_ data: Data) -> Bool {
+        String(data: data, encoding: .utf8)?.contains("PerDay") ?? false
+    }
+
+    /// The other model, for when the one in use is overloaded or slow. Flash
+    /// and Flash-Lite are provisioned separately, so a 503 on one says little
+    /// about the other.
+    private static func alternate(to model: String) -> String {
+        model == "gemini-flash-latest" ? "gemini-flash-lite-latest" : "gemini-flash-latest"
+    }
+
+    /// Send a request, retrying the failures that are worth retrying: an
+    /// overloaded model (503 and friends) and a per-minute rate limit, with
+    /// exponential backoff plus jitter. Overloads are usually gone within a
+    /// few seconds, and one try was turning every blip into an error screen.
+    private static func send(_ request: URLRequest, grounded: Bool, retries: Int) async throws -> Data {
+        var attempt = 0
+        while true {
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await URLSession.shared.data(for: request)
+            } catch {
+                throw transportFailure(error)
+            }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 200 { return data }
+
+            let error = failure(status: status, data: data, grounded: grounded)
+            let retryable: Bool
+            switch error {
+            case .overloaded, .rateLimited: retryable = true
+            default: retryable = false
+            }
+            guard retryable, attempt < retries, !Task.isCancelled else { throw error }
+            let backoff = pow(2, Double(attempt)) * 0.8 + Double.random(in: 0...0.5)
+            let wait = min(8, max(backoff, retryDelay(data) ?? 0))
+            try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+            attempt += 1
         }
     }
 
@@ -1039,18 +1106,12 @@ enum AIFoodEstimator {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let data: Data
-        let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw transportFailure(error)
-        }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else {
+            data = try await send(request, grounded: true, retries: 1)
+        } catch let error as EstimatorError {
             // Reading a link is a tool call, so a quota rejection here is the
             // grounded quota — the same one estimates fall back from. Say so
             // instead of blaming the key.
-            let error = failure(status: status, data: data, grounded: true)
             if case .quotaExhausted = error { parkGrounding() }
             throw error
         }
@@ -1066,15 +1127,18 @@ enum AIFoodEstimator {
 
     private static func performGenerate<T: Decodable>(parts: [[String: Any]],
                                                       grounded: Bool,
-                                                      keyOverride: String? = nil) async throws -> T {
+                                                      keyOverride: String? = nil,
+                                                      modelOverride: String? = nil) async throws -> T {
         let key = keyOverride ?? apiKey
         guard !key.isEmpty else { throw EstimatorError.noKey }
 
+        let modelName = modelOverride ?? model
         var request = URLRequest(url: URL(string:
-            "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent")!)
-        // Full Flash thinks before answering — give accurate mode more room.
-        let accurate = UserDefaults.standard.bool(forKey: accurateModelKey)
-        request.timeoutInterval = accurate ? 60 : (grounded ? 35 : 20)
+            "https://generativelanguage.googleapis.com/v1beta/models/\(modelName):generateContent")!)
+        // Full Flash thinks before answering — give it more room. Its
+        // fallback (Lite) is fast, so the second try doesn't need as long.
+        let thinking = modelName == "gemini-flash-latest"
+        request.timeoutInterval = thinking ? (modelOverride == nil ? 45 : 30) : (grounded ? 35 : 20)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(key, forHTTPHeaderField: "x-goog-api-key")
@@ -1092,15 +1156,11 @@ enum AIFoodEstimator {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let data: Data
-        let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw transportFailure(error)
-        }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else {
-            let error = failure(status: status, data: data, grounded: grounded)
+            // Grounded calls are a race against a 6-second deadline — an
+            // upgrade, not the answer — so they don't wait around to retry.
+            data = try await send(request, grounded: grounded, retries: grounded ? 0 : 2)
+        } catch let error as EstimatorError {
             // A key the user pasted can be revoked or restricted while the
             // bundled one is fine. Falling back once — and only for a rejected
             // key, never for a quota or an outage — is the difference between
@@ -1108,7 +1168,21 @@ enum AIFoodEstimator {
             if case .invalidKey = error, keyOverride == nil,
                usingUserKey, !bundledKey.isEmpty {
                 return try await performGenerate(parts: parts, grounded: grounded,
-                                                 keyOverride: bundledKey)
+                                                 keyOverride: bundledKey,
+                                                 modelOverride: modelOverride)
+            }
+            // Still overloaded after the retries, or the thinking model ran
+            // out the clock: ask the other model once. This is where "Gemini
+            // is too busy" and "took too long" mostly came from — one model
+            // having a bad minute while the other was fine.
+            switch error {
+            case .overloaded, .timedOut:
+                if modelOverride == nil, !grounded, !Task.isCancelled {
+                    return try await performGenerate(parts: parts, grounded: grounded,
+                                                     keyOverride: keyOverride,
+                                                     modelOverride: alternate(to: modelName))
+                }
+            default: break
             }
             throw error
         }

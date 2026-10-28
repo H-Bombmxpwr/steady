@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Charts
+import WidgetKit
 
 struct MainTabView: View {
     @Environment(\.modelContext) private var context
@@ -140,6 +141,13 @@ struct DashboardView: View {
     // Fasting timer card (opt-in, Settings → Fasting)
     @AppStorage(Fasting.enabledKey) private var fastingEnabled = false
 
+    // The studio: navigation for the sound check, the shop sheet, and toasts
+    // for whatever the log just earned.
+    @State private var path = NavigationPath()
+    @State private var shopTab: StudioShopView.Tab?
+    @State private var toast: BuddyAward?
+    @Environment(\.scenePhase) private var scenePhase
+
     private var dayNumber: Int { max(0, plan.startDate.days(to: today)) + 1 }
     private var todayLog: DayLog { ensureDay(plan: plan, date: today) }
     private var targets: DailyTargets { CalorieEngine.targets(profile: profile, plan: plan) }
@@ -150,7 +158,7 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     // Brand header — the Steady trendline mark and a greeting
@@ -175,12 +183,15 @@ struct DashboardView: View {
                         Spacer()
                     }
 
-                    Text(encouragement)
-                        .font(.footnote)
-                        .foregroundStyle(Theme.textDim)
-                        .padding(.bottom, 2)
+                    // The buddy does the talking now — its lines are built
+                    // from the same numbers the old encouragement line was.
+                    BuddyCard(plan: plan, targets: targets, today: today,
+                              openToday: { path.append(today) },
+                              openShop: { shopTab = $0 })
 
                     WeightCard(plan: plan)
+
+                    TourCard(plan: plan)
 
                     TodayCard(day: todayLog, targets: todayTargets, plan: plan)
 
@@ -246,10 +257,26 @@ struct DashboardView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView(plan: plan, profile: profile)   // applies .themedRoot() itself
             }
+            .sheet(item: $shopTab) { tab in
+                StudioShopView(plan: plan, targets: targets, tab: tab)
+            }
             .overlay {
                 if showConfetti { ConfettiView() }
             }
-            .onAppear { celebrateNewMilestones() }
+            .overlay(alignment: .top) {
+                if let toast {
+                    AwardToast(award: toast)
+                        .padding(.top, 6)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .onAppear {
+                celebrateNewMilestones()
+                syncStudio()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { syncStudio() }
+            }
             // Watch/Garmin sessions land in Health on their own schedule —
             // pull them in whenever the dashboard comes up so today's
             // workout credit (and the streak) is never waiting on Stats.
@@ -261,6 +288,40 @@ struct DashboardView: View {
         }
     }
 
+    /// Pay out whatever the log has earned since the last look, and say so.
+    /// Several at once (a long weekend of logging, say) collapse into one
+    /// toast — the biggest — rather than a queue of them.
+    private func syncStudio() {
+        today = Calendar.current.startOfDay(for: Date())
+        let awards = BuddyStore.shared.sync(plan: plan, targets: targets)
+        try? context.save()   // an Encore may have covered a day
+        // Mealtime: the Lock Screen widget and the Live Activity both read
+        // today's meals and the buddy from here.
+        let todayLog = plan.days.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
+        WidgetSnapshot.build(plan: plan, profile: profile, today: todayLog).save()
+        WidgetCenter.shared.reloadAllTimelines()
+        LiveActivityManager.sync(plan: plan, profile: profile)
+        guard let top = awards.first(where: \.big) ?? awards.first else { return }
+        if top.big {
+            Haptics.success()
+            showConfetti = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { showConfetti = false }
+        }
+        withAnimation(.spring) { toast = top }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) {
+            if toast == top { withAnimation(.easeIn) { toast = nil } }
+        }
+        refreshSpotifyIfStale()
+    }
+
+    /// Listening changes; re-read it about weekly so the queue keeps up.
+    private func refreshSpotifyIfStale() {
+        guard SpotifyLink.shared.isLinked else { return }
+        let last = BuddyStore.shared.state.spotifyRefreshed ?? .distantPast
+        guard Date().timeIntervalSince(last) > 7 * 86_400 else { return }
+        Task { await SpotifyLink.shared.refreshQueue() }
+    }
+
     private var greeting: String {
         switch Calendar.current.component(.hour, from: Date()) {
         case 5..<12: return "Good morning"
@@ -268,31 +329,6 @@ struct DashboardView: View {
         case 17..<22: return "Good evening"
         default: return "Up late"
         }
-    }
-
-    /// One human line under the header, built from the actual numbers and
-    /// rotated daily so it doesn't wear out its welcome.
-    private var encouragement: String {
-        let stats = CalorieEngine.streakStats(plan: plan, targets: targets)
-        let trendDelta = CalorieEngine.trendWeight(plan: plan) - plan.startingWeight
-
-        var lines: [String] = []
-        if trendDelta <= -1 {
-            lines.append("Down \(abs(trendDelta).formatted(.number.precision(.fractionLength(1)))) lb from day one. That didn't happen by accident.")
-            lines.append("The trend is \(abs(trendDelta).formatted(.number.precision(.fractionLength(1)))) lb lighter than when you started. Keep feeding it.")
-        }
-        if stats.current >= 3 {
-            lines.append("\(stats.current) days straight of showing up. Streaks are just proof you're someone who does this.")
-        }
-        if stats.consistency >= 0.7, stats.daysTracked >= 14 {
-            lines.append("You've shown up \(Int(stats.consistency * 100))% of days. That's the whole secret, honestly.")
-        }
-        lines.append("Log the day you actually had, not the one you planned. The math works either way.")
-        lines.append("Nobody's watching. Show up anyway.")
-        lines.append("A boring day on plan beats a heroic Monday.")
-
-        let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
-        return lines[dayOfYear % lines.count]
     }
 
     /// Fire confetti once per newly earned milestone (ids remembered in
@@ -313,6 +349,24 @@ struct DashboardView: View {
         celebratedRaw = celebrated.joined(separator: ",")
         showConfetti = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { showConfetti = false }
+    }
+}
+
+// MARK: - Award toast
+
+private struct AwardToast: View {
+    let award: BuddyAward
+    var body: some View {
+        HStack(spacing: 8) {
+            Sprite(award.big ? "party_popper" : "musical_note", size: 22)
+            Text(award.text)
+                .font(.subheadline.bold())
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Capsule().fill(Theme.surface).shadow(color: .black.opacity(0.3), radius: 10, y: 4))
+        .overlay(Capsule().stroke(Theme.accent.opacity(0.4)))
+        .padding(.horizontal)
     }
 }
 
@@ -338,7 +392,9 @@ private struct WeightCard: View {
                 let delta = headline - plan.startingWeight
                 Text(String(format: "%@%.1f lb", delta > 0 ? "+" : "", delta))
                     .font(.headline)
-                    .foregroundStyle(delta <= 0 ? Theme.accent : Theme.danger)
+                    // Up isn't an emergency — it's mostly water. Red here
+                    // was the loudest thing on the screen on the worst days.
+                    .foregroundStyle(delta <= 0 ? Theme.accent : Theme.textDim)
             }
 
             if trend.count >= 2 {

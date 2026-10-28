@@ -278,6 +278,10 @@ enum CalorieEngine {
             return dayCounts(day: day, plan: plan, targets: targets)
         }
 
+        // A covered day holds the streak together but isn't a day you met —
+        // it bridges the walk without counting toward consistency.
+        let covered = Set(plan.protectedDays.map { cal.startOfDay(for: $0) })
+
         // Current streak: walk back from today; today only breaks the streak
         // once it's over (i.e., an unmet *past* day ends the walk).
         var streak = 0
@@ -286,7 +290,9 @@ enum CalorieEngine {
         while true {
             guard let prev = cal.date(byAdding: .day, value: -1, to: cursor) else { break }
             if prev < plan.startDate { break }
-            if met(prev) { streak += 1; cursor = prev } else { break }
+            if met(prev) { streak += 1; cursor = prev }
+            else if covered.contains(prev) { cursor = prev }
+            else { break }
         }
 
         // Consistency: met days / elapsed days (excluding today unless met)

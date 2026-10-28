@@ -55,9 +55,10 @@ enum NotificationManager {
         // Morning weigh-in
         if d.object(forKey: Keys.weighInEnabled) as? Bool ?? true {
             let hour = d.object(forKey: Keys.weighInHour) as? Int ?? 8
+            let name = BuddyStore.savedName
             schedule(id: "weighin",
-                     title: "Morning weigh-in",
-                     body: "Step on the scale before breakfast — trend weight works best with daily data.",
+                     title: "\(name) is by the scale",
+                     body: "Step on before breakfast — +10 notes, and it's the only way the trend finds a new low.",
                      hour: hour, minute: 0)
         }
 
@@ -108,8 +109,9 @@ enum NotificationManager {
         let minute = d.object(forKey: Keys.streakMinute) as? Int ?? 30
         let cal = Calendar.current
 
-        let title = streak > 0 ? "🔥 \(streak)-day streak on the line" : "Finish the day strong"
-        let body = "A few goals are still open — water, protein, or your photo?"
+        let name = BuddyStore.savedName
+        let title = streak > 0 ? "🔥 \(streak)-day streak on the line" : "\(name) is holding the stage"
+        let body = "A few sound-check items are still open — log what you ate, even if it wasn't the plan."
 
         if !todayMet {
             var comps = cal.dateComponents([.year, .month, .day], from: Date())
@@ -123,7 +125,8 @@ enum NotificationManager {
                                        from: cal.date(byAdding: .day, value: 1, to: Date())!)
         comps.hour = hour; comps.minute = minute
         if let fire = cal.date(from: comps) {
-            oneOff(id: "streak-tomorrow", title: "Protect the streak", body: body, at: fire)
+            oneOff(id: "streak-tomorrow", title: "\(name) kept the needle warm",
+                   body: "No catching up needed. Weigh in and today counts like any other.", at: fire)
         }
     }
 

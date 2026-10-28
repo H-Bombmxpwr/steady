@@ -479,40 +479,66 @@ struct TodayWidget: Widget {
     }
 }
 
-/// Lock Screen / Dynamic Island live view of today's remaining budget.
+/// Lock Screen / Dynamic Island: the buddy and the meal it's waiting on, over
+/// today's remaining budget.
+///
+/// Three moments, and the stale one is the clever one: the content's
+/// `staleDate` is the next meal's time, so when lunch arrives the system marks
+/// the activity stale on its own and this view turns into the prompt — no
+/// push server needed.
 struct FitnessLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: FitnessActivityAttributes.self) { context in
-            // Lock Screen banner
-            HStack(spacing: 14) {
-                StreakBadge(streak: context.state.streak)
-                Spacer()
-                liveStat("fork.knife",
-                         context.state.caloriesLeft >= 0
-                            ? "\(context.state.caloriesLeft) left"
-                            : "\(-context.state.caloriesLeft) over",
-                         context.state.caloriesLeft >= 0 ? good : bad)
-                liveStat("bolt.fill",
-                         "\(context.state.proteinGrams)/\(context.state.proteinTarget)g",
-                         context.state.proteinGrams >= context.state.proteinTarget ? good : .secondary)
-                liveStat("drop.fill",
-                         "\(context.state.waterOz)/\(context.state.waterGoal)oz",
-                         context.state.waterOz >= context.state.waterGoal ? good : .secondary)
+            VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    buddyImage(context.state, size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(MealPrompt(context).title)
+                            .font(.system(.headline, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text(MealPrompt(context).subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
+                    Spacer(minLength: 4)
+                    mealTrailing(context, large: true)
+                }
+                HStack(spacing: 14) {
+                    StreakBadge(streak: context.state.streak)
+                    Spacer()
+                    liveStat("fork.knife",
+                             context.state.caloriesLeft >= 0
+                                ? "\(context.state.caloriesLeft) left"
+                                : "\(-context.state.caloriesLeft) over",
+                             context.state.caloriesLeft >= 0 ? good : bad)
+                    liveStat("bolt.fill",
+                             "\(context.state.proteinGrams)/\(context.state.proteinTarget)g",
+                             context.state.proteinGrams >= context.state.proteinTarget ? good : .secondary)
+                    liveStat("drop.fill",
+                             "\(context.state.waterOz)/\(context.state.waterGoal)oz",
+                             context.state.waterOz >= context.state.waterGoal ? good : .secondary)
+                }
             }
             .padding(14)
             .activityBackgroundTint(widgetBG)
             .activitySystemActionForegroundColor(accent)
+            .widgetURL(URL(string: MealPrompt(context).wantsLog ? "seventyfive://log-food" : "seventyfive://today"))
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    StreakBadge(streak: context.state.streak)
+                    buddyImage(context.state, size: 40)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(context.state.caloriesLeft >= 0
-                         ? "\(context.state.caloriesLeft) cal left"
-                         : "\(-context.state.caloriesLeft) cal over")
-                        .font(.system(.subheadline, design: .rounded).bold())
-                        .foregroundStyle(context.state.caloriesLeft >= 0 ? good : bad)
+                    mealTrailing(context, large: false)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    VStack(spacing: 1) {
+                        Text(MealPrompt(context).title)
+                            .font(.system(.subheadline, design: .rounded).bold())
+                        Text(MealPrompt(context).subtitle)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack(spacing: 10) {
@@ -525,17 +551,112 @@ struct FitnessLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                Image(systemName: "flame.fill")
-                    .foregroundStyle(.orange)
+                buddyImage(context.state, size: 22)
             } compactTrailing: {
-                Text("\(abs(context.state.caloriesLeft))")
-                    .font(.system(.caption, design: .rounded).bold())
-                    .foregroundStyle(context.state.caloriesLeft >= 0 ? good : bad)
+                let prompt = MealPrompt(context)
+                if prompt.wantsLog {
+                    if let end = prompt.countdownTo, !context.isStale {
+                        Text(timerInterval: countdown(to: end), countsDown: true)
+                            .monospacedDigit()
+                            .font(.caption2.bold())
+                            .foregroundStyle(.orange)
+                            .frame(maxWidth: 44)
+                    } else {
+                        Text("Log").font(.caption.bold()).foregroundStyle(.orange)
+                    }
+                } else if let at = prompt.countdownTo {
+                    Text(timerInterval: countdown(to: at), countsDown: true)
+                        .monospacedDigit()
+                        .font(.caption2)
+                        .frame(maxWidth: 44)
+                } else {
+                    Text("\(abs(context.state.caloriesLeft))")
+                        .font(.system(.caption, design: .rounded).bold())
+                        .foregroundStyle(context.state.caloriesLeft >= 0 ? good : bad)
+                }
             } minimal: {
-                Image(systemName: "flame.fill")
-                    .foregroundStyle(.orange)
+                buddyImage(context.state, size: 20)
             }
+            .widgetURL(URL(string: MealPrompt(context).wantsLog ? "seventyfive://log-food" : "seventyfive://today"))
         }
+    }
+}
+
+/// What the activity should say right now, read from its content and
+/// whether it's gone stale.
+private struct MealPrompt {
+    let title: String
+    let subtitle: String
+    /// Tapping should open food logging.
+    let wantsLog: Bool
+    /// Counting down to the window closing (due) or the next meal (upcoming).
+    let countdownTo: Date?
+
+    init(_ context: ActivityViewContext<FitnessActivityAttributes>) {
+        let s = context.state
+        let name = s.buddyName ?? "Your buddy"
+        let progress = s.mealsPlanned.map { "\(s.mealsLogged ?? 0)/\($0) meals logged" } ?? ""
+        if let meal = s.dueMeal {
+            title = context.isStale ? "Still time to log \(meal.lowercased())" : "\(meal) time"
+            subtitle = context.isStale ? "Late still counts. \(name) isn't keeping score."
+                                       : "\(name) is waiting — log what you eat"
+            wantsLog = true
+            countdownTo = s.dueEnd
+        } else if let meal = s.nextMeal, context.isStale {
+            // The stale date was this meal's start: it's mealtime now.
+            title = "\(meal) time"
+            subtitle = "\(name) is waiting — tap to log it"
+            wantsLog = true
+            countdownTo = nil
+        } else if let meal = s.nextMeal, let at = s.nextAt {
+            title = "Next: \(meal)"
+            subtitle = progress.isEmpty ? "at \(at.formatted(date: .omitted, time: .shortened))" : progress
+            wantsLog = false
+            countdownTo = at
+        } else {
+            title = "That's a wrap"
+            subtitle = progress.isEmpty ? "\(name) is off to bed" : progress
+            wantsLog = false
+            countdownTo = nil
+        }
+    }
+}
+
+/// A countdown range that can't trap once the target has passed — a
+/// `ClosedRange` with its bounds the wrong way round is a crash.
+private func countdown(to end: Date) -> ClosedRange<Date> {
+    let now = Date()
+    return min(now, end)...end
+}
+
+@ViewBuilder
+private func buddyImage(_ state: FitnessActivityAttributes.ContentState, size: CGFloat) -> some View {
+    if let asset = state.buddyAsset {
+        Image(asset).resizable().scaledToFit().frame(width: size, height: size)
+    } else {
+        Image(systemName: "flame.fill").foregroundStyle(.orange)
+    }
+}
+
+@ViewBuilder
+private func mealTrailing(_ context: ActivityViewContext<FitnessActivityAttributes>, large: Bool) -> some View {
+    let prompt = MealPrompt(context)
+    if let to = prompt.countdownTo, !(prompt.wantsLog && context.isStale) {
+        VStack(alignment: .trailing, spacing: 0) {
+            Text(timerInterval: countdown(to: to), countsDown: true)
+                .monospacedDigit()
+                .font(.system(large ? .title3 : .subheadline, design: .rounded).bold())
+                .foregroundStyle(prompt.wantsLog ? .orange : .white)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: large ? 90 : 70, alignment: .trailing)
+            Text(prompt.wantsLog ? "to log" : "until")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    } else if prompt.wantsLog {
+        Image(systemName: "fork.knife.circle.fill")
+            .font(large ? .title : .title3)
+            .foregroundStyle(.orange)
     }
 }
 
@@ -554,6 +675,7 @@ private func liveStat(_ icon: String, _ text: String, _ color: Color) -> some Vi
 struct FitnessWidgetsBundle: WidgetBundle {
     var body: some Widget {
         TodayWidget()
+        MealtimeWidget()
         FitnessLiveActivity()
     }
 }

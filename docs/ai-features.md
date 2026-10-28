@@ -45,6 +45,16 @@ Google's free tier is generous — normal food logging won't come close to the l
 
 Recipe imports always use the fuller model regardless of the toggle, since reading a recipe is an occasional get-it-right action rather than something you do ten times a day.
 
+### "Gemini is busy" and "took too long"
+
+Google's models occasionally run over capacity, usually for seconds at a time. Steady handles that before you ever see an error:
+
+- An overloaded reply is **retried automatically**, twice, with a short backoff.
+- If the model is still busy, or the fuller model runs out of time, Steady **asks the other model** (fast ↔ fuller). The two are provisioned separately, so one having a bad minute rarely means both are.
+- Hitting the free tier's **per-minute** cap is retried after the delay Google asks for. It's no longer reported as "quota used up for today," because it isn't.
+
+If you still see one of these messages, both models were genuinely unavailable. Wait a minute and try again.
+
 ## What actually leaves your phone
 
 Only what a specific AI feature needs, only when you tap the button that uses it:

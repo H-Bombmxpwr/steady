@@ -12,5 +12,20 @@ struct FitnessActivityAttributes: ActivityAttributes {
         var waterOz: Int
         var waterGoal: Int
         var streak: Int
+
+        // Mealtime check-in — the buddy, and the meal it's waiting on.
+        // Optional so an activity started by an older build still decodes.
+        var buddyAsset: String?
+        var buddyName: String?
+        /// The meal whose window is open right now and isn't logged.
+        var dueMeal: String?
+        var dueEnd: Date?
+        /// Otherwise the next one. When `nextAt` passes, the activity goes
+        /// stale on its own (that's its `staleDate`) and the view flips to
+        /// "it's time" — no server, no push.
+        var nextMeal: String?
+        var nextAt: Date?
+        var mealsLogged: Int?
+        var mealsPlanned: Int?
     }
 }

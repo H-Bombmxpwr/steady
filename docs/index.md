@@ -19,6 +19,8 @@ Most tracking apps ask you to weigh every gram and trust a textbook formula for 
 
 **Training changes what you should eat.** A scheduled workout adds its burn back to that day's calories and its fluid needs to your water goal, and tells you carbs-per-hour for long sessions, what to eat before, and what to eat after. Athlete mode goes further: it imports your plan from TrainingPeaks, periodizes carbs to each day's load, and sets hydration from **your own measured sweat rate** and the local heat index. See [Workouts & fueling](workouts-and-fueling).
 
+**It gives you a reason to come back.** Weight-loss mode has a buddy and a small music studio. Logging earns notes for gear and bandmates, every new pound off your trend earns a real album for the wall, and at mealtimes your buddy waits on the Lock Screen with a countdown until you log. Nothing is ever lost for a missed day. See [The Studio](studio).
+
 **It's genuinely private.** No account, no analytics, no server. Your log lives in a container on your device, progress photos and your cycle log sit behind Face ID, and the only things that ever leave are the meal descriptions you explicitly send for an AI estimate. See [Photos & your data](photos-and-data).
 
 ## Where to start
@@ -30,6 +32,7 @@ Most tracking apps ask you to weigh every gram and trust a textbook formula for 
 | Understand where your calorie number comes from | [Your calorie budget](calorie-budget) |
 | Learn every way to log a meal | [Food logging](food-logging) |
 | Set up the AI, or see exactly what it sends | [AI features](ai-features) |
+| Meet your buddy, earn records, and set up mealtime check-ins | [The Studio](studio) |
 | Build workouts and eat around training | [Workouts & fueling](workouts-and-fueling) |
 | Track water, weight, fasting, blood work | [Tracking & stats](tracking-and-stats) |
 | Connect Apple Health, widgets, Siri | [Integrations](integrations) |
@@ -50,7 +53,9 @@ Most tracking apps ask you to weigh every gram and trust a textbook formula for 
 - **Apple Health two-way sync**, including workouts from Garmin, Apple Watch, and Strava
 - **Widgets, Siri shortcuts, and a Live Activity** for logging without opening the app
 - **Face ID-protected progress photos** with an on-device timelapse builder
-- **Streaks, patterns, and a Month in Review** poster
-- **Five themes** with matching app icons, in light and dark
+- **The Studio** — a buddy, a music room built from your logging, real albums earned by losing weight (optionally from your Spotify), and 5-lb "tracks" to your goal
+- **Mealtime check-ins** on the Lock Screen and Dynamic Island, BeReal-style
+- **Streaks with Encores**, patterns, and a Month in Review poster
+- **Five themes** with matching app icons, in light and dark — or your buddy as the icon
 
 Requires **iOS 18 or later**. iPhone only.

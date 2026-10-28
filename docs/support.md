@@ -64,12 +64,15 @@ Widgets refresh on a schedule iOS controls. Opening the app forces an update. If
 Check **iOS Settings → Notifications → Steady** is allowed, then **Settings → Notifications** inside Steady for the individual toggles.
 
 **Live Activity isn't showing.**
-It's off by default — turn it on in **Settings → Appearance**. It refreshes when the app runs.
+Check **Settings → Appearance → Mealtime Live Activity** is on, and that Live Activities are allowed for Steady in **iOS Settings → Steady**. iOS only lets an app *start* one while it's open, so open Steady once and it appears.
+
+**The mealtime countdown shows the wrong meals.**
+It follows **Settings → Meal Schedule**. Switch meals on or off, or move their times there, and the widget and Live Activity follow.
 
 ## Progress and streaks
 
 **I missed a day — is my streak gone?**
-Not necessarily. The streak is recomputed from your data every time rather than stored as a counter, so **backfilling works**: open the Calendar tab, tap the day you missed, log anything, and the streak reconnects.
+Not necessarily. If you're holding an **Encore** (bought in the Studio), it covers the missed day automatically. Otherwise, the streak is recomputed from your data every time rather than stored as a counter, so **backfilling works**: open the Calendar tab, tap the day you missed, log anything, and the streak reconnects.
 
 **My weight went up but I stuck to my budget.**
 Almost always water. Sodium, carbohydrates, hormones, and hydration move the scale several pounds in either direction, independent of fat. That's exactly why Steady shows a smoothed trend line instead of your raw weigh-ins — watch the trend, not the mornings.
@@ -77,10 +80,24 @@ Almost always water. Sodium, carbohydrates, hormones, and hydration move the sca
 **The scale hasn't moved in two weeks.**
 Check the trend line rather than individual readings, and check your measurements — weight can hold flat while your shape changes. If the trend is genuinely flat over 2–3 weeks and you're logging consistently, the adaptive budget will already be adjusting your burn rate. You can also lower your target pace in Settings.
 
+## The Studio
+
+**Do I lose anything if I change my buddy?**
+No. The look and the name are cosmetic. Records, gear, notes, and the tour all stay. Tap the studio's name on the dashboard to change them.
+
+**I gained weight. Did I lose records or tracks?**
+Never. Records and tracks are paid against your trend's *best* point, so a rebound takes nothing back. If the trend climbs above where the tour started, the Tour card offers a fresh tour from today.
+
+**Why didn't I get notes for being under budget?**
+It counts once three meals are logged, so breakfast alone doesn't qualify.
+
+**Spotify says the account isn't allowed.**
+Spotify apps in development mode only accept accounts added under **User Management** in the Spotify developer dashboard (up to 25). Add your email there and link again.
+
 ## Privacy
 
 **What leaves my phone?**
-Only three things, and only when you trigger them: meal text/photos/links you send for an AI estimate, barcode numbers sent to Open Food Facts, and anything you export yourself. Never your weight, photos, Health data, or location. See [Photos & your data](photos-and-data) and the [privacy policy](privacy-policy).
+Only a few things, and only when you trigger them: meal text/photos/links you send for an AI estimate, barcode numbers sent to Open Food Facts, album searches sent to Apple for cover art and previews, Spotify listening that you link yourself, and anything you export. Never your weight, photos, Health data, or location. See [Photos & your data](photos-and-data) and the [privacy policy](privacy-policy).
 
 **Can anyone see my progress photos?**
 They're stored inside the app's private container, gated behind Face ID, and never written to your Photos library unless you export one yourself.

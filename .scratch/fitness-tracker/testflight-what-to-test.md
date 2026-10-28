@@ -48,6 +48,18 @@ WORKOUTS + FUELING (new)
 - On a day with a scheduled workout, look for the "Today's Fuel" card on
   the dashboard and the calories it adds to the budget.
 
+THE STUDIO (new)
+- In setup, pick and name your buddy. Tap the studio's name later to change
+  either one. Nothing you've earned should reset.
+- Weigh in and log meals, then check the sound check and the notes badge.
+- Open Today's gift after your first log of the day.
+- Pick a record and play it on the turntable.
+- Buy and place gear. Is earning fun or grindy?
+- Add the Mealtime lock-screen widget. At a meal time it should show a
+  countdown until you log. The Live Activity does the same in the
+  Dynamic Island.
+- Try your buddy as the app icon.
+
 DASHBOARD, WIDGETS, FEEL
 - Swipe between tabs with the glass bar. Swipe the Milestones badges —
   they should scroll, NOT flip to the next tab.

@@ -23,6 +23,9 @@ final class Plan {
     /// session's estimated burn to that day's calorie budget and surface
     /// carb/fluid fueling guidance (Settings → Daily Targets).
     var fuelTrainingDays: Bool = true
+    /// Days an Encore (the studio's streak cover) has covered. They keep the
+    /// current streak alive but don't count as on-target days anywhere else.
+    var protectedDays: [Date] = []
 
     // MARK: Athlete mode (all additive, all defaulted for clean migration)
 
