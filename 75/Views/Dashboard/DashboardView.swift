@@ -162,6 +162,11 @@ struct DashboardView: View {
     // Fasting timer card (opt-in, Settings → Fasting)
     @AppStorage(Fasting.enabledKey) private var fastingEnabled = false
 
+    // The cards under the buddy, in the order the user arranged them.
+    @AppStorage(DashboardCard.orderKey) private var cardOrderRaw = ""
+    @State private var showArrange = false
+    private var cardOrder: [DashboardCard] { DashboardCard.order(from: cardOrderRaw) }
+
     // The studio: navigation for the sound check, the shop sheet, and toasts
     // for whatever the log just earned.
     @State private var path = NavigationPath()
@@ -210,36 +215,7 @@ struct DashboardView: View {
                               openToday: { path.append(today) },
                               openShop: { shopTab = $0 })
 
-                    WeightCard(plan: plan)
-
-                    TourCard(plan: plan)
-
-                    TodayCard(day: todayLog, targets: todayTargets, plan: plan)
-
-                    if !plan.sessions(on: today).isEmpty {
-                        FuelCard(plan: plan)
-                    }
-
-                    if profile.cycleTracking {
-                        CycleCard(plan: plan)
-                    }
-
-                    if profile.showsGeneralHealth {
-                        GeneralHealthCard(plan: plan, day: todayLog)
-                    }
-
-                    if fastingEnabled {
-                        FastingCard(plan: plan)
-                    }
-
-                    HStack(spacing: 14) {
-                        StreakCard(stats: CalorieEngine.streakStats(plan: plan, targets: targets))
-                        ProjectionCard(plan: plan, dayNumber: dayNumber)
-                    }
-
-                    MilestonesCard(milestones: Milestone.all(plan: plan, targets: targets))
-
-                    InsightCard(insight: CalorieEngine.weeklyInsight(plan: plan, targets: targets))
+                    ForEach(cardOrder) { card($0) }
 
                     NavigationLink(value: today) {
                         Label("Open Today", systemImage: "square.and.pencil")
@@ -249,6 +225,14 @@ struct DashboardView: View {
                             .padding(.vertical, 14)
                             .background(Capsule().fill(Theme.gradient))
                             .shadow(color: Theme.accent.opacity(0.35), radius: 10, y: 3)
+                    }
+
+                    Button { showArrange = true } label: {
+                        Label("Arrange dashboard", systemImage: "arrow.up.arrow.down")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.textDim)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
                     }
                 }
                 .padding()
@@ -277,6 +261,10 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView(plan: plan, profile: profile)   // applies .themedRoot() itself
+            }
+            .sheet(isPresented: $showArrange) {
+                ArrangeDashboardView(orderRaw: $cardOrderRaw)
+                    .themedRoot()
             }
             .sheet(item: $shopTab) { tab in
                 StudioShopView(plan: plan, targets: targets, tab: tab)
@@ -309,6 +297,30 @@ struct DashboardView: View {
                     try? context.save()
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func card(_ card: DashboardCard) -> some View {
+        switch card {
+        case .weight: WeightCard(plan: plan)
+        case .tour: TourCard(plan: plan)
+        case .today: TodayCard(day: todayLog, targets: todayTargets, plan: plan)
+        case .fuel:
+            if !plan.sessions(on: today).isEmpty { FuelCard(plan: plan) }
+        case .cycle:
+            if profile.cycleTracking { CycleCard(plan: plan) }
+        case .health:
+            if profile.showsGeneralHealth { GeneralHealthCard(plan: plan, day: todayLog) }
+        case .fasting:
+            if fastingEnabled { FastingCard(plan: plan) }
+        case .streak:
+            HStack(spacing: 14) {
+                StreakCard(stats: CalorieEngine.streakStats(plan: plan, targets: targets))
+                ProjectionCard(plan: plan, dayNumber: dayNumber)
+            }
+        case .milestones: MilestonesCard(milestones: Milestone.all(plan: plan, targets: targets))
+        case .insight: InsightCard(insight: CalorieEngine.weeklyInsight(plan: plan, targets: targets))
         }
     }
 

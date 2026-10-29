@@ -40,11 +40,12 @@ struct BuddyCard: View {
            let then = trend.last(where: { $0.date <= weekAgo }) {
             weekDelta = last.trend - then.trend
         }
-        let playing = store.state.records.first { $0.id == RecordPlayer.shared.playingID }
+        let player = RecordPlayer.shared
+        let playing = store.state.records.first { $0.id == player.playingID }
         let ctx = BuddyEngine.LineContext(name: store.state.name, mood: mood, done: done,
                                           tour: tour, records: store.state.records.count,
                                           daysAway: BuddyEngine.daysAway(plan: plan),
-                                          nowPlaying: playing.map { "“\($0.title)”" },
+                                          nowPlaying: playing.map { "“\(player.track?.name ?? $0.title)”" },
                                           weekDelta: weekDelta,
                                           health: health)
         let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: today) ?? 0
@@ -85,6 +86,9 @@ struct BuddyCard: View {
                         onDeckTap: deckTapped,
                         onRoomTap: { openShop(.gear) })
                 .simultaneousGesture(TapGesture().onEnded { tapSeed += 1 })
+
+            NowPlayingBar()
+                .animation(.spring(duration: 0.3), value: RecordPlayer.shared.record?.id)
 
             // What the buddy says. Written by hand, filled with your numbers.
             HStack(alignment: .top, spacing: 8) {

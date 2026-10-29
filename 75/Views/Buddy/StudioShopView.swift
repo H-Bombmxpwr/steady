@@ -19,6 +19,8 @@ struct StudioShopView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     StudioScene(store: store, mood: .content,
                                 health: BuddyHealth(score: store.state.health), height: 210)
+                    NowPlayingBar()
+                        .animation(.spring(duration: 0.3), value: RecordPlayer.shared.record?.id)
                     Picker("Section", selection: $tab) {
                         ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
                     }

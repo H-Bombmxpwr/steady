@@ -19,7 +19,9 @@ enum RecordCatalog {
             let artworkUrl100: String?
             let previewUrl: String?
             let wrapperType: String?
+            let trackName: String?
             let trackNumber: Int?
+            let discNumber: Int?
         }
         let results: [Item]
     }
@@ -51,29 +53,65 @@ enum RecordCatalog {
         }
     }
 
-    /// A preview track for an album. The first track that has one — opening
-    /// tracks are usually the ones meant to be heard first.
-    static func previewURL(for record: CollectedRecord) async -> String? {
-        var collection: Int?
-        if record.id.hasPrefix("itunes:") {
-            collection = Int(record.id.dropFirst("itunes:".count))
-        } else if let match = try? await get("search", ["term": "\(record.artist) \(record.title)",
-                                                         "entity": "album", "media": "music", "limit": "1"]).first {
-            collection = match.collectionId
-        }
-        guard let collection,
-              let songs = try? await get("lookup", ["id": "\(collection)", "entity": "song", "limit": "15"])
+    /// The previewable tracks on a record's album, in album order. A Spotify
+    /// record is found by searching songs, not albums — Apple's album search
+    /// ranks loosely ("Khalid American Teen" puts Camila Cabello first) — and
+    /// only an album whose artist and title actually match is accepted.
+    struct Track: Hashable {
+        let name: String
+        let url: URL
+    }
+
+    static func previews(for record: CollectedRecord) async -> (collection: Int, tracks: [Track])? {
+        guard let collection = await collectionID(for: record),
+              let items = try? await get("lookup", ["id": "\(collection)", "entity": "song", "limit": "200"])
         else { return nil }
-        return songs
-            .filter { $0.wrapperType == "track" && $0.previewUrl != nil }
-            .sorted { ($0.trackNumber ?? 99) < ($1.trackNumber ?? 99) }
-            .first?.previewUrl
+        let tracks = items
+            .filter { $0.wrapperType == "track" && $0.collectionId == collection && $0.previewUrl != nil }
+            .sorted { ($0.discNumber ?? 1, $0.trackNumber ?? 999) < ($1.discNumber ?? 1, $1.trackNumber ?? 999) }
+            .compactMap { item in
+                item.previewUrl.flatMap(URL.init(string:)).map { Track(name: item.trackName ?? "Untitled", url: $0) }
+            }
+        return tracks.isEmpty ? nil : (collection, tracks)
+    }
+
+    private static func collectionID(for record: CollectedRecord) async -> Int? {
+        if record.id.hasPrefix("itunes:") { return Int(record.id.dropFirst("itunes:".count)) }
+        if let known = record.catalogID { return known }
+        let term = "\(record.artist) \(record.title)"
+        let title = normalized(record.title), artist = normalized(record.artist)
+        func matches(_ item: SearchResponse.Item) -> (exact: Bool, ok: Bool) {
+            let t = normalized(item.collectionName ?? ""), a = normalized(item.artistName ?? "")
+            let artistOK = !a.isEmpty && (a.contains(artist) || artist.contains(a))
+            let titleOK = !t.isEmpty && (t.contains(title) || title.contains(t))
+            return (artistOK && t == title, artistOK && titleOK)
+        }
+        for entity in ["song", "album"] {
+            guard let items = try? await get("search", ["term": term, "entity": entity,
+                                                        "media": "music", "limit": "50"]) else { continue }
+            if let hit = items.first(where: { matches($0).exact }) ?? items.first(where: { matches($0).ok }) {
+                return hit.collectionId
+            }
+        }
+        return nil
+    }
+
+    /// Lowercased, accents and punctuation gone, and the edition noise that
+    /// differs between Spotify and Apple dropped: "(Deluxe)", " - Single"…
+    private static func normalized(_ s: String) -> String {
+        var s = s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).lowercased()
+        s = s.replacingOccurrences(of: #"\s*[\(\[][^\)\]]*[\)\]]"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"\s+-\s+(single|ep)$"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "&", with: "and")
+        return String(s.unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(Character.init))
     }
 }
 
 // MARK: - Player
 
-/// The deck. One record at a time, a 30-second preview, then the needle lifts.
+/// The deck. One record at a time: it drops the needle on a random track,
+/// plays 30-second previews through the rest of the album, and lifts when it
+/// comes back round to where it started.
 @MainActor
 @Observable
 final class RecordPlayer {
@@ -81,10 +119,25 @@ final class RecordPlayer {
 
     private(set) var playingID: String?
     private(set) var loadingID: String?
+    /// The record on the deck, its tracks, and which one is playing.
+    private(set) var record: CollectedRecord?
+    private(set) var tracks: [RecordCatalog.Track] = []
+    private(set) var index = 0
+    private(set) var elapsed: Double = 0
+    private(set) var duration: Double = 30
+    /// Set when a record has no previews in Apple's catalog, so the panel can say so.
+    private(set) var unavailable: CollectedRecord?
+
     private var player: AVPlayer?
     private var endObserver: NSObjectProtocol?
+    private var timeObserver: Any?
+    private var startIndex = 0
+    /// Each album's previews, fetched once per launch.
+    private var cache: [String: [RecordCatalog.Track]] = [:]
 
     var isPlaying: Bool { playingID != nil }
+    var track: RecordCatalog.Track? { tracks.indices.contains(index) ? tracks[index] : nil }
+    var remaining: Double { max(0, duration - elapsed) }
 
     func toggle(_ record: CollectedRecord) {
         if playingID == record.id { stop() } else { Task { await play(record) } }
@@ -93,36 +146,85 @@ final class RecordPlayer {
     func play(_ record: CollectedRecord) async {
         stop()
         loadingID = record.id
-        var preview = record.previewURL
-        if preview == nil {
-            preview = await RecordCatalog.previewURL(for: record)
-            if let preview { BuddyStore.shared.updatePreview(for: record.id, url: preview) }
+        self.record = record
+        if cache[record.id] == nil, let found = await RecordCatalog.previews(for: record) {
+            cache[record.id] = found.tracks
+            BuddyStore.shared.updateCatalogID(for: record.id, to: found.collection)
         }
         guard loadingID == record.id else { return }   // something else was tapped meanwhile
         loadingID = nil
-        guard let preview, let url = URL(string: preview) else { return }
-
+        guard let found = cache[record.id], !found.isEmpty else {
+            self.record = nil
+            unavailable = record
+            return
+        }
+        tracks = found
+        // A different track from the album every time it's played.
+        startIndex = Int.random(in: 0..<found.count)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
-        let item = AVPlayerItem(url: url)
-        let player = AVPlayer(playerItem: item)
-        endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.stop() }
-        }
-        self.player = player
         playingID = record.id
-        player.play()
+        start(at: startIndex)
+    }
+
+    func next() { skip(by: 1) }
+
+    /// Back to the start of this track, or to the one before if it's barely begun.
+    func previous() {
+        if elapsed > 3 { player?.seek(to: .zero); elapsed = 0 } else { skip(by: -1) }
     }
 
     func stop() {
-        player?.pause()
+        tearDownItem()
         player = nil
         playingID = nil
         loadingID = nil
+        record = nil
+        tracks = []
+        unavailable = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func skip(by step: Int) {
+        guard isPlaying, !tracks.isEmpty else { return }
+        start(at: (index + step + tracks.count) % tracks.count)
+    }
+
+    private func start(at i: Int) {
+        tearDownItem()
+        index = i
+        elapsed = 0
+        duration = 30
+        let item = AVPlayerItem(url: tracks[i].url)
+        let player = self.player ?? AVPlayer()
+        player.replaceCurrentItem(with: item)
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.trackEnded() }
+        }
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
+            Task { @MainActor in
+                guard let self else { return }
+                self.elapsed = time.seconds
+                if let d = self.player?.currentItem?.duration.seconds, d.isFinite, d > 0 { self.duration = d }
+            }
+        }
+        self.player = player
+        player.play()
+    }
+
+    private func trackEnded() {
+        let upNext = (index + 1) % tracks.count
+        if upNext == startIndex { stop() } else { start(at: upNext) }
+    }
+
+    private func tearDownItem() {
+        player?.pause()
+        if let timeObserver { player?.removeTimeObserver(timeObserver) }
+        timeObserver = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }
 

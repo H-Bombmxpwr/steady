@@ -66,8 +66,9 @@ struct CollectedRecord: Codable, Identifiable, Hashable {
     var title: String
     var artist: String
     var artworkURL: String?
-    /// 30-second preview, resolved through Apple's catalog when first played.
-    var previewURL: String?
+    /// The matching album in Apple's catalog, where previews come from —
+    /// found when a Spotify record is first played.
+    var catalogID: Int?
     var spotifyURL: String?
     var addedAt: Date = Date()
     /// Why it's here: "1 lb down", "Bought", "Today's gift"…
@@ -638,9 +639,10 @@ final class BuddyStore {
         return state.records.last
     }
 
-    func updatePreview(for id: String, url: String) {
-        guard let i = state.records.firstIndex(where: { $0.id == id }) else { return }
-        state.records[i].previewURL = url
+    func updateCatalogID(for id: String, to collection: Int) {
+        guard let i = state.records.firstIndex(where: { $0.id == id }),
+              state.records[i].catalogID != collection else { return }
+        state.records[i].catalogID = collection
     }
 
     func setSpotifyQueue(_ albums: [CollectedRecord]) {
