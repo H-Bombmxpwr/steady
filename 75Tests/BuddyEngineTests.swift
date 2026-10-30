@@ -80,20 +80,18 @@ final class BuddyEngineTests: XCTestCase {
         XCTAssertEqual(BuddyEngine.notes(day: day, targets: targets), 10)
     }
 
-    /// Breakfast alone is always under budget; paying for that would reward
-    /// logging less. Under-budget waits for three meals.
-    func testUnderBudgetNeedsThreeMeals() {
-        let day = DayLog(date: Date())
-        day.foods.append(FoodLog(name: "Eggs", calories: 300, proteinGrams: 20, meal: .breakfast))
-        var done = BuddyEngine.choresDone(day: day, targets: targets)
-        XCTAssertTrue(done.contains(.firstFood))
-        XCTAssertFalse(done.contains(.underBudget))
-
-        day.foods.append(FoodLog(name: "Salad", calories: 500, proteinGrams: 40, meal: .lunch))
-        day.foods.append(FoodLog(name: "Chicken", calories: 700, proteinGrams: 60, meal: .dinner))
-        done = BuddyEngine.choresDone(day: day, targets: targets)
-        XCTAssertTrue(done.contains(.threeMeals))
-        XCTAssertTrue(done.contains(.underBudget))
+    func testTargetRewardRequiresCompletedDayAndAdequateIntake() {
+        let today = Calendar.current.startOfDay(for: Date())
+        let day = DayLog(date: today)
+        for meal in [Meal.breakfast, .lunch, .dinner] {
+            day.foods.append(FoodLog(name: "Meal", calories: 650, proteinGrams: 40, meal: meal))
+        }
+        XCTAssertFalse(BuddyEngine.choresDone(day: day, targets: targets).contains(.underBudget))
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
+        XCTAssertTrue(BuddyEngine.choresDone(day: day, targets: targets, now: tomorrow).contains(.underBudget))
+        for food in day.foods { food.calories = 100 }
+        XCTAssertFalse(BuddyEngine.choresDone(day: day, targets: targets, now: tomorrow).contains(.underBudget))
+        XCTAssertTrue(BuddyEngine.choresDone(day: day, targets: targets, now: tomorrow).contains(.threeMeals))
     }
 
     func testOverBudgetStillPaysForLogging() {

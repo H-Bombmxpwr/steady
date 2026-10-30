@@ -495,13 +495,10 @@ private struct BuddyHomeWidget: View {
         switch stats.health {
         case "thriving": return "Studio/smiling_face_with_hearts"
         case "healthy": return "Studio/slightly_smiling_face"
-        case "queasy": return "Studio/nauseated_face"
-        case "sick": return "Studio/face_with_thermometer"
         default: return "Studio/neutral_face"
         }
     }
 
-    private var unwell: Bool { stats.health == "queasy" || stats.health == "sick" }
 
     var body: some View {
         content
@@ -524,7 +521,6 @@ private struct BuddyHomeWidget: View {
     private func buddy(_ size: CGFloat) -> some View {
         Image(stats.asset).resizable().scaledToFit()
             .frame(width: size, height: size)
-            .saturation(stats.health == "sick" ? 0.55 : 1)
             .overlay(alignment: .topTrailing) {
                 Image(healthSprite).resizable().scaledToFit()
                     .frame(width: size * 0.36, height: size * 0.36)
@@ -571,7 +567,7 @@ private struct BuddyHomeWidget: View {
     }
 
     private var healthLine: String {
-        "\(stats.health.capitalized) ×\(String(format: "%.2f", stats.healthMultiplier))"
+        "Nutrition ×\(String(format: "%.2f", max(1, stats.healthMultiplier)))"
     }
 
     // MARK: Sizes
@@ -589,7 +585,7 @@ private struct BuddyHomeWidget: View {
             }
             Text(jarFull ? "\(stats.name)'s jar is full" : "\(stats.name) · \(healthLine)")
                 .font(.caption2.bold())
-                .foregroundStyle(jarFull ? .orange : (unwell ? hex(0xFCA5A5) : .white.opacity(0.85)))
+                .foregroundStyle(jarFull ? .orange : .white.opacity(0.85))
                 .lineLimit(1).minimumScaleFactor(0.8)
             Spacer(minLength: 0)
             doors(labels: false)
@@ -606,7 +602,7 @@ private struct BuddyHomeWidget: View {
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
                     GridRow {
                         stat("musical_note", fmt(stats.notes), "notes")
-                        stat("chart_increasing", "\(fmt(stats.rate))/s", "earning")
+                        stat("chart_increasing", "\(fmt(stats.currentRate(at: date)))/s", "earning")
                     }
                     GridRow {
                         stat("honey_pot", jarText, jarFull ? "collect it" : "in the jar",
@@ -627,7 +623,7 @@ private struct BuddyHomeWidget: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(stats.name)'s Studio").font(.headline).foregroundStyle(.white)
                     Text(healthLine).font(.caption.bold())
-                        .foregroundStyle(unwell ? hex(0xFCA5A5) : good)
+                        .foregroundStyle(good)
                     if let t = stats.track {
                         Text("Track \(t) of \(stats.trackCount)" +
                              (stats.toNextTrack.map { String(format: " · %.1f lb to go", $0) } ?? ""))
@@ -638,7 +634,7 @@ private struct BuddyHomeWidget: View {
                 }
                 Spacer(minLength: 0)
             }
-            // Progress to goal, as a fraction — never the weight itself.
+            // Studio progression includes logging days, not just weight milestones.
             VStack(alignment: .leading, spacing: 3) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -647,13 +643,13 @@ private struct BuddyHomeWidget: View {
                     }
                 }
                 .frame(height: 8)
-                Text("\(Int(stats.progress * 100))% of the way to goal")
+                Text("\(Int(stats.progress * 100))% studio progress")
                     .font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
             }
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
                 GridRow {
                     stat("musical_note", fmt(stats.notes), "notes")
-                    stat("chart_increasing", "\(fmt(stats.rate))/s", "earning")
+                    stat("chart_increasing", "\(fmt(stats.currentRate(at: date)))/s", "earning")
                 }
                 GridRow {
                     stat("honey_pot", jarText, jarFull ? "collect it" : "in the jar",

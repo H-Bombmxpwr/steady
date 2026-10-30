@@ -18,7 +18,13 @@ struct BuddyCard: View {
         plan.days.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
     }
     private var done: Set<Chore> {
-        day.map { BuddyEngine.choresDone(day: $0, targets: targets) } ?? []
+        var result = day.map { BuddyEngine.choresDone(day: $0, targets: targets) } ?? []
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today)!
+        if let prior = plan.days.first(where: { Calendar.current.isDate($0.date, inSameDayAs: yesterday) }),
+           BuddyEngine.choresDone(day: prior, targets: targets).contains(.underBudget) {
+            result.insert(.underBudget)
+        }
+        return result
     }
     private var tour: Tour { store.tour(plan: plan) }
     private var rate: Double { store.rate(plan: plan, targets: targets) }
@@ -128,7 +134,7 @@ struct BuddyCard: View {
                 .buttonStyle(.pressable)
             } else {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                let jar = store.jar(rate: rate, at: context.date)
+                let jar = store.jar(at: context.date)
                 let full = context.date >= store.jarFullAt()
                 Button {
                     let got = store.collect(plan: plan, targets: targets)
@@ -163,9 +169,9 @@ struct BuddyCard: View {
                 HStack(spacing: 10) {
                     Sprite(health.sprite, size: 28)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("\(store.state.name) is \(health.label.lowercased()) · ×\(String(format: "%.2f", m.health))")
+                        Text("Nutrition bonus · ×\(String(format: "%.2f", m.health))")
                             .font(.subheadline.bold())
-                            .foregroundStyle(health.isUnwell ? Theme.danger : .primary)
+                            .foregroundStyle(.primary)
                         Text(healthLine)
                             .font(.caption).foregroundStyle(Theme.textDim)
                             .fixedSize(horizontal: false, vertical: true)
@@ -182,11 +188,9 @@ struct BuddyCard: View {
 
     private var healthLine: String {
         switch health {
-        case .thriving: return "Eating like this, the studio earns 50% more. Whole foods, mostly green."
-        case .healthy: return "Good week of food. The studio's earning a bit extra."
-        case .okay: return "Middle of the road. More greens and fewer reds tips it up."
-        case .queasy: return "Heavy on the reds lately — the studio's earning less. A green meal helps fast."
-        case .sick: return "Feeling rough. Earnings are halved until the food picks up — one good day turns it."
+        case .thriving: return "Protein and fiber logs are adding energy to the studio."
+        case .healthy: return "A little extra from your completed nutrition logs."
+        default: return "Normal earnings. Logged protein and fiber can add up to 25% extra."
         }
     }
 
@@ -252,10 +256,14 @@ struct BuddyCard: View {
                     .font(.caption.bold()).kerning(1.2)
                     .foregroundStyle(Theme.textDim)
                 Spacer()
-                Text("\(done.count)/\(Chore.allCases.count) · hype ×\(String(format: "%.2f", IdleEngine.hypeMultiplier(choresDone: done.count)))")
+                Text("\(done.subtracting([.underBudget]).count)/7 today · hype ×\(String(format: "%.2f", store.multipliers(plan: plan, targets: targets).hype))")
                     .font(.caption).monospacedDigit()
                     .foregroundStyle(Theme.textDim)
             }
+            Text(done.subtracting([.underBudget]).count >= 3
+                 ? "Sound-check day earned. Every seven opens a tier and earns a record."
+                 : "Complete three of today’s actions for a sound-check day. Yesterday’s reward is separate.")
+                .font(.caption).foregroundStyle(Theme.textDim)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
                       spacing: 8) {
                 ForEach(Chore.allCases) { chore in
@@ -297,10 +305,11 @@ struct BuddyCard: View {
 
 // MARK: - The tour
 
-/// The weight journey, in tracks of 5 lb. Shows how close the next finish
+/// The weight journey, in ten proportional tracks. Shows how close the next finish
 /// line is, what it unlocks, and where the next record comes from.
 struct TourCard: View {
     let plan: Plan
+    let targets: DailyTargets
     @State private var confirmNewTour = false
 
     private var store: BuddyStore { .shared }
@@ -329,6 +338,12 @@ struct TourCard: View {
                 }
             }
 
+            Text("This tour: \(lb(tour.start)) → \(lb(tour.goal)) lb · \(lb(tour.trackPounds)) lb per track")
+                .font(.caption).foregroundStyle(Theme.textDim)
+            if plan.goalWeight != tour.goal {
+                Text("Your Settings goal is \(lb(plan.goalWeight)) lb. Start a new tour below to use it; this tour keeps its original milestones.")
+                    .font(.caption).foregroundStyle(Theme.textDim)
+            }
             trackBar(tour)
 
             if let toNext = tour.toNextTrack, let t = tour.currentTrack {
@@ -343,11 +358,11 @@ struct TourCard: View {
             }
             HStack(spacing: 8) {
                 Sprite("optical_disk", size: 22)
-                Text("Next record when the trend reaches \(lb(tour.nextRecordAt)) lb.")
+                Text(tour.nextRecordAt < tour.goal ? "Keep collecting: every seven sound-check days earns a record." : "Next record when the trend reaches \(lb(tour.nextRecordAt)) lb.")
                     .font(.footnote).foregroundStyle(Theme.textDim)
             }
 
-            if tour.freshStartSuggested || tour.finished {
+            if tour.freshStartSuggested || tour.finished || plan.goalWeight != tour.goal {
                 Button { confirmNewTour = true } label: {
                     Label(tour.finished ? "Start the next tour" : "Start a new tour from \(lb(tour.current)) lb",
                           systemImage: "arrow.counterclockwise")
@@ -355,8 +370,9 @@ struct TourCard: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.accent)
+                .disabled(plan.goalWeight <= 0 || plan.goalWeight >= tour.current)
                 Text(tour.finished
-                     ? "You reached the goal. A new tour keeps the records coming — set a new goal in Settings first if you want one."
+                     ? "You reached the goal. Sound-check days keep earning records during maintenance. If you choose another goal in Settings, start a new tour to use it."
                      : "The trend's above where this tour began, so every track is behind a hill. A new tour starts the count from today. Everything you've earned stays.")
                     .font(.caption).foregroundStyle(Theme.textDim)
             }
@@ -365,10 +381,10 @@ struct TourCard: View {
                             isPresented: $confirmNewTour, titleVisibility: .visible) {
             Button("Start new tour") {
                 Haptics.success()
-                store.startNewTour(plan: plan)
+                store.startNewTour(plan: plan, targets: targets)
             }
         } message: {
-            Text("Tracks count down from \(lb(tour.current)) lb. Your records, gear and notes all stay.")
+            Text("New tour: \(lb(tour.current)) → \(lb(plan.goalWeight)) lb. Weight progress starts at zero. Your records, gear, promo, notes, and sound-check days stay.")
         }
     }
 

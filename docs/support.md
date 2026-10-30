@@ -88,14 +88,14 @@ No. The look and the name are cosmetic. Records, gear, notes, and the tour all s
 **I gained weight. Did I lose records or tracks?**
 Never. Records and tracks are paid against your trend's *best* point, so a rebound takes nothing back. If the trend climbs above where the tour started, the Tour card offers a fresh tour from today.
 
-**My buddy is sick.**
-The food's been heavy on red (calorie-dense) items lately. A sick buddy halves the studio's earnings until the food picks up, but it never takes anything away. A day or two of greener meals turns it around. See [Health](studio#health).
+**Does food make my buddy sick?**
+No. Nutrition logs can add a bonus of up to 25%, but never penalize normal production. Calorie density does not affect it. See [Nutrition bonus](studio#nutrition-bonus).
 
 **The studio stopped growing.**
-That's by design when the trend weight isn't moving. Generators and gear unlock, and generator levels are capped, by how far you've got toward your goal. Keep logging and the next unlock opens when the trend reaches the weight shown next to it.
+Complete three of today's sound-check actions to earn a day toward the next tier. Every seven qualifying days opens a tier; they need not be consecutive. Weight progress can unlock tiers sooner. Once all tiers are open, weekly records and weight-tour achievements continue. Collect the jar daily and buy Promo to increase production.
 
-**Why didn't I get notes for being under budget?**
-It counts once three meals are logged, so breakfast alone doesn't qualify.
+**Why didn't I get the on-target reward?**
+It is evaluated for yesterday, after the day is complete, and needs three logged meals with calories within 90–110% of the target. Partial days and very low intake do not qualify. Other logging rewards and sound-check days still count regardless of that range.
 
 **Spotify says the account isn't allowed.**
 Spotify apps in development mode only accept accounts added under **User Management** in the Spotify developer dashboard (up to 25). Add your email there and link again.

@@ -139,7 +139,7 @@ enum StudioCatalog {
 
         // Shelf
         Gear(id: "coffee", name: "Coffee", sprite: "hot_beverage", slot: .shelf, price: 30,
-             blurb: "Black. Zero calories. Allowed."),
+             blurb: "Something warm between takes."),
         Gear(id: "candle", name: "Candle", sprite: "candle", slot: .shelf, price: 40,
              blurb: "Vibes, measured in lumens."),
         Gear(id: "plant", name: "Potted Plant", sprite: "potted_plant", slot: .shelf, price: 50,
@@ -237,7 +237,6 @@ enum StudioCatalog {
     static let encorePrice = 120
     static let maxEncores = 2
     static let recordPrice = 200
-    static let recordPriceGrowth = 3.0
 
     static func gear(_ id: String) -> Gear? {
         id == trophy.id ? trophy : all.first { $0.id == id }
@@ -255,33 +254,44 @@ enum StudioCatalog {
 
     // MARK: Tiers — normalized to the goal
 
-    /// Every item for sale sits in one of ten tiers by price. Tier t unlocks
-    /// at t/9 of the way from starting weight to goal, so the top tier — the
-    /// last bandmates — only opens at the goal itself.
+    /// Deliberate, stable unlocks: adding an item cannot move existing gear.
+    /// A new tier opens every seven qualifying logging days, or sooner when
+    /// weight progress reaches it. The trophy remains weight-only.
     static let tierCount = 10
+    static let tierItems: [[String]] = [
+        ["coffee", "bulb", "candle", "plant", "maracas", "picture", "wall.plum"],
+        ["band.snail", "sunflower", "flute", "books", "lantern", "floor.walnut"],
+        ["band.turtle", "headphones", "guitar", "tulip", "score", "wall.forest"],
+        ["band.duck", "mic", "balloon", "clock", "bear", "wall.sunset", "speakers"],
+        ["band.rabbit", "drum", "chime", "bell", "cactus", "wall.cream"],
+        ["band.dog", "djembe", "rainbow", "cassette", "bouquet", "floor.concrete"],
+        ["band.beaver", "trumpet", "poster.sunrise", "camera", "fish", "wall.ocean"],
+        ["band.parrot", "banjo", "poster.city", "joystick", "couch", "floor.carpet", "planet"],
+        ["band.flamingo", "accordion", "poster.night", "crystal", "tv", "wall.neon"],
+        ["band.dodo", "band.peacock", "violin", "poster.fireworks", "poster.galaxy", "palm", "wall.gold", "floor.stage"],
+    ]
 
-    private static let tiers: [String: Int] = {
-        let sorted = forSale.sorted { ($0.price, $0.id) < ($1.price, $1.id) }
-        var out: [String: Int] = [:]
-        for (i, gear) in sorted.enumerated() {
-            out[gear.id] = min(tierCount - 1, i * tierCount / max(1, sorted.count))
-        }
-        return out
-    }()
-
-    static func tier(_ gear: Gear) -> Int { tiers[gear.id] ?? 0 }
+    static func tier(_ gear: Gear) -> Int {
+        tierItems.firstIndex { $0.contains(gear.id) } ?? 0
+    }
 
     static func unlockAt(_ gear: Gear) -> Double {
         gear.exclusive ? 1 : Double(tier(gear)) / Double(tierCount - 1)
     }
 
-    /// The studio's output grows exponentially as the goal gets closer, so
-    /// prices do too — each tier costs about what a few hours of the studio
-    /// make at the point it unlocks. Calibrated by `IdleSimulationTests`.
-    static let tierScale: [Double] = [5e3, 1.1e5, 1.1e6, 2.1e6, 1.5e7, 1.6e8, 2.0e8, 1.8e9, 1.3e9, 2.3e9]
-
+    /// Prices represent 2–4 hours of a reference studio at the tier's unlock.
+    /// They are fixed per item: buying generators never raises a gear price.
+    /// Coffee is an immediate first purchase alongside the first busker.
     static func price(_ gear: Gear) -> Double {
-        Double(gear.price) * tierScale[min(tierCount - 1, tier(gear))]
+        guard gear.price > 0 else { return 0 }
+        if gear.id == "coffee" { return 30 }
+        let p = unlockAt(gear)
+        let cap = Generator.levelCap(progress: p)
+        let base = IdleEngine.generators.filter { $0.unlockAt <= p + 1e-9 }
+            .reduce(0.0) { $0 + Double(cap) * $1.baseRate }
+        let referenceRate = base * IdleEngine.progressMultiplier(p) * 1.5
+        let hours = gear.slot == .band ? 4.0 : 2.0 + Double(gear.price % 100) / 100
+        return (referenceRate * 3600 * hours).rounded()
     }
 
     /// One item a day at 40% off. Seeded by the date so it's the same deal all

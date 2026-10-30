@@ -83,6 +83,10 @@ struct BuddyState: Codable {
     var tourNumber: Int = 1
     var tourStart: Double?
     var tourStartDate: Date?
+    /// Frozen for this tour; Settings edits take effect only on a new tour.
+    var tourGoal: Double?
+    var loggingDays: [String] = []
+    var royaltyJar: RoyaltyJar?
 
     // The balance. Idle income can't be derived from the log the way the
     // first version's notes were, so it's stored; `nil` means this state
@@ -98,7 +102,7 @@ struct BuddyState: Codable {
     /// against this, so a rebound never re-locks anything.
     var peakProgress: Double = 0
     /// Last computed food health, 0…1, for the widget.
-    var health: Double = 0.5
+    var health: Double = 0
 
     // Pre-idle bookkeeping, kept so old states migrate.
     var bank: Int = 0
@@ -113,7 +117,7 @@ struct BuddyState: Codable {
     var records: [CollectedRecord] = []
     /// Records earned but not yet picked.
     var digs: Int = 0
-    /// Records bought with notes; each one costs `recordPriceGrowth`× the last.
+    /// Records bought with notes; the time cost rises gently, then caps.
     var recordsBought: Int = 0
     var encores: Int = 0
 
@@ -141,6 +145,9 @@ struct BuddyState: Codable {
         tourNumber = v(.tourNumber, d.tourNumber)
         tourStart = v(.tourStart, d.tourStart)
         tourStartDate = v(.tourStartDate, d.tourStartDate)
+        tourGoal = v(.tourGoal, d.tourGoal)
+        loggingDays = v(.loggingDays, d.loggingDays)
+        royaltyJar = v(.royaltyJar, d.royaltyJar)
         notes = v(.notes, d.notes)
         lifetimeNotes = v(.lifetimeNotes, d.lifetimeNotes)
         generators = v(.generators, d.generators)
@@ -188,7 +195,19 @@ final class BuddyStore {
         didSet { save() }
     }
 
+    private let persists: Bool
+    private let clock: () -> Date
+
+    /// In-memory stores let simulations exercise the same transactions as the app.
+    init(initialState: BuddyState, clock: @escaping () -> Date) {
+        persists = false
+        self.clock = clock
+        state = initialState
+    }
+
     private init() {
+        persists = true
+        clock = Date.init
         if let data = UserDefaults.standard.data(forKey: Self.key),
            let decoded = try? JSONDecoder().decode(BuddyState.self, from: data) {
             state = decoded
@@ -198,6 +217,7 @@ final class BuddyStore {
     }
 
     private func save() {
+        guard persists else { return }
         if let data = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }
@@ -236,11 +256,12 @@ final class BuddyStore {
 
     /// Onboarding: a brand-new buddy, a brand-new tour. Wipes everything, so
     /// a fresh start after "Erase All Data" is genuinely fresh.
-    func setUp(species: Species, name: String, startWeight: Double, startDate: Date) {
+    func setUp(species: Species, name: String, startWeight: Double, startDate: Date, goalWeight: Double? = nil) {
         var s = BuddyState()
         s.species = species
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         s.name = trimmed.isEmpty ? species.defaultName : trimmed
+        s.tourGoal = goalWeight
         s.tourStart = startWeight
         s.tourStartDate = Calendar.current.startOfDay(for: startDate)
         // A head start — the endowed-progress effect. Enough for the first
@@ -248,7 +269,7 @@ final class BuddyStore {
         // already been.
         s.notes = 60
         s.lifetimeNotes = 60
-        s.jarSince = Date()
+        s.jarSince = clock()
         s.awarded = ["starter"]
         state = s
     }
@@ -276,7 +297,17 @@ final class BuddyStore {
     // MARK: The economy
 
     var notes: Double { state.notes ?? 0 }
-    var progress: Double { state.peakProgress }
+    var progress: Double {
+        IdleEngine.studioProgress(weight: state.peakProgress, loggingDays: state.loggingDays.count)
+    }
+
+    func unlockDescription(_ fraction: Double, plan: Plan) -> String {
+        let start = state.tourStart ?? plan.startingWeight
+        let goal = state.tourGoal ?? plan.goalWeight
+        let weight = start - fraction * max(0, start - goal)
+        let days = IdleEngine.loggingDaysRequired(progress: fraction)
+        return "At \(weight.formatted(.number.precision(.fractionLength(1)))) lb or \(days) sound-check days"
+    }
 
     private var bandmates: Int {
         state.owned.compactMap(StudioCatalog.gear).filter { $0.slot == .band }.count
@@ -287,14 +318,14 @@ final class BuddyStore {
     }
 
     func today(_ plan: Plan) -> DayLog? {
-        plan.days.first { Calendar.current.isDateInToday($0.date) }
+        plan.days.first { Calendar.current.isDate($0.date, inSameDayAs: clock()) }
     }
 
     func multipliers(plan: Plan, targets: DailyTargets) -> IdleEngine.Multipliers {
         var m = IdleEngine.Multipliers()
-        m.progress = IdleEngine.progressMultiplier(state.peakProgress)
+        m.progress = IdleEngine.progressMultiplier(progress)
         m.health = IdleEngine.healthMultiplier(state.health)
-        let done = today(plan).map { BuddyEngine.choresDone(day: $0, targets: targets).count } ?? 0
+        let done = today(plan).map { BuddyEngine.choresDone(day: $0, targets: targets, now: clock()).count } ?? 0
         m.hype = IdleEngine.hypeMultiplier(choresDone: done)
         m.collection = IdleEngine.collectionMultiplier(gear: gearCount, bandmates: bandmates)
         return m
@@ -307,13 +338,29 @@ final class BuddyStore {
 
     var jarCapacity: TimeInterval { IdleEngine.jarHours * 3600 }
 
-    /// What's in the jar at `date`, at `rate`.
-    func jar(rate: Double, at date: Date = Date()) -> Double {
-        let since = state.jarSince ?? date
-        return rate * min(jarCapacity, max(0, date.timeIntervalSince(since)))
+    func jar(at date: Date = Date()) -> Double {
+        state.royaltyJar?.amount(at: date) ?? 0
     }
 
-    func jarFullAt() -> Date { (state.jarSince ?? Date()).addingTimeInterval(jarCapacity) }
+    func jarFullAt() -> Date {
+        state.royaltyJar?.fullAt ?? clock().addingTimeInterval(jarCapacity)
+    }
+
+    /// Settle using the saved rates before changing any multiplier or level.
+    private func refreshJar(plan: Plan, targets: DailyTargets) {
+        let now = clock()
+        let m = multipliers(plan: plan, targets: targets)
+        let rate = IdleEngine.baseRate(levels: state.generators) * m.total
+        let overnight = rate / m.hype
+        var s = state
+        if s.royaltyJar == nil {
+            // A one-time migration; old versions did not save historical rates.
+            s.royaltyJar = RoyaltyJar(at: s.jarSince ?? now, rate: rate,
+                                      overnightRate: overnight, capacityHours: IdleEngine.jarHours)
+        }
+        s.royaltyJar?.update(at: now, rate: rate, overnightRate: overnight)
+        state = s
+    }
 
     private func earn(_ amount: Double, into s: inout BuddyState) {
         s.notes = (s.notes ?? 0) + amount
@@ -323,10 +370,13 @@ final class BuddyStore {
     /// Empty the jar into the balance.
     @discardableResult
     func collect(plan: Plan, targets: DailyTargets) -> Double {
-        let amount = jar(rate: rate(plan: plan, targets: targets))
+        refreshJar(plan: plan, targets: targets)
+        let amount = jar(at: clock())
         var s = state
         earn(amount, into: &s)
-        s.jarSince = Date()
+        s.jarSince = clock()
+        s.royaltyJar = RoyaltyJar(at: clock(), rate: rate(plan: plan, targets: targets),
+                                  overnightRate: rate(plan: plan, targets: targets) / multipliers(plan: plan, targets: targets).hype)
         state = s
         publishWidget(plan: plan, targets: targets)
         return amount
@@ -336,9 +386,9 @@ final class BuddyStore {
 
     func level(_ g: Generator) -> Int { state.generators[g.id] ?? 0 }
 
-    func isUnlocked(_ g: Generator) -> Bool { g.unlockAt <= state.peakProgress + 1e-9 }
+    func isUnlocked(_ g: Generator) -> Bool { g.unlockAt <= progress + 1e-9 }
 
-    var levelCap: Int { Generator.levelCap(progress: state.peakProgress) }
+    var levelCap: Int { Generator.levelCap(progress: progress) }
 
     func buy(_ g: Generator, plan: Plan, targets: DailyTargets) -> Bool {
         let cost = g.cost(level: level(g))
@@ -350,6 +400,7 @@ final class BuddyStore {
         s.notes = notes - cost
         s.generators[g.id, default: 0] += 1
         state = s
+        refreshJar(plan: plan, targets: targets)
         publishWidget(plan: plan, targets: targets)
         return true
     }
@@ -359,21 +410,27 @@ final class BuddyStore {
     func tour(plan: Plan) -> Tour {
         BuddyEngine.tour(plan: plan, number: state.tourNumber,
                          start: state.tourStart ?? plan.startingWeight,
-                         since: state.tourStartDate ?? plan.startDate)
+                         since: state.tourStartDate ?? plan.startDate,
+                         goal: state.tourGoal, today: clock())
     }
 
     /// Start counting again from today's trend. Finished tracks and records
     /// from the old tour stay — nothing earned is ever taken back.
-    func startNewTour(plan: Plan) {
-        let current = CalorieEngine.trendWeight(plan: plan)
+    func startNewTour(plan: Plan, targets: DailyTargets) {
+        let current = tour(plan: plan).current
+        guard plan.goalWeight.isFinite, plan.goalWeight > 0, plan.goalWeight < current else { return }
+        refreshJar(plan: plan, targets: targets)
         state.tourNumber += 1
         state.tourStart = current
-        state.tourStartDate = Calendar.current.startOfDay(for: Date())
+        state.tourStartDate = Calendar.current.startOfDay(for: clock())
+        state.tourGoal = plan.goalWeight
+        state.peakProgress = 0
+        refreshJar(plan: plan, targets: targets)
     }
 
     var newLowToday: Bool {
         guard let d = state.newLowDay else { return false }
-        return Calendar.current.isDateInToday(d)
+        return Calendar.current.isDate(d, inSameDayAs: clock())
     }
 
     private static let dayKey: DateFormatter = {
@@ -390,9 +447,10 @@ final class BuddyStore {
     /// every award has a key, and a key only ever pays once.
     @discardableResult
     func sync(plan: Plan, targets: DailyTargets) -> [BuddyAward] {
+        refreshJar(plan: plan, targets: targets)
         var s = state
         var awards: [BuddyAward] = []
-        let now = Date()
+        let now = clock()
         let cal = Calendar.current
 
         // Existing users meet the studio for the first time: their tour starts
@@ -408,9 +466,28 @@ final class BuddyStore {
             }
         }
 
-        // Progress and health first — everything below is priced off them.
-        s.peakProgress = max(s.peakProgress, IdleEngine.goalProgress(plan: plan))
-        s.health = IdleEngine.health(plan: plan, today: now)
+        // Freeze the goal on migration; never preserve an old fraction whose
+        // denominator may have changed in Settings. Owned items remain intact.
+        if s.tourGoal == nil {
+            s.tourGoal = plan.goalWeight
+            s.peakProgress = 0
+        }
+        let activeTour = BuddyEngine.tour(plan: plan, number: s.tourNumber,
+                                         start: s.tourStart ?? plan.startingWeight,
+                                         since: s.tourStartDate ?? plan.startDate,
+                                         goal: s.tourGoal, today: now)
+        s.peakProgress = max(s.peakProgress, IdleEngine.goalProgress(
+            start: activeTour.start, goal: activeTour.goal, best: activeTour.best))
+        s.health = IdleEngine.health(plan: plan, targets: targets, today: now)
+        // Count distinct days permanently, even across rebounds and new tours.
+        // Any three current-day actions qualify; no calorie/weight outcome needed.
+        var logged = Set(s.loggingDays)
+        for day in plan.days where day.date >= plan.startDate && day.date <= now {
+            let actions = BuddyEngine.choresDone(day: day, targets: targets, now: now)
+                .subtracting([.underBudget])
+            if actions.count >= 3 { logged.insert(Self.dayKey.string(from: day.date)) }
+        }
+        s.loggingDays = logged.sorted()
         state = s
         let rate = self.rate(plan: plan, targets: targets)
 
@@ -426,7 +503,7 @@ final class BuddyStore {
                 guard let d = cal.date(byAdding: .day, value: -back, to: now),
                       let day = plan.days.first(where: { cal.isDate($0.date, inSameDayAs: d) }) else { continue }
                 let key = Self.dayKey.string(from: d)
-                s.paidChores += BuddyEngine.choresDone(day: day, targets: targets).map { "\(key)|\($0.rawValue)" }
+                s.paidChores += BuddyEngine.choresDone(day: day, targets: targets, now: now).map { "\(key)|\($0.rawValue)" }
             }
         }
         if s.jarSince == nil { s.jarSince = now }
@@ -446,7 +523,7 @@ final class BuddyStore {
             guard let d = cal.date(byAdding: .day, value: -back, to: now),
                   let day = plan.days.first(where: { cal.isDate($0.date, inSameDayAs: d) }) else { continue }
             let key = Self.dayKey.string(from: d)
-            for chore in BuddyEngine.choresDone(day: day, targets: targets) {
+            for chore in BuddyEngine.choresDone(day: day, targets: targets, now: now) {
                 let id = "\(key)|\(chore.rawValue)"
                 guard !paid.contains(id) else { continue }
                 paid.insert(id)
@@ -466,7 +543,17 @@ final class BuddyStore {
 
         let tour = BuddyEngine.tour(plan: plan, number: s.tourNumber,
                                     start: s.tourStart ?? plan.startingWeight,
-                                    since: s.tourStartDate ?? plan.startDate)
+                                    since: s.tourStartDate ?? plan.startDate, goal: s.tourGoal, today: now)
+
+        let weeks = s.loggingDays.count / IdleEngine.daysPerTier
+        if weeks > 0 {
+            for week in 1...weeks {
+                pay("soundWeek\(week)") {
+                    s.digs += 1
+                    awards.append(BuddyAward(text: "Seven sound-check days. A record is yours.", big: true))
+                }
+            }
+        }
 
         // Every whole pound off the trend: a record, and an hour of output.
         if tour.poundsBanked > 0 {
@@ -510,7 +597,7 @@ final class BuddyStore {
         }
 
         // Streak milestones, once each.
-        let stats = CalorieEngine.streakStats(plan: plan, targets: targets)
+        let stats = CalorieEngine.streakStats(plan: plan, targets: targets, today: now)
         for days in [3, 7, 14, 30, 50, 75, 100, 150, 200, 365] where stats.current >= days {
             pay("streak\(days)") {
                 let bonus = max(days >= 30 ? 100 : 40, rate * 2 * 3600)
@@ -520,7 +607,7 @@ final class BuddyStore {
         }
 
         // Encores cover a missed day automatically, Duolingo-style.
-        let covered = BuddyEngine.daysToCover(plan: plan, targets: targets, encores: s.encores)
+        let covered = BuddyEngine.daysToCover(plan: plan, targets: targets, encores: s.encores, today: now)
         if !covered.isEmpty {
             plan.protectedDays.append(contentsOf: covered)
             s.encores -= covered.count
@@ -530,6 +617,7 @@ final class BuddyStore {
         }
 
         state = s
+        refreshJar(plan: plan, targets: targets)
         publishWidget(plan: plan, targets: targets)
         return awards.sorted { $0.big && !$1.big }
     }
@@ -539,20 +627,23 @@ final class BuddyStore {
     func owns(_ gear: Gear) -> Bool { state.owned.contains(gear.id) }
 
     func isUnlocked(_ gear: Gear) -> Bool {
-        StudioCatalog.unlockAt(gear) <= state.peakProgress + 1e-9
+        StudioCatalog.unlockAt(gear) <= progress + 1e-9
     }
 
     func placed(in slot: StudioSlot) -> Gear? {
         state.placed[slot.rawValue].flatMap(StudioCatalog.gear)
     }
 
-    func buy(_ gear: Gear, price: Double) -> Bool {
+    func buy(_ gear: Gear, price: Double, plan: Plan, targets: DailyTargets) -> Bool {
+        refreshJar(plan: plan, targets: targets)
         guard !owns(gear), !gear.exclusive, isUnlocked(gear), notes >= price else { return false }
         var s = state
         s.notes = notes - price
         s.owned.append(gear.id)
         s.placed[gear.slot.rawValue] = gear.id
         state = s
+        refreshJar(plan: plan, targets: targets)
+        publishWidget(plan: plan, targets: targets)
         return true
     }
 
@@ -570,13 +661,9 @@ final class BuddyStore {
     /// output — always worth something, never out of reach.
     func encorePrice(rate: Double) -> Double { max(Double(StudioCatalog.encorePrice), rate * 3600 * 1.5) }
 
-    /// Records are earned on the scale; buying one is a splurge. Each costs
-    /// several times the last, on top of three hours of the studio's output,
-    /// so notes can top up the crate a little but never stand in for losing
-    /// the weight.
+    /// A renewable collection sink costing 3–12 hours of current output.
     func recordPrice(rate: Double) -> Double {
-        max(Double(StudioCatalog.recordPrice), rate * 3600 * 3)
-            * pow(StudioCatalog.recordPriceGrowth, Double(state.recordsBought))
+        IdleEngine.recordPrice(rate: rate, bought: state.recordsBought)
     }
 
     func buyEncore(rate: Double) -> Bool {
@@ -607,16 +694,16 @@ final class BuddyStore {
     /// reward is what makes it worth checking), but it's seeded by the date so
     /// it can't be rerolled.
     func giftAvailable(plan: Plan, targets: DailyTargets) -> Bool {
-        if let last = state.lastGiftDay, Calendar.current.isDateInToday(last) { return false }
+        if let last = state.lastGiftDay, Calendar.current.isDate(last, inSameDayAs: clock()) { return false }
         guard let day = today(plan) else { return false }
-        return !BuddyEngine.choresDone(day: day, targets: targets).isEmpty
+        return !BuddyEngine.choresDone(day: day, targets: targets, now: clock()).isEmpty
     }
 
     func openGift(rate: Double) -> GiftResult {
-        let day = Calendar.current.ordinality(of: .day, in: .era, for: Date()) ?? 0
+        let day = Calendar.current.ordinality(of: .day, in: .era, for: clock()) ?? 0
         var rng = SplitMix(seed: UInt64(day) &* 0x9E3779B97F4A7C15)
         var s = state
-        s.lastGiftDay = Date()
+        s.lastGiftDay = clock()
         if rng.next() % 100 < 12 {
             s.digs += 1
             state = s
@@ -668,6 +755,7 @@ final class BuddyStore {
     /// What the home-screen widget shows. Written whenever the economy moves;
     /// the widget extrapolates the jar from `rate` and `jarSince` on its own.
     func publishWidget(plan: Plan, targets: DailyTargets) {
+        guard persists else { return }
         let tour = tour(plan: plan)
         let stats = BuddyWidgetStats(
             name: state.name,
@@ -682,7 +770,8 @@ final class BuddyStore {
             track: tour.currentTrack,
             trackCount: tour.trackCount,
             toNextTrack: tour.toNextTrack,
-            progress: state.peakProgress)
+            progress: progress,
+            royaltyJar: state.royaltyJar)
         stats.save()
         WidgetCenter.shared.reloadTimelines(ofKind: "TodayWidget")
     }

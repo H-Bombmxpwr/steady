@@ -304,7 +304,7 @@ struct DashboardView: View {
     private func card(_ card: DashboardCard) -> some View {
         switch card {
         case .weight: WeightCard(plan: plan)
-        case .tour: TourCard(plan: plan)
+        case .tour: TourCard(plan: plan, targets: targets)
         case .today: TodayCard(day: todayLog, targets: todayTargets, plan: plan)
         case .fuel:
             if !plan.sessions(on: today).isEmpty { FuelCard(plan: plan) }

@@ -26,6 +26,18 @@ struct StudioShopView: View {
                     }
                     .pickerStyle(.segmented)
 
+                    if store.state.generators.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Start your studio").font(.headline)
+                            Text("Your 60 notes cover a busker (15) and Coffee (30). Start the music, then pick your first decoration.")
+                                .font(.subheadline)
+                            Button("Hire your first busker · 15 notes") {
+                                if let busker = IdleEngine.generator("busk"),
+                                   store.buy(busker, plan: plan, targets: targets) { tab = .gear }
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                    }
                     switch tab {
                     case .gear: GearShop(plan: plan, targets: targets)
                     case .promo: PromoView(plan: plan, targets: targets)
@@ -67,7 +79,7 @@ private struct GearShop: View {
             if let deal = StudioCatalog.dailyDeal(owned: owned, progress: store.progress) {
                 VStack(alignment: .leading, spacing: 8) {
                     sectionTitle("Today's pick · 40% off")
-                    GearRow(gear: deal.gear, price: deal.price, plan: plan, failed: $failed)
+                    GearRow(gear: deal.gear, price: deal.price, plan: plan, targets: targets, failed: $failed)
                         .padding(12)
                         .background(RoundedRectangle(cornerRadius: 14).fill(Theme.warn.opacity(0.12)))
                 }
@@ -88,7 +100,7 @@ private struct GearShop: View {
                         }
                     }
                     ForEach(items) { gear in
-                        GearRow(gear: gear, price: StudioCatalog.price(gear), plan: plan, failed: $failed)
+                        GearRow(gear: gear, price: StudioCatalog.price(gear), plan: plan, targets: targets, failed: $failed)
                     }
                 }
             }
@@ -100,6 +112,7 @@ private struct GearRow: View {
     let gear: Gear
     let price: Double
     let plan: Plan
+    let targets: DailyTargets
     @Binding var failed: String?
     private var store: BuddyStore { .shared }
 
@@ -142,13 +155,13 @@ private struct GearRow: View {
             } else if locked {
                 // Gated by weight, not by notes: it opens when the trend gets there.
                 VStack(alignment: .trailing, spacing: 1) {
-                    Text("at \(lb(IdleEngine.unlockWeight(StudioCatalog.unlockAt(gear), plan: plan))) lb")
+                    Text(store.unlockDescription(StudioCatalog.unlockAt(gear), plan: plan))
                         .font(.caption.bold()).foregroundStyle(Theme.textDim)
                     Text(IdleEngine.format(price)).font(.caption2).foregroundStyle(Theme.textDim)
                 }
             } else {
                 Button {
-                    if withAnimation(.spring, { store.buy(gear, price: price) }) {
+                    if withAnimation(.spring, { store.buy(gear, price: price, plan: plan, targets: targets) }) {
                         Haptics.success()
                         failed = nil
                     } else {
@@ -190,15 +203,15 @@ private struct PromoView: View {
                     Spacer()
                     Text("\(IdleEngine.format(rate))/s").font(.headline).monospacedDigit()
                 }
-                multiplierRow("chart_increasing", "Progress to goal",
-                              "\(Int(store.progress * 100))% of the way · ×20 at the goal, ×40 once you're there", m.progress)
-                multiplierRow(BuddyHealth(score: store.state.health).sprite, "Health",
-                              "From the food you've logged this week · ×0.5 to ×1.5", m.health)
+                multiplierRow("chart_increasing", "Studio progress",
+                              stateProgressDetail, m.progress)
+                multiplierRow(BuddyHealth(score: store.state.health).sprite, "Nutrition bonus",
+                              "Protein and fiber on completed days · ×1 to ×1.25, never a penalty", m.health)
                 multiplierRow("musical_note", "Hype",
                               "+5% per sound-check item today · resets at midnight", m.hype)
                 multiplierRow("sparkles", "Collection",
                               "+3% per piece of gear, +10% per bandmate", m.collection)
-                Text("Generators unlock as your trend weight gets closer to the goal, and each one caps at \(store.levelCap) copies for now — \(Generator.levelCap(progress: 1)) at the goal. If the scale stops moving, so does the studio.")
+                Text("Complete three of today’s seven actions to earn a sound-check day. Yesterday’s on-target reward does not count toward today. Every seven days opens another gear tier and earns a record; days need not be consecutive. Weight progress can unlock tiers sooner. Promo caps at \(store.levelCap) copies for now.")
                     .font(.caption).foregroundStyle(Theme.textDim)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -212,6 +225,10 @@ private struct PromoView: View {
                 }
             }
         }
+    }
+
+    private var stateProgressDetail: String {
+        "\(store.state.loggingDays.count) sound-check days · \(Int(store.state.peakProgress * 100))% of tour · ×40 at full studio progress"
     }
 
     private func multiplierRow(_ sprite: String, _ title: String, _ detail: String, _ value: Double) -> some View {
@@ -252,7 +269,7 @@ private struct PromoView: View {
             }
             Spacer(minLength: 6)
             if !unlocked {
-                Text("at \(lb(IdleEngine.unlockWeight(g.unlockAt, plan: plan))) lb")
+                Text(store.unlockDescription(g.unlockAt, plan: plan))
                     .font(.caption.bold()).foregroundStyle(Theme.textDim)
             } else if capped {
                 Text("Max for now").font(.caption.bold()).foregroundStyle(Theme.textDim)
@@ -337,7 +354,7 @@ private struct CrateView: View {
                 }
                 .buttonStyle(.bordered).tint(Theme.accent)
             } else {
-                Text("Every new 1 lb low on your trend weight earns a record. Every 5 lb finishes a track and earns studio gear. Weigh in daily — the trend can only find new lows if it sees you.")
+                Text("Each new whole pound toward your tour goal earns a record. Each tenth of your tour finishes a track. Seven sound-check days also earn a record, even during plateaus or maintenance.")
                     .font(.footnote).foregroundStyle(Theme.textDim)
             }
         }
@@ -377,7 +394,7 @@ private struct CrateView: View {
                 }
             }
             .buttonStyle(.bordered).tint(Theme.accent)
-            Text("Records are earned on the scale. Buying one is a splurge — each costs \(Int(StudioCatalog.recordPriceGrowth))× the last.")
+            Text("Earn records from weight milestones and every seven sound-check days. Purchased records cost 3–12 hours of current studio output; the price stops growing after that.")
                 .font(.caption).foregroundStyle(Theme.textDim)
             if let failed { Text(failed).font(.caption).foregroundStyle(Theme.danger) }
         }

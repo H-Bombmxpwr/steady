@@ -49,7 +49,7 @@ enum Chore: String, CaseIterable, Identifiable {
         case .weighIn: return "Weigh in"
         case .firstFood: return "Log a food"
         case .threeMeals: return "Log 3 meals"
-        case .underBudget: return "Under budget"
+        case .underBudget: return "Yesterday on target"
         case .protein: return "Hit protein"
         case .water: return "Hit water"
         case .moved: return "Move"
@@ -109,7 +109,7 @@ struct Tour: Equatable {
     func trackEnd(_ index: Int) -> Double { total * Double(index) / Double(Self.trackCount) }
 
     var tracksDone: Int {
-        guard total > 0 else { return trackCount }
+        guard total > 0 else { return 0 }
         return (1...trackCount).filter { lostBest + 1e-6 >= trackEnd($0) }.count
     }
 
@@ -125,7 +125,7 @@ struct Tour: Equatable {
     }
 
     /// Whole pounds off the trend at its best — each one is a record.
-    var poundsBanked: Int { Int((lostBest + 1e-6).rounded(.down)) }
+    var poundsBanked: Int { Int((min(total, lostBest) + 1e-6).rounded(.down)) }
 
     /// The trend weight that earns the next record.
     var nextRecordAt: Double { start - Double(poundsBanked + 1) }
@@ -160,15 +160,18 @@ enum BuddyEngine {
         return named + legacy + quick
     }
 
-    static func choresDone(day: DayLog, targets: DailyTargets) -> Set<Chore> {
+    static func choresDone(day: DayLog, targets: DailyTargets, now: Date = Date()) -> Set<Chore> {
         var done = Set<Chore>()
         let meals = mealsLogged(day)
         if day.weight != nil { done.insert(.weighIn) }
         if day.totalCalories > 0 || !day.foods.isEmpty { done.insert(.firstFood) }
         if meals >= 3 { done.insert(.threeMeals) }
-        // Only once the day's actually been eaten — breakfast alone is always
-        // "under budget" and paying for that rewards logging less.
-        if meals >= 3, day.totalCalories > 0, day.totalCalories <= targets.calories {
+        // Only a completed day in range earns this; a partial or very low
+        // intake must never pay a calorie-outcome reward.
+        if day.date < Calendar.current.startOfDay(for: now), meals >= 3,
+           targets.calories > 0,
+           Double(day.totalCalories) >= Double(targets.calories) * 0.9,
+           Double(day.totalCalories) <= Double(targets.calories) * 1.1 {
             done.insert(.underBudget)
         }
         if targets.proteinGrams > 0, day.totalProtein >= targets.proteinGrams { done.insert(.protein) }
@@ -195,13 +198,13 @@ enum BuddyEngine {
 
     // MARK: Tour
 
-    static func tour(plan: Plan, number: Int, start: Double, since: Date) -> Tour {
-        let trend = CalorieEngine.weightTrend(plan: plan)
+    static func tour(plan: Plan, number: Int, start: Double, since: Date, goal: Double? = nil, today: Date = Date()) -> Tour {
+        let trend = CalorieEngine.weightTrend(plan: plan).filter { $0.date <= today }
         let sinceDay = Calendar.current.startOfDay(for: since)
         let onTour = trend.filter { $0.date >= sinceDay }
         let current = trend.last?.trend ?? start
         let best = min(start, onTour.map(\.trend).min() ?? start)
-        return Tour(number: number, start: start, goal: plan.goalWeight,
+        return Tour(number: number, start: start, goal: goal ?? plan.goalWeight,
                     current: current, best: best)
     }
 
@@ -307,7 +310,7 @@ enum BuddyEngine {
         case .waiting:
             pool = [
                 "Morning. Scale first, then coffee. That's the rule I just made up.",
-                "I'm standing by the scale. Ten notes says you step on it.",
+                "A weigh-in adds to the sound check. The trend handles the ups and downs.",
                 "One number before breakfast and the trend gets smarter."
             ]
         case .peckish:
@@ -335,29 +338,18 @@ enum BuddyEngine {
                 ]
             } else {
                 pool = [
-                    "Next record when the trend hits \(lb(c.tour.nextRecordAt)).",
+                    c.tour.nextRecordAt >= c.tour.goal
+                        ? "Next weight record when the trend hits \(lb(c.tour.nextRecordAt))."
+                        : "The weight goal is covered. Sound-check days keep the records coming.",
                     c.records == 0
-                        ? "The crate's empty. First pound off the trend fills it."
-                        : "\(c.records) record\(c.records == 1 ? "" : "s") in the crate. Every one of them is a pound you lost.",
+                        ? "The crate's empty. Your first pound or seven sound-check days earns a record."
+                        : "\(c.records) record\(c.records == 1 ? "" : "s") in the crate. Weight milestones, sound checks, and good finds.",
                     "Steady beats loud. Log the next thing you eat."
                 ]
             }
         }
-        // Health speaks up during the day, but never over a new low or a
-        // welcome back — those matter more than what was for lunch.
-        if c.mood == .content || c.mood == .proud || c.mood == .peckish {
-            switch c.health {
-            case .sick:
-                pool = ["Not feeling great. Too much orange-and-red on the plate lately. One green meal and I'm back.",
-                        "I'm running at half speed. It's the food, not you. Well — it's the food.",
-                        "Under the weather. Something with a vegetable in it would sort me right out."]
-            case .queasy:
-                pool = ["Bit queasy. A few heavy meals in a row will do that.",
-                        "Earnings are down a little. A green lunch fixes it faster than you'd think."]
-            case .thriving where c.mood != .peckish:
-                pool.append("Whatever you've been eating, keep it up. I've never sounded better.")
-            default: break
-            }
+        if c.health == .thriving, c.mood == .content || c.mood == .proud {
+            pool.append("Protein and fiber logged. A little extra energy for the studio.")
         }
         if let song = c.nowPlaying, c.mood != .sleeping {
             pool.append("Still spinning \(song). Good pick.")

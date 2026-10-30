@@ -1,33 +1,8 @@
 import Foundation
 
-// MARK: - The idle layer
-//
-// The studio earns on its own, Cookie Clicker style: you buy promo
-// "generators" (busking, open mics, radio play…) that each pay notes per
-// second, and every copy of one costs 15% more than the last, so each
-// purchase pays itself back a little more slowly than the one before. What
-// keeps that from being a game about *time* rather than *you* is that every
-// multiplier on top of it comes from the log:
-//
-//     rate = Σ(level × base) × progress × health × hype × collection
-//
-// * progress   — ×20 by the goal, growing smoothly with how far along you
-//                are (the prestige layer), ×2 more once you're there.
-// * health     — ×0.5 … ×1.5 from the quality of what you've been eating.
-// * hype       — +5% per sound-check item done today. Resets at midnight.
-// * collection — +3% per piece of gear, +10% per bandmate.
-//
-// Everything weight-related is measured as a *fraction* of the way from
-// starting weight to goal weight, never in pounds, so 15 lb to lose and 80
-// lb to lose play the same game at different speeds — both max out the room
-// right as they arrive.
-//
-// And it's weight that moves it, not time. Generators and gear unlock at
-// fractions of the way to the goal, the last of each only at the goal
-// itself, and each generator's level is capped by progress too. If the
-// trend stalls, so does the studio: within the unlocked tier, 15% price
-// growth against flat output means more time buys less and less, and the
-// cap stops it outright. The game can't be finished before you are.
+// The studio has two independent paths: weight milestones and consistent
+// logging. Shop access uses whichever is further along. Weight trophies stay
+// exclusive to the tour; weekly record rewards continue during maintenance.
 
 struct Generator: Identifiable, Hashable {
     let id: String
@@ -36,7 +11,7 @@ struct Generator: Identifiable, Hashable {
     /// Notes per second per level.
     let baseRate: Double
     let baseCost: Double
-    /// Fraction of the way from start weight to goal weight.
+    /// Fraction of studio progression (weight milestones or logging days).
     let unlockAt: Double
     let blurb: String
 
@@ -46,17 +21,15 @@ struct Generator: Identifiable, Hashable {
     static func levelCap(progress: Double) -> Int { 10 + Int(90 * min(1, max(0, progress))) }
 }
 
-/// How the buddy's doing, from what you've been eating.
+/// A positive nutrition-bonus indicator; the buddy never gets sick from logs.
 enum BuddyHealth: String {
-    case thriving, healthy, okay, queasy, sick
+    case thriving, healthy, okay
 
     init(score: Double) {
         switch score {
         case 0.75...: self = .thriving
         case 0.6..<0.75: self = .healthy
-        case 0.45..<0.6: self = .okay
-        case 0.3..<0.45: self = .queasy
-        default: self = .sick
+        default: self = .okay
         }
     }
 
@@ -67,19 +40,25 @@ enum BuddyHealth: String {
         case .thriving: return "smiling_face_with_hearts"
         case .healthy: return "slightly_smiling_face"
         case .okay: return "neutral_face"
-        case .queasy: return "nauseated_face"
-        case .sick: return "face_with_thermometer"
         }
     }
-
-    var isUnwell: Bool { self == .queasy || self == .sick }
 }
 
 enum IdleEngine {
     static let costGrowth = 1.15
     /// Royalties pile up for this long, then the jar's full. Long enough to
-    /// cover a night's sleep; short enough that opening the app daily matters.
-    static let jarHours = 12.0
+    /// cover a full day, so one daily check-in can collect all passive income.
+    static let jarHours = 24.0
+    static let daysPerTier = 7
+    static let loggingDaysToComplete = 63
+
+    static func studioProgress(weight: Double, loggingDays: Int) -> Double {
+        min(1, max(0, max(weight, Double(loggingDays) / Double(loggingDaysToComplete))))
+    }
+
+    static func loggingDaysRequired(progress: Double) -> Int {
+        Int((progress * Double(loggingDaysToComplete) - 1e-9).rounded(.up))
+    }
 
     static let generators: [Generator] = [
         Generator(id: "busk", name: "Busking", sprite: "guitar", baseRate: 0.1, baseCost: 15, unlockAt: 0,
@@ -93,11 +72,11 @@ enum IdleEngine {
         Generator(id: "bus", name: "Tour Bus", sprite: "bus", baseRate: 260, baseCost: 130_000, unlockAt: 0.35,
                   blurb: "Twelve cities. One working outlet."),
         Generator(id: "arena", name: "Arena Shows", sprite: "stadium", baseRate: 1_400, baseCost: 1_400_000, unlockAt: 0.5,
-                  blurb: "Halfway to goal, and the lights are bigger."),
+                  blurb: "The crowd is growing, and the lights are bigger."),
         Generator(id: "label", name: "Label Deal", sprite: "money_bag", baseRate: 7_800, baseCost: 20_000_000, unlockAt: 0.7,
                   blurb: "They want a second album. You want a second track."),
         Generator(id: "world", name: "World Tour", sprite: "airplane", baseRate: 44_000, baseCost: 330_000_000, unlockAt: 1.0,
-                  blurb: "Only at your goal weight. Every city. Earned."),
+                  blurb: "Nine weeks of sound checks, or your goal weight. Every city. Earned."),
     ]
 
     static func generator(_ id: String) -> Generator? { generators.first { $0.id == id } }
@@ -116,15 +95,14 @@ enum IdleEngine {
         var total: Double { progress * health * hype * collection }
     }
 
-    /// ×1 at the start, ×20 at the goal, exponential in between — and ×2
-    /// more for getting there.
+    /// ×1 at the start, approaching ×20, then ×40 at full studio progress.
     static func progressMultiplier(_ progress: Double) -> Double {
         let p = min(1, max(0, progress))
         return pow(20, p) * (p >= 1 - 1e-9 ? 2 : 1)
     }
 
-    /// ×0.5 when the buddy's at its sickest, ×1.5 when it's thriving.
-    static func healthMultiplier(_ score: Double) -> Double { 0.5 + min(1, max(0, score)) }
+    /// A positive bonus only: baseline ×1, up to ×1.25.
+    static func healthMultiplier(_ score: Double) -> Double { 1 + 0.25 * min(1, max(0, score)) }
 
     static func hypeMultiplier(choresDone: Int) -> Double { 1 + 0.05 * Double(choresDone) }
 
@@ -154,71 +132,36 @@ enum IdleEngine {
         max(Double(chore.notes), rate * 60 * minutes(for: chore))
     }
 
-    // MARK: Food quality → health
+    // MARK: Positive nutrition bonus
 
-    /// 0 (junk) … 1 (whole food) for one logged food. Calorie density does
-    /// most of the work — the green/orange/red the app already shows — and
-    /// fiber and added sugar nudge it.
-    static func foodScore(_ food: FoodLog) -> Double {
-        var density = food.density
-        if density == nil, let grams = food.grams, grams > 0, food.calories > 0 {
-            let kcalPerGram = Double(food.calories) / grams
-            density = kcalPerGram < 1.0 ? "green" : (kcalPerGram < 2.4 ? "orange" : "red")
-        }
-        var score: Double
-        switch density {
-        case "green": score = 0.9
-        case "orange": score = 0.55
-        case "red": score = 0.15
-        default: score = 0.5
-        }
-        if food.calories > 0 {
-            let per100 = 100 / Double(food.calories)
-            let facts = food.facts
-            score += min(0.1, facts.fiberGrams * per100 * 0.03)
-            score -= min(0.25, facts.addedSugarGrams * per100 * 0.02)
-        }
-        return min(1, max(0, score))
+    /// Rewards recorded protein and fiber, never classifies food by density.
+    /// Missing nutrition data yields no bonus, never an earnings penalty.
+    static func nutritionScore(_ day: DayLog, targets: DailyTargets) -> Double {
+        let protein = targets.proteinGrams > 0
+            ? min(1, Double(day.totalProtein) / Double(targets.proteinGrams)) : 0
+        let fiber = day.foods.reduce(0.0) { $0 + $1.facts.fiberGrams }
+        // A game bonus threshold, not an individual dietary prescription.
+        return 0.5 * max(0, protein) + 0.5 * min(1, max(0, fiber) / 20)
     }
 
-    /// A day's food quality, weighted by calories so a side salad can't
-    /// launder a large pizza. Nil when nothing's logged.
-    static func dayQuality(_ day: DayLog) -> Double? {
-        let foods = day.foods.filter { $0.calories > 0 }
-        guard !foods.isEmpty else { return nil }
-        let weight = foods.reduce(0.0) { $0 + Double($1.calories) }
-        var q = foods.reduce(0.0) { $0 + foodScore($1) * Double($1.calories) } / weight
-        q -= 0.05 * day.standardDrinks
-        return min(1, max(0, q))
-    }
-
-    /// The buddy's health: a moving average over the last week of logged
-    /// days, starting from neutral. One bad dinner dents it; a bad week makes
-    /// it sick; good food brings it back just as fast. Days with nothing
-    /// logged don't count either way.
-    static func health(plan: Plan, today: Date = Date()) -> Double {
+    /// Use completed days so editing today's meals cannot reprice yesterday.
+    static func health(plan: Plan, targets: DailyTargets, today: Date = Date()) -> Double {
         let cal = Calendar.current
         let end = cal.startOfDay(for: today)
-        guard let start = cal.date(byAdding: .day, value: -6, to: end) else { return 0.5 }
-        let days = plan.days
-            .filter { $0.date >= start && $0.date <= end }
-            .sorted { $0.date < $1.date }
-        var h = 0.5
-        for day in days {
-            if let q = dayQuality(day) { h += 0.5 * (q - h) }
-        }
-        return h
+        let start = cal.date(byAdding: .day, value: -7, to: end)!
+        let days = plan.days.filter { $0.date >= start && $0.date < end && $0.totalCalories > 0 }
+        guard !days.isEmpty else { return 0 }
+        return days.reduce(0) { $0 + nutritionScore($1, targets: targets) } / Double(days.count)
     }
 
-    // MARK: Normalized to the goal
+    static func goalProgress(start: Double, goal: Double, best: Double) -> Double {
+        guard start.isFinite, goal.isFinite, best.isFinite, start > goal else { return 0 }
+        return min(1, max(0, (start - best) / (start - goal)))
+    }
 
-    /// How far from the starting weight to the goal the trend has ever got,
-    /// 0…1. Everything that unlocks, unlocks against this.
-    static func goalProgress(plan: Plan) -> Double {
-        let total = plan.startingWeight - plan.goalWeight
-        guard total > 0 else { return 1 }
-        let best = CalorieEngine.weightTrend(plan: plan).map(\.trend).min() ?? plan.startingWeight
-        return min(1, max(0, (plan.startingWeight - best) / total))
+    static func recordPrice(rate: Double, bought: Int) -> Double {
+        // Three to twelve hours, rather than tripling forever.
+        max(200, max(0, rate) * 3600 * min(12, 3 + Double(max(0, bought))))
     }
 
     /// The trend weight that unlocks something at `fraction` of the way.

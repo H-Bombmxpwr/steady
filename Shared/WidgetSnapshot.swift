@@ -268,12 +268,17 @@ struct BuddyWidgetStats: Codable {
     var trackCount: Int
     var toNextTrack: Double?
     var progress: Double
+    var royaltyJar: RoyaltyJar? = nil
 
     func jar(at date: Date) -> Double {
-        rate * min(jarHours * 3600, max(0, date.timeIntervalSince(jarSince)))
+        royaltyJar?.amount(at: date) ?? (rate * min(jarHours * 3600, max(0, date.timeIntervalSince(jarSince))))
     }
 
-    var jarFullAt: Date { jarSince.addingTimeInterval(jarHours * 3600) }
+    func currentRate(at date: Date) -> Double {
+        royaltyJar?.currentRate(at: date) ?? rate
+    }
+
+    var jarFullAt: Date { royaltyJar?.fullAt ?? jarSince.addingTimeInterval(jarHours * 3600) }
 
     static func load() -> BuddyWidgetStats? {
         guard let data = UserDefaults(suiteName: appGroupID)?.data(forKey: key) else { return nil }

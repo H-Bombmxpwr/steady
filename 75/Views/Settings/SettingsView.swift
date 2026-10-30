@@ -129,6 +129,10 @@ struct SettingsView: View {
                             Text("lb").foregroundStyle(.secondary)
                         }
                     }
+                    if profile.mode == .weightLoss {
+                        Text("This changes your nutrition plan. Your studio tour keeps its original goal until you start a new tour on the dashboard.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if profile.mode.includesGeneralHealth {
                         Text("No deficit in this mode — your calorie target sits at maintenance, with training-day fuel added on top.")
                             .font(.caption)

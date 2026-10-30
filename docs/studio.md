@@ -5,7 +5,7 @@ summary: Your buddy, notes, records, the tour, the shop, and the mealtime check-
 
 # The Studio
 
-<p class="lede">Weight-loss mode comes with a small music studio and a buddy who runs it. Logging fills it with gear, and losing weight fills its walls with real albums. Nothing here can be lost, and nothing here is AI.</p>
+<p class="lede">Weight-loss mode comes with a small music studio and a buddy who runs it. Logging and weight milestones fill it with gear and real albums. Nothing here can be lost, and nothing here is AI.</p>
 
 ## Why it exists
 
@@ -15,8 +15,8 @@ So the rules are:
 
 - **Rewards come from logging, not from the scale.** A day's weight is mostly water. Paying out on it would punish an honest weigh-in after a salty dinner.
 - **Weight loss pays through the smoothed trend only,** and only for new lows. A bounce up can't take anything back.
-- **The game ends at your goal weight.** Not on a date, and not because you saved up. Progress toward the goal is what unlocks everything, so the last of it opens the day the trend gets there.
-- **What you eat matters, not just how much.** Healthy food makes your buddy thrive and the studio earn more. Junk makes it sick and earnings drop.
+- **Logging keeps the studio growing.** Every seven sound-check days opens another shop tier. Weight milestones can open tiers sooner; the goal trophy stays tied to your tour goal.
+- **Nutrition earns a bonus, never a penalty.** Recorded protein and fiber can add up to 25% to production. Your buddy never gets sick because of food logs.
 - **Nothing is ever lost.** No dying pet, no shrinking balance, no streak shame. Miss a week and your buddy is just glad you're back.
 - **The buddy isn't an AI.** Every line is written by hand and filled in with your own numbers, so what it says is always true.
 
@@ -24,7 +24,7 @@ So the rules are:
 
 You pick one during setup: penguin, owl, otter, hedgehog, black cat, or chipmunk. Then you name it. You can change the look or the name any time from the studio's **Buddy** tab: tap the studio's name on the dashboard, or go through **Settings → Studio & Music**. Your records, gear, notes, and tour all stay.
 
-The buddy's mood follows your day. It waits by the scale in the morning, looks at an empty plate if nothing's logged by lunch, sparkles when the sound check is mostly done, and celebrates a new low. Tap it and it hops. If the food's been heavy lately, it looks unwell: a little green, slower, and with a thermometer.
+The buddy's mood follows your day. It waits by the scale in the morning, looks at an empty plate if nothing's logged by lunch, sparkles when the sound check is mostly done, and celebrates a new low. Tap it and it hops.
 
 **App icon.** Any of the six buddies can be your home-screen icon: use **Buddy → Use as app icon** in the Studio, or **Settings → Appearance → App Icon**. If your icon is a buddy and you change the look, the icon follows.
 
@@ -36,16 +36,18 @@ What makes it a weight-loss game rather than a waiting game is everything multip
 
 | Multiplier | Range | Comes from |
 |---|---|---|
-| **Progress** | ×1 → ×20, then ×40 at the goal | How far your trend weight has got from your starting weight toward your goal |
-| **Health** | ×0.5 → ×1.5 | The quality of the food you've logged this week (see below) |
-| **Hype** | up to ×1.4 | +5% for each sound-check item done today; resets at midnight |
+| **Studio progress** | ×1 → ×20, then ×40 at completion | The further of tour weight progress or sound-check days / 63 |
+| **Nutrition** | ×1 → ×1.25 | Protein and fiber on completed logged days in the prior week |
+| **Hype** | up to ×1.35 | +5% for each of the seven current-day actions; resets at midnight |
 | **Collection** | grows | +3% per piece of gear, +10% per bandmate |
 
 Every multiplier is shown in full on the **Promo** tab, so you can always see which one is yours to move.
 
-**The jar.** Earnings collect in a royalty jar that fills for 12 hours, then stops. Tap **Collect** on the dashboard to empty it. Twelve hours covers a night's sleep, so opening the app once or twice a day keeps nothing wasted.
+**The jar.** Earnings collect for 24 hours, then stop until you collect. One daily check-in can collect a full day's passive earnings. Rate changes apply from that point forward; they do not change notes already in the jar.
 
-**It's weight that moves it, not time.** Generators unlock at fractions of the way to your goal, and the World Tour only at the goal itself. Each generator is also capped: 10 copies at the start, rising to 100 at the goal. If the trend stops moving, so does the studio. Within what you've unlocked, each copy costs more and pays the same, and the cap stops it outright. Nobody can buy their way to the end. Everyone gets there by reaching their goal weight.
+**Two ways forward.** Complete any three sound-check actions in a day to earn a sound-check day. Days need not be consecutive. Every seven such days opens another shop tier and earns a record. Weight progress can unlock tiers sooner. Promo generators use the same studio progress, with caps rising from 10 to 100 copies. The first bandmate opens after seven sound-check days or the first ninth of your weight goal. The remaining bandmates are spread across later tiers.
+
+**Your first purchases.** The starting 60 notes cover a busker (15) and Coffee (30). The shop guides you through starting production before decorating.
 
 ### The sound check
 
@@ -56,39 +58,31 @@ Logging is the boost. Each item pays a slice of the studio's current output, or 
 | Weigh in | 30 min of output |
 | Log a food | 15 min |
 | Log 3 meals | 30 min |
-| Under budget *(once 3 meals are logged)* | 20 min |
+| Yesterday on target *(completed day, three meals, 90–110% of target calories)* | 20 min |
 | Hit protein | 20 min |
 | Hit water | 10 min |
 | Move *(any workout)* | 20 min |
 | Progress photo | 10 min |
 
-Each item also adds 5% hype for the rest of the day. *Under budget* waits for three meals on purpose: breakfast alone is always under budget, and rewarding that would reward logging less.
+Current-day actions add 5% hype until midnight. Yesterday on target pays retrospectively and does not add to today's hype or qualifying action count. Logging still earns rewards when calories fall outside the range; very low intake and partial days cannot earn the calorie-outcome bonus.
 
 **Extras:** a **daily gift** once you've logged anything (10–60 minutes of output, sometimes a whole record), streak milestones (3, 7, 14, 30… days), and a head start of 60 notes on day one.
 
-## Health
+## Nutrition bonus
 
-Your buddy's health follows **what you eat**, not how much:
+The nutrition multiplier ranges from **×1 to ×1.25**. It never reduces normal production. It averages the scores of completed days with food logged during the prior week:
 
-- Each food scores by **calorie density**, the same green/orange/red the app already shows. Green (under 1 kcal/g) scores high and red (over 2.4) low. Fiber nudges it up and added sugar pulls it down.
-- A day's score is **weighted by calories**, so a side salad can't launder a large pizza. Drinks pull it down a little.
-- Health is a moving average over the last week of logged days. It starts at neutral, one heavy dinner dents it, and a bad week makes your buddy **sick**.
+- Half the bonus comes from recorded protein relative to your existing protein target.
+- Half comes from recorded fiber, up to 20 g. This is a game-bonus threshold, not a personal dietary prescription.
+- Missing nutrition facts earn no extra bonus. Calorie density and food colors do not affect it.
 
-| Health | Multiplier | Looks like |
-|---|---|---|
-| Thriving | up to ×1.5 | 🥰 |
-| Healthy | ~×1.2 | 🙂 |
-| Okay | ~×1.0 | 😐 |
-| Queasy | ~×0.8 | 🤢, and a little green |
-| Sick | down to ×0.5 | 🤒, washed out and slow |
-
-A sick buddy halves the studio's earnings, but never takes anything away: notes, gear, and records are safe. Good food brings it back about as fast as bad food brought it down.
+The buddy stays well regardless of what you log. Log the day you actually had.
 
 ## Records
 
-Every **new 1 lb low on your trend weight** earns a record: a real album with its cover art and a 30-second preview, courtesy of Apple Music. Records go up around the studio, framed on the walls first, then leaning on the shelf and the floor, then into the crate. Tap one, or the turntable, to play it. Your buddy and any bandmate dance while it spins.
+Every **new whole pound toward your tour goal** earns a record, and so does **every seven sound-check days**: a real album with its cover art and a 30-second preview, courtesy of Apple Music. Records go up around the studio, framed on the walls first, then leaning on the shelf and the floor, then into the crate. Tap one, or the turntable, to play it. Your buddy and any bandmate dance while it spins.
 
-You can also buy a record with notes, but it's meant as a splurge, not a shortcut. The first costs about three hours of the studio's output (200 notes at least), and each one after costs **3× the last**. A handful over a whole journey is affordable; a crate full is not.
+You can also buy records. The first costs three hours of current production, then each purchase adds one hour to the next price, up to a maximum of twelve hours. Every record has a minimum price of 200 notes. Weekly record rewards continue during plateaus and maintenance.
 
 ### Spotify (optional)
 
@@ -107,25 +101,15 @@ Steady reads only your top tracks and saved albums, and never writes anything ba
 
 The distance from where you started to your goal weight is split into **ten tracks**: a tenth of the distance each. That's 1.5 lb a track with 15 to lose and 5 lb a track with 50, so everyone unlocks the same things on the way. Finishing a track pays six hours of output and unlocks gear you can't buy: a studio mic, a fader, a mirror ball, a saxophone, a mixing desk, a keyboard, a wall star, and a gold medal. Reaching your goal finishes the tour and unlocks the **Tour Trophy**. Tracks are judged on your trend's best point, so a rebound never un-finishes one.
 
-**Fresh start.** If your trend climbs above where the tour began, the Tour card offers to start a new tour from today's weight. You keep everything you've earned, and the next track is close again instead of behind a hill. People are measurably more likely to try again at a clean starting line, and this gives you one whenever you need it.
+**Changing your goal.** Your tour keeps the start and goal it began with. Editing the goal in Settings changes nutrition planning, but does not rewrite the current tour or unlock new shop tiers. To use a new goal, choose **Start a new tour** on the dashboard. It starts from today's trend, resets weight progress, and keeps your gear, generators, notes, records, and sound-check days. The new goal must be below the current trend.
 
-## The shop
+**Maintenance.** Reaching the goal is a completed achievement. You do not need to choose a lower weight to keep earning records: sound-check days and affordable record purchases continue.
 
-Tap the studio's name (✏️) or the room itself. **Gear** opens first. Gear goes in a spot in the room: speakers, desk, instrument, ceiling, wall, shelf, corner, walls, floor, and a **bandmate**. Owning more than one thing for a spot lets you swap.
-
-The catalog is split into ten tiers, and **tier *t* unlocks at *t*/9 of the way to your goal**. Locked items show the trend weight that opens them. Prices climb with the studio's output, so each tier costs roughly a day of earnings at the point it opens. The top tier, the last bandmates, opens only at the goal. There's also a **Today's pick** at 40% off that changes daily.
-
-**Bandmates** are the long game: ten animals, from Shelly the snail (tour manager) to Monty the peacock (frontman). One plays along beside your buddy.
-
-**Records and Encores** never run out, so they're priced in hours of output (3 hours for a record, 1½ for an Encore). There's always something to spend on. **Encores** (hold up to two) cover a missed day automatically, so a streak survives a bad day.
-
-### Does it really end at the goal?
-
-Yes, at any size of goal. Everything is measured as a fraction of the way from start to goal, so 15 lb and 100 lb play the same game. Only the pace differs. The economy was simulated against people reaching their goal in 2, 4, 6, and 12 months. Each maxed out the room within a day of reaching their goal weight, and none of them could finish before it. A simulated person whose weight stalled at 30% of the way saw their earnings go completely flat for seven months. A person who never lost weight topped out at 18 notes a second with most of the studio locked.
+**Simulation results.** Daily-logging simulations for 100, 50, 12, and 5 lb goals bought Coffee immediately, a first bandmate on day 7, and all purchasable gear on day 63. At five logging days per week, the first bandmate arrived on day 9 and the shop finished on day 86. Plateaus did not stop weekly rewards. The purchasable room can finish before a long weight journey; weight-exclusive tracks and the trophy continue on that journey. These are game simulations, not weight-loss forecasts. [Technical rules and reproducible tests](studio-economy).
 
 ## Home-screen widget
 
-In weight-loss mode, the home-screen **Today** widget becomes your buddy's dashboard. It shows your buddy and how it's feeling, your notes, what the studio's earning per second, the jar, and your records. The large size adds your track and progress toward the goal, as a percentage, never your weight. Three buttons sit along the bottom: **Food** opens food logging, **Weight** opens a one-number weigh-in, and **Studio** opens the shop. Whatever you log there pays out the moment you close it.
+In weight-loss mode, the home-screen **Today** widget becomes your buddy's dashboard. It shows your buddy and how it's feeling, your notes, what the studio's earning per second, the jar, and your records. The large size adds your track and studio progress as a percentage, never your weight. Three buttons sit along the bottom: **Food** opens food logging, **Weight** opens a one-number weigh-in, and **Studio** opens the shop. Whatever you log there pays out the moment you close it.
 
 ## Mealtime check-ins
 

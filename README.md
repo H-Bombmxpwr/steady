@@ -107,17 +107,17 @@ Logged into **meals** (breakfast, snacks, lunch, dinner, dessert; time-of-day de
 Weight-loss mode's dashboard leads with a buddy and its music studio: a reward layer modelled on Focus Friend and Finch, with a Cookie Clicker-style idle economy, pointed at the behaviours that predict weight loss. Full write-up: [docs/studio.md](docs/studio.md).
 
 - **Buddy**: six Fluent Emoji 3D animals, picked and named at onboarding. The look and name can change any time without losing progress, and any of them can be the app icon (`Icon-Buddy-*`). Its lines are hand-written and filled from real numbers, and its mood is derived from the day (`BuddyEngine.mood`). No AI.
-- **Idle economy** (`IdleEngine`): generators pay notes/s, with cost `base × 1.15ⁿ`. `rate = Σ(level × base) × progress × health × hype × collection`. A 12-hour royalty jar is collected by tapping.
-  - **Progress** is `20^p` (×2 on arrival). `p` is the fraction of the way from `Plan.startingWeight` to `goalWeight` at the trend's best point.
-  - **Health** is ×0.5–1.5, from calorie-weighted food quality: density, fiber, added sugar, drinks, as an EWMA over 7 days (`BuddyHealth`).
+- **Idle economy** (`IdleEngine`): generators pay notes/s, with cost `base × 1.15ⁿ`. `rate = Σ(level × base) × progress × health × hype × collection`. A 24-hour royalty jar preserves historical rates and is collected by tapping.
+  - **Progress** is `20^p` (×2 on arrival). `p` is the greater of frozen-tour weight progress or qualifying logging days / 63.
+  - **Nutrition** is a positive ×1–1.25 bonus from recorded protein and fiber on completed days in the prior week. Missing data and calorie density never cause a penalty.
   - **Hype** is +5% per sound-check item today.
   - **Collection** is +3% per gear, +10% per bandmate.
-- **Normalized to the goal, gated on weight**: generators and the 10 gear tiers unlock at fractions of `p`, the last of each only at `p = 1`, and generator levels are capped at `10 + 90p`. A stalled trend means a flat studio. `IdleEngineTests` simulates 2/4/6/12-month paces: each ends on its goal day, a stall at 30% stays flat for 7 months, and no loss never ends.
+- **Two progression paths**: explicit gear tiers open every seven qualifying logging days or sooner through weight progress. Generator caps rise with the same studio progress. Weight-exclusive tracks and the goal trophy remain tied to the frozen tour. Real-store simulations cover 100/50/12/5 lb, plateaus, no loss, irregular logging and check-in frequency; see [rules and results](docs/studio-economy.md).
 - **Sound check** (`Chore`): each logging behaviour pays minutes of current output (`IdleEngine.payout`), once, via a dated ledger (`paidChores`). The balance is stored, and `BuddyState` decodes field-by-field so new fields never reset a save.
-- **Records**: each new 1 lb low on the EWMA trend's *best* point earns a dig. Pick any album via the iTunes Search API, or reveal the next one from a linked **Spotify** queue (least-played first; the most-played album is reserved for finishing a tour). Covers hang around the room, and tapping one plays a 30-s Apple Music preview.
-- **Tour**: always 10 tracks, a tenth of the distance each (`Tour`). Each finished track unlocks tour-exclusive gear, and the last one a trophy. There's a fresh-start offer when the trend is above the tour's start.
+- **Records**: each new whole pound toward the tour goal and every seven qualifying logging days earns a dig. Purchases cost 3–12 hours of production, rather than tripling indefinitely. Pick any album via the iTunes Search API, or reveal the next one from a linked **Spotify** queue (least-played first; the most-played album is reserved for finishing a tour). Covers hang around the room, and tapping one plays a 30-s Apple Music preview.
+- **Tour**: always 10 tracks, a tenth of the distance each (`Tour`). Each finished track unlocks tour-exclusive gear, and the last one a trophy. Goal edits apply to nutrition planning; an explicit new tour adopts the new goal and resets weight progress while retaining owned items and logging days.
 - **Encores** (`Plan.protectedDays`) bridge a missed day without counting as a met day.
-- **Nothing is lost**: no decay, no pet death, a welcome-back mood after a gap. Being sick slows earning but takes nothing away.
+- **Nothing is lost**: no decay, no pet death, a welcome-back mood after a gap. Food logging never makes the buddy sick or reduces baseline earnings.
 
 ### Mealtime check-ins
 

@@ -150,7 +150,7 @@ struct OnboardingView: View {
         if mode == .generalHealth { return true }
         if mode == .athlete && eatAtMaintenance { return true }
         guard let g = goalWeight else { return false }
-        return g > 50 && g <= c
+        return g > 50 && g < c
     }
 
     var body: some View {
@@ -885,7 +885,7 @@ struct OnboardingView: View {
         // A brand-new studio and tour, whatever mode — a restart after
         // "Erase All Data" shouldn't inherit the last buddy's crate.
         BuddyStore.shared.setUp(species: buddySpecies, name: buddyName,
-                                startWeight: c, startDate: plan.startDate)
+                                startWeight: c, startDate: plan.startDate, goalWeight: g)
 
         // Pull the training plan in right away, so the first dashboard the
         // athlete sees already has today's session on it.

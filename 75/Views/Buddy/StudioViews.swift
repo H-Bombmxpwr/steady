@@ -102,7 +102,7 @@ struct BuddySprite: View {
     var body: some View {
         TimelineView(.animation) { context in
             let t = context.date.timeIntervalSinceReferenceDate
-            let speed = dancing ? 7.0 : (mood == .sleeping || health.isUnwell ? 1.2 : 2.2)
+            let speed = dancing ? 7.0 : (mood == .sleeping ? 1.2 : 2.2)
             let bob = mood == .sleeping ? 0 : sin(t * speed) * (dancing ? 4 : 2)
             let breathe = 1 + sin(t * (mood == .sleeping ? 1.2 : 2.2)) * 0.02
             let sway = dancing ? sin(t * speed / 2) * 7 : (mood == .newLow ? sin(t * 5) * 5 : 0)
@@ -117,8 +117,6 @@ struct BuddySprite: View {
                     .rotationEffect(.degrees(sway), anchor: .bottom)
                     .offset(y: bob + hop)
                     .opacity(mood == .sleeping ? 0.85 : 1)
-                    .saturation(health == .sick ? 0.55 : (health == .queasy ? 0.8 : 1))
-                    .colorMultiply(health.isUnwell ? Color(red: 0.82, green: 1, blue: 0.82) : .white)
             }
             .overlay(alignment: .topTrailing) { moodBadge(t: t) }
             .overlay(alignment: .top) {
@@ -140,11 +138,7 @@ struct BuddySprite: View {
     @ViewBuilder
     private func moodBadge(t: Double) -> some View {
         let float = sin(t * 2) * 3
-        if health.isUnwell, mood != .sleeping, mood != .newLow, !dancing {
-            Sprite(health.sprite, size: size * 0.3).offset(x: size * 0.12, y: -size * 0.05 + float)
-        } else {
-            moodOnlyBadge(t: t, float: float)
-        }
+        moodOnlyBadge(t: t, float: float)
     }
 
     @ViewBuilder

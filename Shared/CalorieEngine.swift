@@ -268,9 +268,9 @@ enum CalorieEngine {
 
     // MARK: - Streaks
 
-    static func streakStats(plan: Plan, targets: DailyTargets) -> StreakStats {
+    static func streakStats(plan: Plan, targets: DailyTargets, today: Date = Date()) -> StreakStats {
         let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
+        let today = cal.startOfDay(for: today)
         let byDate = Dictionary(uniqueKeysWithValues: plan.days.map { (cal.startOfDay(for: $0.date), $0) })
 
         func met(_ date: Date) -> Bool {
