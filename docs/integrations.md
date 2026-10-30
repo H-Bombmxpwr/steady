@@ -89,9 +89,9 @@ The meal one is genuinely useful hands-free: describe dinner while you're cleani
 
 ## Live Activity
 
-On by default; switch it off with **Settings → Appearance → Mealtime Live Activity**. Your buddy, your next meal, and your remaining calories, protein, and water live on the **Lock Screen and Dynamic Island**. When a meal time arrives, it flips to that meal with a countdown until it's logged.
+On by default; switch it off with **Settings → Appearance → Mealtime Live Activity**. Your buddy, your next meal, and your remaining calories, protein, and water live on the **Lock Screen and Dynamic Island**. It only shows around meals: from 30 minutes before one until it's logged, or while your last breakfast, lunch, or dinner is still unlogged. The rest of the day it's off your Lock Screen.
 
-There's no push server behind it. The flip at mealtime uses the activity's own stale date, and everything else refreshes whenever the app runs. iOS ends a Live Activity after 8 hours, so Steady starts a fresh one when you open the app.
+There's no push server behind it. The flip at mealtime uses the activity's own stale date, and everything else refreshes whenever the app runs. iOS ends a Live Activity after 8 hours, so Steady starts a fresh one when you open the app. iOS also only lets an app *start* one while it's open, so after it clears between meals it comes back the next time you open Steady near a meal.
 
 ## Spotify
 

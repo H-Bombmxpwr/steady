@@ -10,7 +10,16 @@ import UIKit
 /// the app — flipping to "it's lunchtime" — rides on the content's
 /// `staleDate`: it's set to the next meal's time, and the view renders the
 /// stale state as the prompt.
+///
+/// It only shows around mealtimes: from a little before a meal until it's
+/// logged or its window closes, or while the last breakfast, lunch or dinner
+/// sits unlogged. The rest of the day it's gone. iOS only lets an app start a
+/// Live Activity from the foreground, so once it's gone it comes back the
+/// next time the app's opened near a meal.
 enum LiveActivityManager {
+    /// How early before a meal it appears, counting down.
+    static let leadTime: TimeInterval = 30 * 60
+
     static let enabledKey = "liveactivity.enabled"
     private static let startedKey = "liveactivity.startedAt"
 
@@ -48,24 +57,33 @@ enum LiveActivityManager {
         state.mealsPlanned = progress.planned
 
         // Goes stale at the next moment the meal picture changes on its own.
+        // Nothing near a meal and nothing missed: off the Lock Screen.
         var stale = midnight
+        let soon: (MealMoment, Date)?
         switch snapshot.mealState(at: now) {
         case let .due(meal, _, end):
+            soon = nil
             state.dueMeal = meal.label
             state.dueEnd = end
             stale = end
-        case let .logged(_, next):
-            if let next {
-                state.nextMeal = next.0.label
-                state.nextAt = next.1
-                stale = next.1
+        case let .logged(_, next): soon = next
+        case let .upcoming(meal, at): soon = (meal, at)
+        case .wrapped: soon = nil
+        }
+        if state.dueMeal == nil {
+            if let (meal, at) = soon, at.timeIntervalSince(now) <= leadTime {
+                state.nextMeal = meal.label
+                state.nextAt = at
+                stale = at
+            } else if let missed = snapshot.missedMajorMeal(at: now) {
+                // Window's closed, so it's stale straight away: "Still time to log lunch".
+                state.dueMeal = missed.meal.label
+                state.dueEnd = missed.end
+                stale = missed.end
+            } else {
+                endAll()
+                return
             }
-        case let .upcoming(meal, at):
-            state.nextMeal = meal.label
-            state.nextAt = at
-            stale = at
-        case .wrapped:
-            break
         }
         let content = ActivityContent(state: state, staleDate: stale)
 

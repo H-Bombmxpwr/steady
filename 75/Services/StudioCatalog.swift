@@ -237,6 +237,7 @@ enum StudioCatalog {
     static let encorePrice = 120
     static let maxEncores = 2
     static let recordPrice = 200
+    static let recordPriceGrowth = 3.0
 
     static func gear(_ id: String) -> Gear? {
         id == trophy.id ? trophy : all.first { $0.id == id }

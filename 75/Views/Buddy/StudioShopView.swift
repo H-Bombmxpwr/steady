@@ -377,6 +377,8 @@ private struct CrateView: View {
                 }
             }
             .buttonStyle(.bordered).tint(Theme.accent)
+            Text("Records are earned on the scale. Buying one is a splurge — each costs \(Int(StudioCatalog.recordPriceGrowth))× the last.")
+                .font(.caption).foregroundStyle(Theme.textDim)
             if let failed { Text(failed).font(.caption).foregroundStyle(Theme.danger) }
         }
     }

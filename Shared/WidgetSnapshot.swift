@@ -205,6 +205,17 @@ extension WidgetSnapshot {
         return .wrapped
     }
 
+    /// Breakfast, lunch and dinner: the meals worth chasing when they're missed.
+    static let majorMeals: Set<String> = [Meal.breakfast.rawValue, Meal.lunch.rawValue, Meal.dinner.rawValue]
+
+    /// The most recent breakfast, lunch or dinner, if its window has closed
+    /// with nothing logged. Snacks can slide; these can't.
+    func missedMajorMeal(at date: Date) -> (meal: MealMoment, end: Date)? {
+        guard let last = windows(on: date).last(where: { Self.majorMeals.contains($0.0.meal) && $0.1 <= date }),
+              last.2 <= date, !isLogged(last.0, on: date) else { return nil }
+        return (last.0, last.2)
+    }
+
     /// Meals logged out of those scheduled, for the day `date` falls on.
     func mealProgress(at date: Date) -> (logged: Int, planned: Int) {
         let moments = meals ?? []

@@ -181,9 +181,9 @@ struct BuddySprite: View {
 
 // MARK: - The studio
 
-/// The room. Every placed piece of gear and every record collected shows up
-/// somewhere in it — records go on the walls first, then the shelf, then the
-/// floor, then into the crate.
+/// The room. Every placed piece of gear shows up in it; the four newest
+/// records hang on the wall and everything older lives in the crate on the
+/// floor, which opens to show the whole collection.
 struct StudioScene: View {
     let store: BuddyStore
     var mood: BuddyMood
@@ -193,18 +193,11 @@ struct StudioScene: View {
     var onRoomTap: () -> Void = {}
 
     private var player: RecordPlayer { .shared }
+    @State private var browsingCrate = false
 
-    /// Where records hang, in the order they fill. Fractions of the room;
-    /// `size` in points; `lean` tilts the floor ones.
-    private static let recordSpots: [(x: CGFloat, y: CGFloat, size: CGFloat, lean: Double, framed: Bool)] = [
-        (0.27, 0.40, 30, 0, true),
-        (0.47, 0.40, 30, 0, true),
-        (0.66, 0.40, 30, 0, true),
-        (0.06, 0.42, 26, 0, true),
-        (0.73, 0.15, 26, 0, true),
-        (0.78, 0.27, 24, -8, false),   // on the shelf, leaning
-        (0.18, 0.80, 30, -10, false),  // floor, against the wall
-        (0.87, 0.50, 24, 0, true)
+    /// Where the newest records hang, newest first. Fractions of the room.
+    private static let wallSpots: [(x: CGFloat, y: CGFloat)] = [
+        (0.29, 0.48), (0.45, 0.48), (0.61, 0.48), (0.77, 0.48)
     ]
 
     var body: some View {
@@ -250,35 +243,40 @@ struct StudioScene: View {
                 }
                 item(.shelf, size: 36).position(x: w * 0.88, y: h * 0.36 - 18)
 
-                // Records around the room.
-                ForEach(Array(records.prefix(Self.recordSpots.count).enumerated()), id: \.element.id) { i, record in
-                    let spot = Self.recordSpots[i]
-                    RecordSleeve(record: record, size: spot.size)
-                        .padding(spot.framed ? 2 : 0)
-                        .background(spot.framed ? RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0xE7D7B8)) : nil)
-                        .rotationEffect(.degrees(spot.lean))
-                        .position(x: min(w - spot.size / 2 - 4, w * spot.x), y: h * spot.y)
+                // The newest records, framed on the wall.
+                ForEach(Array(records.suffix(Self.wallSpots.count).reversed().enumerated()), id: \.element.id) { i, record in
+                    let spot = Self.wallSpots[i]
+                    RecordSleeve(record: record, size: 30)
+                        .padding(2)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0xE7D7B8)))
+                        .position(x: w * spot.x, y: h * spot.y)
                         .onTapGesture { RecordPlayer.shared.toggle(record) }
                 }
 
                 item(.corner, size: 60).position(x: w * 0.93, y: floorY + 4)
                 item(.instrument, size: 48).position(x: w * 0.08, y: h * 0.82)
 
-                // The deck, with speakers either side.
+                // The deck, with speakers either side that thump while it plays.
                 let deckX = w * 0.43
-                if let speakers = store.placed(in: .speakers)?.asset {
-                    Sprite(speakers, size: 38).scaleEffect(x: -1).position(x: deckX - 66, y: h * 0.79)
-                    Sprite(speakers, size: 38).position(x: deckX + 66, y: h * 0.79)
-                }
+                let speakers = store.placed(in: .speakers)?.asset
+                Speaker(asset: speakers, playing: playing != nil, mirrored: true)
+                    .position(x: deckX - 62, y: h * 0.79)
+                Speaker(asset: speakers, playing: playing != nil, mirrored: false)
+                    .position(x: deckX + 62, y: h * 0.79)
                 deck(record: onDeck, spinning: playing != nil)
                     .position(x: deckX, y: h * 0.80)
                     .onTapGesture(perform: onDeckTap)
                 item(.desk, size: 26).position(x: w * 0.27, y: h * 0.92)
 
-                // The crate holds everything past the room's spots.
-                if records.count > Self.recordSpots.count {
-                    crate(extra: records.count - Self.recordSpots.count)
-                        .position(x: w * 0.6, y: h * 0.94)
+                // The crate holds everything older than the wall; tap it to
+                // flip through the whole collection.
+                if !records.isEmpty {
+                    crate(extra: max(0, records.count - Self.wallSpots.count))
+                        .position(x: w * 0.15, y: h * 0.91)
+                        .onTapGesture {
+                            Haptics.tap()
+                            browsingCrate = true
+                        }
                 }
 
                 // A bandmate, if one's moved in. Plays along when a record
@@ -298,6 +296,11 @@ struct StudioScene: View {
         }
         .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .sheet(isPresented: $browsingCrate) {
+            CrateBrowser(records: store.state.records)
+                .presentationDetents([.medium, .large])
+                .themedRoot()
+        }
     }
 
     private var isNight: Bool {
@@ -334,18 +337,144 @@ struct StudioScene: View {
         .frame(width: 90, height: 56)
     }
 
+    /// A wooden crate with sleeves poking out of the top.
     private func crate(extra: Int) -> some View {
         ZStack(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0xA16207))
-                .frame(width: 34, height: 18)
-                .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.black.opacity(0.3)))
-            Text("+\(extra)")
+            ZStack(alignment: .bottom) {
+                HStack(spacing: 2) {
+                    ForEach(0..<min(4, max(1, extra)), id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill([Color(hex: 0xE11D48), Color(hex: 0x38BDF8), Color(hex: 0xFACC15), Color(hex: 0x1F2937)][i])
+                            .frame(width: 8, height: 16)
+                            .rotationEffect(.degrees(Double(i - 1) * 6), anchor: .bottom)
+                    }
+                }
+                .offset(y: -12)
+                RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0xA16207))
+                    .frame(width: 42, height: 22)
+                    .overlay(
+                        VStack(spacing: 5) {
+                            Rectangle().fill(Color.black.opacity(0.25)).frame(height: 1)
+                            Rectangle().fill(Color.black.opacity(0.25)).frame(height: 1)
+                        }
+                        .padding(.horizontal, 3))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color.black.opacity(0.3)))
+            }
+            .frame(width: 42, height: 34, alignment: .bottom)
+            .contentShape(Rectangle())
+            if extra > 0 {
+                Text("+\(extra)")
                 .font(.system(size: 9, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 4).padding(.vertical, 1)
                 .background(Capsule().fill(Color.black.opacity(0.6)))
-                .offset(x: 6, y: -8)
+                .offset(x: 6, y: -4)
+            }
         }
+    }
+}
+
+// MARK: - Speakers
+
+/// A speaker by the deck. The bought pair if there is one, otherwise a plain
+/// wooden cabinet. The cones thump while a record spins and sit still when
+/// it doesn't.
+private struct Speaker: View {
+    let asset: String?
+    var playing: Bool
+    var mirrored: Bool
+
+    var body: some View {
+        TimelineView(.animation(paused: !playing)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            // Two beats at different speeds, so it reads as music, not a metronome.
+            let thump = playing ? CGFloat(max(0, sin(t * 9)) * 0.7 + max(0, sin(t * 4.5 + 1)) * 0.3) : 0
+            Group {
+                if let asset {
+                    // The sprite has sound waves drawn on; they're only
+                    // there while something plays.
+                    Sprite(asset, size: 34)
+                        .mask(alignment: .leading) { Rectangle().frame(width: playing ? 34 : 19) }
+                        .scaleEffect(1 + thump * 0.08, anchor: .bottom)
+                } else {
+                    cabinet(thump: thump)
+                }
+            }
+            .scaleEffect(x: mirrored ? -1 : 1)
+        }
+    }
+
+    private func cabinet(thump: CGFloat) -> some View {
+        VStack(spacing: 3) {
+            Circle().fill(Color(hex: 0x27272A)).frame(width: 8, height: 8)
+                .overlay(Circle().fill(Color(hex: 0x52525B)).frame(width: 3))
+            Circle().fill(Color(hex: 0x27272A)).frame(width: 15, height: 15)
+                .overlay(Circle().fill(Color(hex: 0x52525B)).frame(width: 6 + thump * 4))
+                .scaleEffect(1 + thump * 0.1)
+        }
+        .padding(.vertical, 4).padding(.horizontal, 3)
+        .background(RoundedRectangle(cornerRadius: 3).fill(
+            LinearGradient(colors: [Color(hex: 0x7C4A21), Color(hex: 0x4A2E17)],
+                           startPoint: .top, endPoint: .bottom)))
+        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+    }
+}
+
+// MARK: - Crate browser
+
+/// Every record you've earned, newest first. They rise out of the crate when
+/// it opens; tap one to spin it.
+private struct CrateBrowser: View {
+    let records: [CollectedRecord]
+    @State private var lifted = false
+    private var player: RecordPlayer { .shared }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 14) {
+                    NowPlayingBar()
+                        .animation(.spring(duration: 0.3), value: player.record?.id)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 12)], spacing: 14) {
+                        ForEach(Array(records.reversed().enumerated()), id: \.element.id) { i, record in
+                            tile(record)
+                                .offset(y: lifted ? 0 : 260)
+                                .opacity(lifted ? 1 : 0)
+                                .animation(.spring(response: 0.55, dampingFraction: 0.72)
+                                    .delay(Double(min(i, 16)) * 0.04), value: lifted)
+                        }
+                    }
+                }
+                .padding()
+            }
+            .brandBackground()
+            .navigationTitle("The crate · \(records.count)")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear { lifted = true }
+        }
+    }
+
+    private func tile(_ record: CollectedRecord) -> some View {
+        let playing = player.playingID == record.id
+        let loading = player.loadingID == record.id
+        return Button {
+            Haptics.tap()
+            player.toggle(record)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                ZStack {
+                    RecordSleeve(record: record, size: 92)
+                    if playing || loading {
+                        Circle().fill(.black.opacity(0.55)).frame(width: 34)
+                        if loading { ProgressView().tint(.white) }
+                        else { Image(systemName: "stop.fill").foregroundStyle(.white) }
+                    }
+                }
+                Text(record.title).font(.caption.bold()).lineLimit(1)
+                Text(record.artist).font(.caption2).foregroundStyle(Theme.textDim).lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 

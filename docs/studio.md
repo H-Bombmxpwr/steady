@@ -88,7 +88,7 @@ A sick buddy halves the studio's earnings, but never takes anything away: notes,
 
 Every **new 1 lb low on your trend weight** earns a record: a real album with its cover art and a 30-second preview, courtesy of Apple Music. Records go up around the studio, framed on the walls first, then leaning on the shelf and the floor, then into the crate. Tap one, or the turntable, to play it. Your buddy and any bandmate dance while it spins.
 
-You can also buy a record for 200 notes.
+You can also buy a record with notes, but it's meant as a splurge, not a shortcut. The first costs about three hours of the studio's output (200 notes at least), and each one after costs **3× the last**. A handful over a whole journey is affordable; a crate full is not.
 
 ### Spotify (optional)
 

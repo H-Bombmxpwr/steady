@@ -113,6 +113,8 @@ struct BuddyState: Codable {
     var records: [CollectedRecord] = []
     /// Records earned but not yet picked.
     var digs: Int = 0
+    /// Records bought with notes; each one costs `recordPriceGrowth`× the last.
+    var recordsBought: Int = 0
     var encores: Int = 0
 
     var lastGiftDay: Date?
@@ -154,6 +156,7 @@ struct BuddyState: Codable {
         placed = v(.placed, d.placed)
         records = v(.records, d.records)
         digs = v(.digs, d.digs)
+        recordsBought = v(.recordsBought, d.recordsBought)
         encores = v(.encores, d.encores)
         lastGiftDay = v(.lastGiftDay, d.lastGiftDay)
         newLowDay = v(.newLowDay, d.newLowDay)
@@ -563,10 +566,18 @@ final class BuddyStore {
         state.placed[slot.rawValue] = nil
     }
 
-    /// Records and Encores never run out, so they're priced in hours of the
-    /// studio's output — always worth something, never out of reach.
+    /// Encores never run out, so they're priced in hours of the studio's
+    /// output — always worth something, never out of reach.
     func encorePrice(rate: Double) -> Double { max(Double(StudioCatalog.encorePrice), rate * 3600 * 1.5) }
-    func recordPrice(rate: Double) -> Double { max(Double(StudioCatalog.recordPrice), rate * 3600 * 3) }
+
+    /// Records are earned on the scale; buying one is a splurge. Each costs
+    /// several times the last, on top of three hours of the studio's output,
+    /// so notes can top up the crate a little but never stand in for losing
+    /// the weight.
+    func recordPrice(rate: Double) -> Double {
+        max(Double(StudioCatalog.recordPrice), rate * 3600 * 3)
+            * pow(StudioCatalog.recordPriceGrowth, Double(state.recordsBought))
+    }
 
     func buyEncore(rate: Double) -> Bool {
         let price = encorePrice(rate: rate)
@@ -584,6 +595,7 @@ final class BuddyStore {
         var s = state
         s.notes = notes - price
         s.digs += 1
+        s.recordsBought += 1
         state = s
         return true
     }

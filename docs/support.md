@@ -64,7 +64,7 @@ Widgets refresh on a schedule iOS controls. Opening the app forces an update. If
 Check **iOS Settings → Notifications → Steady** is allowed, then **Settings → Notifications** inside Steady for the individual toggles.
 
 **Live Activity isn't showing.**
-Check **Settings → Appearance → Mealtime Live Activity** is on, and that Live Activities are allowed for Steady in **iOS Settings → Steady**. iOS only lets an app *start* one while it's open, so open Steady once and it appears.
+Check **Settings → Appearance → Mealtime Live Activity** is on, and that Live Activities are allowed for Steady in **iOS Settings → Steady**. It only shows around mealtimes, or when your last breakfast, lunch, or dinner hasn't been logged. iOS only lets an app *start* one while it's open, so open Steady near a meal and it appears.
 
 **The mealtime countdown shows the wrong meals.**
 It follows **Settings → Meal Schedule**. Switch meals on or off, or move their times there, and the widget and Live Activity follow.
