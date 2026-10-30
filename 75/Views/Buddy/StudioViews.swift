@@ -93,7 +93,7 @@ struct BuddySprite: View {
     var size: CGFloat
     var mood: BuddyMood
     var dancing: Bool
-    /// Unwell buddies look it: a little green, a little washed out, slower.
+    /// Positive nutrition indicator, shared with the studio header.
     var health: BuddyHealth = .okay
 
     @State private var hop: CGFloat = 0
@@ -189,104 +189,32 @@ struct StudioScene: View {
     private var player: RecordPlayer { .shared }
     @State private var browsingCrate = false
 
-    /// Where the newest records hang, newest first. Fractions of the room.
-    private static let wallSpots: [(x: CGFloat, y: CGFloat)] = [
-        (0.29, 0.48), (0.45, 0.48), (0.61, 0.48), (0.77, 0.48)
-    ]
+    private static let wallSpots: [CGFloat] = [106, 148, 190, 232]
 
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            let floorY = h * 0.70
+            // One artboard keeps the furniture and its objects aligned at both
+            // dashboard and compact-shop sizes; narrow phones never crop items.
+            let scale = min(geo.size.width / 360, geo.size.height / 250)
+            // When the card is wider than the artboard, wall and floor carry
+            // on out to the edges at the same floor line.
+            let floorLine = (geo.size.height - 250 * scale) / 2 + 164 * scale
             let wall = store.placed(in: .wallpaper)?.colors ?? (0x1E1B4B, 0x312E81)
             let floor = store.placed(in: .floor)?.colors ?? (0x5B3A22, 0x2E1D12)
-            let records = store.state.records
-            let playing = records.first { $0.id == player.playingID }
-            let onDeck = playing ?? records.last
-
-            ZStack(alignment: .topLeading) {
-                // Walls and floor.
-                LinearGradient(colors: [Color(hex: wall.0), Color(hex: wall.1)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(width: w, height: floorY)
-                LinearGradient(colors: [Color(hex: floor.0), Color(hex: floor.1)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(width: w, height: h - floorY)
-                    .offset(y: floorY)
-                Rectangle().fill(Color.black.opacity(0.35))
-                    .frame(width: w, height: 3).offset(y: floorY)
-
-                // Window, with the real time of day outside it.
-                ZStack(alignment: .topTrailing) {
-                    Sprite("window", size: 50)
-                    Sprite(isNight ? "crescent_moon" : "sun", size: 18).offset(x: -6, y: 6)
+            room
+                .scaleEffect(scale)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .background {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [Color(hex: wall.0), Color(hex: wall.1)],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: floorLine)
+                        LinearGradient(colors: [Color(hex: floor.0), Color(hex: floor.1)],
+                                       startPoint: .top, endPoint: .bottom)
+                    }
                 }
-                .position(x: w * 0.13, y: h * 0.2)
-
-                // Shelf ledge.
-                RoundedRectangle(cornerRadius: 2).fill(Color(hex: 0x6B4426))
-                    .frame(width: 84, height: 5)
-                    .position(x: w * 0.85, y: h * 0.36)
-
-                item(.wall, size: 42).position(x: w * 0.56, y: h * 0.2)
-                if let ceiling = store.placed(in: .ceiling), let asset = ceiling.asset {
-                    Rectangle().fill(Color.white.opacity(0.25))
-                        .frame(width: 1, height: h * 0.07)
-                        .position(x: w * 0.36, y: h * 0.035)
-                    Sprite(asset, size: 34).position(x: w * 0.36, y: h * 0.12)
-                }
-                item(.shelf, size: 36).position(x: w * 0.88, y: h * 0.36 - 18)
-
-                // The newest records, framed on the wall.
-                ForEach(Array(records.suffix(Self.wallSpots.count).reversed().enumerated()), id: \.element.id) { i, record in
-                    let spot = Self.wallSpots[i]
-                    RecordSleeve(record: record, size: 30)
-                        .padding(2)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0xE7D7B8)))
-                        .position(x: w * spot.x, y: h * spot.y)
-                        .onTapGesture { RecordPlayer.shared.toggle(record) }
-                }
-
-                item(.corner, size: 60).position(x: w * 0.93, y: floorY + 4)
-                item(.instrument, size: 48).position(x: w * 0.08, y: h * 0.82)
-
-                // The deck, with speakers either side that thump while it plays.
-                let deckX = w * 0.43
-                let speakers = store.placed(in: .speakers)?.asset
-                Speaker(asset: speakers, playing: playing != nil, mirrored: true)
-                    .position(x: deckX - 62, y: h * 0.79)
-                Speaker(asset: speakers, playing: playing != nil, mirrored: false)
-                    .position(x: deckX + 62, y: h * 0.79)
-                deck(record: onDeck, spinning: playing != nil)
-                    .position(x: deckX, y: h * 0.80)
-                    .onTapGesture(perform: onDeckTap)
-                item(.desk, size: 26).position(x: w * 0.27, y: h * 0.92)
-
-                // The crate holds everything older than the wall; tap it to
-                // flip through the whole collection.
-                if !records.isEmpty {
-                    crate(extra: max(0, records.count - Self.wallSpots.count))
-                        .position(x: w * 0.15, y: h * 0.91)
-                        .onTapGesture {
-                            Haptics.tap()
-                            browsingCrate = true
-                        }
-                }
-
-                // A bandmate, if one's moved in. Plays along when a record
-                // spins; otherwise just hangs out.
-                if let mate = store.placed(in: .band)?.asset {
-                    Bandmate(asset: mate, size: 50, playing: player.isPlaying)
-                        .position(x: w * 0.6, y: h * 0.9)
-                }
-
-                BuddySprite(species: store.state.species, size: 78, mood: mood,
-                            dancing: player.isPlaying, health: health)
-                    .position(x: w * 0.76, y: h * 0.81)
-            }
-            .frame(width: w, height: h)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onRoomTap)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onRoomTap)
         }
         .frame(height: height)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -294,6 +222,147 @@ struct StudioScene: View {
             CrateBrowser(records: store.state.records)
                 .presentationDetents([.medium, .large])
                 .themedRoot()
+        }
+    }
+
+    private var room: some View {
+        let wall = store.placed(in: .wallpaper)?.colors ?? (0x1E1B4B, 0x312E81)
+        let floor = store.placed(in: .floor)?.colors ?? (0x5B3A22, 0x2E1D12)
+        let records = store.state.records
+        let playing = records.first { $0.id == player.playingID }
+        let onDeck = playing ?? records.last
+        return ZStack(alignment: .topLeading) {
+            LinearGradient(colors: [Color(hex: wall.0), Color(hex: wall.1)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(width: 360, height: 164)
+            LinearGradient(colors: [Color(hex: floor.0), Color(hex: floor.1)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(width: 360, height: 86).offset(y: 164)
+            Rectangle().fill(Color.black.opacity(0.35))
+                .frame(width: 360, height: 3).offset(y: 162)
+            Path { path in
+                for x in stride(from: -90, through: 450, by: 90) {
+                    path.move(to: CGPoint(x: CGFloat(x) * 0.65 + 63, y: 165))
+                    path.addLine(to: CGPoint(x: x, y: 250))
+                }
+            }.stroke(Color.black.opacity(0.12), lineWidth: 1)
+            Ellipse().fill(Color(hex: 0x171E35).opacity(0.45))
+                .frame(width: 174, height: 30).position(x: 142, y: 225)
+
+            ZStack(alignment: .topTrailing) {
+                Sprite("window", size: 46)
+                Sprite(isNight ? "crescent_moon" : "sun", size: 16).offset(x: -6, y: 6)
+            }.position(x: 45, y: 42)
+            item(.wall, size: 40).position(x: 214, y: 39)
+            if let ceiling = store.placed(in: .ceiling), let asset = ceiling.asset {
+                Rectangle().fill(Color.white.opacity(0.25))
+                    .frame(width: 1, height: 14).position(x: 126, y: 7)
+                Sprite(asset, size: 30).position(x: 126, y: 28)
+            }
+
+            // Objects rest on the ledge rather than being centred over it.
+            RoundedRectangle(cornerRadius: 2).fill(Color(hex: 0x926137))
+                .frame(width: 92, height: 5).position(x: 294, y: 80)
+                .shadow(color: .black.opacity(0.3), radius: 2, y: 3)
+            item(.shelf, size: 32).position(x: 294, y: 62)
+
+            ForEach(Array(records.suffix(Self.wallSpots.count).reversed().enumerated()), id: \.element.id) { i, record in
+                RecordSleeve(record: record, size: 29)
+                    .padding(2)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0xE7D7B8)))
+                    .position(x: Self.wallSpots[i], y: 106)
+                    .onTapGesture { RecordPlayer.shared.toggle(record) }
+            }
+
+            cornerItem.position(x: 321, y: 149)
+
+            // A console supports the deck and mixing gear. The two speakers
+            // have their own ends, so neither can overlap the buddy or desk item.
+            furniture(width: 178, height: 38).position(x: 142, y: 200)
+            let speakers = store.placed(in: .speakers)?.asset
+            Speaker(asset: speakers, playing: playing != nil, mirrored: true)
+                .position(x: 68, y: 170)
+            Speaker(asset: speakers, playing: playing != nil, mirrored: false)
+                .position(x: 216, y: 170)
+            deck(record: onDeck, spinning: playing != nil)
+                .position(x: 124, y: 167)
+                .onTapGesture(perform: onDeckTap)
+            item(.desk, size: 28).position(x: 185, y: 171)
+
+            // A separate, always-visible table gives coffee a useful home
+            // without replacing the radio or the mixing equipment.
+            furniture(width: 54, height: 28).position(x: 322, y: 226)
+            item(.table, size: 25).position(x: 322, y: 199)
+
+            if store.placed(in: .instrument) != nil {
+                Path { path in
+                    path.move(to: CGPoint(x: 17, y: 191))
+                    path.addLine(to: CGPoint(x: 28, y: 179))
+                    path.addLine(to: CGPoint(x: 39, y: 191))
+                }.stroke(Color(hex: 0x27272A), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                item(.instrument, size: 40).position(x: 28, y: 165)
+            }
+            if !records.isEmpty {
+                crate(extra: max(0, records.count - Self.wallSpots.count))
+                    .position(x: 31, y: 225)
+                    .onTapGesture { Haptics.tap(); browsingCrate = true }
+            }
+            if let mate = store.placed(in: .band)?.asset {
+                Bandmate(asset: mate, size: 42, playing: player.isPlaying)
+                    .position(x: 187, y: 223)
+            }
+            BuddySprite(species: store.state.species, size: 66, mood: mood,
+                        dancing: player.isPlaying, health: health)
+                .position(x: 260, y: 207)
+        }
+        .frame(width: 360, height: 250)
+    }
+
+    /// A tabletop, front edge and legs share an origin with their objects.
+    private func furniture(width: CGFloat, height: CGFloat) -> some View {
+        ZStack(alignment: .top) {
+            HStack {
+                RoundedRectangle(cornerRadius: 2).frame(width: 5)
+                Spacer()
+                RoundedRectangle(cornerRadius: 2).frame(width: 5)
+            }
+            .foregroundStyle(Color(hex: 0x42291F))
+            .padding(.horizontal, 7).padding(.top, 5)
+            RoundedRectangle(cornerRadius: 3)
+                .fill(LinearGradient(colors: [Color(hex: 0xBC8753), Color(hex: 0x79502E)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(height: 8)
+                .overlay(alignment: .top) {
+                    Capsule().fill(Color.white.opacity(0.18)).frame(height: 1).padding(.horizontal, 3)
+                }
+        }
+        .frame(width: width, height: height)
+        .shadow(color: .black.opacity(0.18), radius: 2, y: 3)
+    }
+
+    @ViewBuilder
+    private var cornerItem: some View {
+        if let gear = store.placed(in: .corner), let asset = gear.asset {
+            if gear.id == "fish" {
+                // The source art is a fish, not a tank: give it water and glass.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5).fill(Color.cyan.opacity(0.18))
+                    RoundedRectangle(cornerRadius: 5).stroke(Color.white.opacity(0.55), lineWidth: 2)
+                    Sprite(asset, size: 31)
+                    VStack { Spacer(); RoundedRectangle(cornerRadius: 2).fill(Color(hex: 0xB29B70)).frame(height: 5) }
+                }.frame(width: 53, height: 38).offset(y: 7)
+            } else if ["sunflower", "tulip", "bouquet", "cactus"].contains(gear.id) {
+                ZStack(alignment: .bottom) {
+                    Sprite(asset, size: 43).offset(y: -10)
+                    UnevenRoundedRectangle(bottomLeadingRadius: 5, bottomTrailingRadius: 5)
+                        .fill(Color(hex: 0xB66E49)).frame(width: 20, height: 16)
+                        .overlay(alignment: .top) {
+                            Capsule().fill(Color(hex: 0xDA9A6D)).frame(width: 23, height: 4)
+                        }
+                }.frame(width: 54, height: 54)
+            } else {
+                Sprite(asset, size: 54)
+            }
         }
     }
 

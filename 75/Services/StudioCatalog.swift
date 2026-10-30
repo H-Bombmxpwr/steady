@@ -6,7 +6,7 @@ import Foundation
 /// Where a piece of gear sits in the studio. One thing per spot; owning more
 /// than one lets you swap.
 enum StudioSlot: String, CaseIterable, Identifiable, Codable {
-    case band, speakers, desk, instrument, ceiling, wall, shelf, corner, wallpaper, floor
+    case band, speakers, desk, table, instrument, ceiling, wall, shelf, corner, wallpaper, floor
 
     var id: String { rawValue }
 
@@ -14,7 +14,8 @@ enum StudioSlot: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .band: return "Bandmate"
         case .speakers: return "Speakers"
-        case .desk: return "Desk"
+        case .desk: return "Console"
+        case .table: return "Side table"
         case .instrument: return "Instrument"
         case .ceiling: return "Ceiling"
         case .wall: return "Wall"
@@ -138,9 +139,9 @@ enum StudioCatalog {
              blurb: "Very big. Makes the room feel bigger."),
 
         // Shelf
-        Gear(id: "coffee", name: "Coffee", sprite: "hot_beverage", slot: .shelf, price: 30,
+        Gear(id: "coffee", name: "Coffee", sprite: "hot_beverage", slot: .table, price: 30,
              blurb: "Something warm between takes."),
-        Gear(id: "candle", name: "Candle", sprite: "candle", slot: .shelf, price: 40,
+        Gear(id: "candle", name: "Candle", sprite: "candle", slot: .table, price: 40,
              blurb: "Vibes, measured in lumens."),
         Gear(id: "plant", name: "Potted Plant", sprite: "potted_plant", slot: .shelf, price: 50,
              blurb: "Needs watering about as often as you do."),
@@ -148,7 +149,7 @@ enum StudioCatalog {
              blurb: "Every credit, every session player."),
         Gear(id: "clock", name: "Mantel Clock", sprite: "mantelpiece_clock", slot: .shelf, price: 90,
              blurb: "Keeps time better than the drummer."),
-        Gear(id: "bell", name: "Service Bell", sprite: "bell", slot: .shelf, price: 70,
+        Gear(id: "bell", name: "Service Bell", sprite: "bell", slot: .table, price: 70,
              blurb: "Ding means encore."),
         Gear(id: "cassette", name: "Mixtape", sprite: "videocassette", slot: .shelf, price: 110,
              blurb: "Side A: songs for the gym. Side B: also songs for the gym."),
@@ -236,10 +237,24 @@ enum StudioCatalog {
 
     static let encorePrice = 120
     static let maxEncores = 2
-    static let recordPrice = 200
 
     static func gear(_ id: String) -> Gear? {
         id == trophy.id ? trophy : all.first { $0.id == id }
+    }
+
+    /// Move previously placed objects to their new surface without changing
+    /// ownership or overwriting a deliberate placement in the destination.
+    static func migratePlacement(_ placed: [String: String], owned: [String]) -> [String: String] {
+        var result = placed
+        for (oldSlot, id) in placed.sorted(by: { $0.key < $1.key }) {
+            guard let item = gear(id), item.slot.rawValue != oldSlot else { continue }
+            result.removeValue(forKey: oldSlot)
+            if result[item.slot.rawValue] == nil { result[item.slot.rawValue] = id }
+            if oldSlot == StudioSlot.shelf.rawValue, owned.contains("radio"), result[oldSlot] == nil {
+                result[oldSlot] = "radio"
+            }
+        }
+        return result
     }
 
     static var forSale: [Gear] { all.filter { !$0.exclusive && $0.price > 0 } }

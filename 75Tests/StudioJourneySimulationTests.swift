@@ -33,7 +33,6 @@ final class StudioJourneySimulationTests: XCTestCase {
         var goalReached: Int?
         var maxRewardGap = 0
         var recordsEarned = 0
-        var boughtRecords = 0
         var loggingDays = 0
         var finalNotes = 0.0
         var finalRate = 0.0
@@ -124,13 +123,6 @@ final class StudioJourneySimulationTests: XCTestCase {
                         rewardToday = true
                     }
                 }
-                // An occasional record remains a usable sink after the room is full.
-                if dayIndex % 7 == 6 && visit == scenario.visitsPerDay - 1 {
-                    let rate = store.rate(plan: plan, targets: targets)
-                    if store.notes >= store.recordPrice(rate: rate) * 2 {
-                        XCTAssertTrue(store.buyRecord(rate: rate))
-                    }
-                }
                 if result.shopComplete == nil && forSale.allSatisfy({ store.owns($0) }) {
                     result.shopComplete = dayIndex
                 }
@@ -154,12 +146,11 @@ final class StudioJourneySimulationTests: XCTestCase {
         }
         result.maxRewardGap = max(result.maxRewardGap, scenario.duration - 1 - lastRewardDay)
         result.recordsEarned = store.state.digs
-        result.boughtRecords = store.state.recordsBought
         result.loggingDays = store.state.loggingDays.count
         result.finalNotes = store.notes
         result.finalRate = store.rate(plan: plan, targets: targets)
         func day(_ value: Int?) -> String { value.map(String.init) ?? "—" }
-        print("JOURNEY | \(scenario.name) | \(scenario.duration) | \(day(result.firstDecoration)) | \(day(result.firstBandmate)) | \(day(result.shopComplete)) | \(day(result.goalReached)) | \(result.maxRewardGap) | \(result.recordsEarned) | \(result.boughtRecords)")
+        print("JOURNEY | \(scenario.name) | \(scenario.duration) | \(day(result.firstDecoration)) | \(day(result.firstBandmate)) | \(day(result.shopComplete)) | \(day(result.goalReached)) | \(result.maxRewardGap) | \(result.recordsEarned)")
         return result
     }
 
@@ -176,7 +167,7 @@ final class StudioJourneySimulationTests: XCTestCase {
             XCTAssertLessThanOrEqual(result.shopComplete ?? .max, 90, scenario.name)
             XCTAssertNotNil(result.goalReached, scenario.name)
             XCTAssertLessThanOrEqual(result.maxRewardGap, 14, scenario.name)
-            XCTAssertGreaterThan(result.boughtRecords, 5, scenario.name)
+            XCTAssertGreaterThanOrEqual(result.recordsEarned, result.loggingDays / 7, scenario.name)
         }
     }
 
@@ -192,7 +183,7 @@ final class StudioJourneySimulationTests: XCTestCase {
             XCTAssertLessThanOrEqual(result.shopComplete ?? .max, 120, scenario.name)
             XCTAssertLessThanOrEqual(result.maxRewardGap, 21, scenario.name)
             if scenario.neverLose { XCTAssertNil(result.goalReached) }
-            XCTAssertGreaterThan(result.recordsEarned, result.boughtRecords + result.loggingDays / 7 - 1)
+            XCTAssertGreaterThan(result.recordsEarned, result.loggingDays / 7 - 1)
         }
     }
 

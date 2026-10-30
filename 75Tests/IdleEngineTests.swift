@@ -42,13 +42,16 @@ final class IdleEngineTests: XCTestCase {
         XCTAssertEqual(BuddyHealth(score: 0), .okay)
     }
 
-    func testRecordPricesRemainWithinOneDaysIncome() {
-        for count in [0, 1, 5, 10, 100, 1000] {
-            let price = IdleEngine.recordPrice(rate: 100, bought: count)
-            XCTAssertLessThanOrEqual(price, 100 * 3600 * 12)
-            XCTAssertGreaterThanOrEqual(price, 100 * 3600 * 3)
-        }
-        XCTAssertEqual(IdleEngine.recordPrice(rate: 0, bought: 1000), 200)
+    func testOldCoffeePlacementMovesToTableAndRestoresRadio() throws {
+        let data = Data(#"{"owned":["radio","coffee"],"placed":{"shelf":"coffee"},"recordsBought":2}"#.utf8)
+        let state = try JSONDecoder().decode(BuddyState.self, from: data)
+        XCTAssertEqual(state.placed["table"], "coffee")
+        XCTAssertEqual(state.placed["shelf"], "radio")
+        XCTAssertEqual(state.recordsBought, 2) // Old saves still decode.
+        XCTAssertEqual(StudioCatalog.migratePlacement(state.placed, owned: state.owned), state.placed)
+        let occupied = StudioCatalog.migratePlacement(["shelf": "coffee", "table": "candle"],
+                                                       owned: ["radio", "coffee", "candle"])
+        XCTAssertEqual(occupied["table"], "candle")
     }
 
     func testJarUsesHistoricalRatesAcrossMidnightAndRateChanges() {

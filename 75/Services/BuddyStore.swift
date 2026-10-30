@@ -117,7 +117,7 @@ struct BuddyState: Codable {
     var records: [CollectedRecord] = []
     /// Records earned but not yet picked.
     var digs: Int = 0
-    /// Records bought with notes; the time cost rises gently, then caps.
+    /// Legacy bookkeeping only. Records can no longer be bought.
     var recordsBought: Int = 0
     var encores: Int = 0
 
@@ -160,7 +160,7 @@ struct BuddyState: Codable {
         awarded = v(.awarded, d.awarded)
         lastSeenEarned = v(.lastSeenEarned, d.lastSeenEarned)
         owned = v(.owned, d.owned)
-        placed = v(.placed, d.placed)
+        placed = StudioCatalog.migratePlacement(v(.placed, d.placed), owned: owned)
         records = v(.records, d.records)
         digs = v(.digs, d.digs)
         recordsBought = v(.recordsBought, d.recordsBought)
@@ -661,28 +661,12 @@ final class BuddyStore {
     /// output — always worth something, never out of reach.
     func encorePrice(rate: Double) -> Double { max(Double(StudioCatalog.encorePrice), rate * 3600 * 1.5) }
 
-    /// A renewable collection sink costing 3–12 hours of current output.
-    func recordPrice(rate: Double) -> Double {
-        IdleEngine.recordPrice(rate: rate, bought: state.recordsBought)
-    }
-
     func buyEncore(rate: Double) -> Bool {
         let price = encorePrice(rate: rate)
         guard state.encores < StudioCatalog.maxEncores, notes >= price else { return false }
         var s = state
         s.notes = notes - price
         s.encores += 1
-        state = s
-        return true
-    }
-
-    func buyRecord(rate: Double) -> Bool {
-        let price = recordPrice(rate: rate)
-        guard notes >= price else { return false }
-        var s = state
-        s.notes = notes - price
-        s.digs += 1
-        s.recordsBought += 1
         state = s
         return true
     }
@@ -797,7 +781,7 @@ extension BuddyStore {
             CollectedRecord(id: "itunes:\($0.0)", title: $0.1, artist: $0.2,
                             artworkURL: art + $0.3 + "/600x600bb.jpg", reason: "Demo")
         }
-        let gear = ["speakers", "headphones", "guitar", "lantern", "score", "plant", "couch", "wall.plum", "band.dog", "floor.walnut"]
+        let gear = ["speakers", "headphones", "guitar", "lantern", "score", "plant", "coffee", "couch", "wall.plum", "band.dog", "floor.walnut"]
         s.owned += gear
         for id in gear { if let g = StudioCatalog.gear(id) { s.placed[g.slot.rawValue] = id } }
         s.digs = 1

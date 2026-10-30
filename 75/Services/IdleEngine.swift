@@ -159,11 +159,6 @@ enum IdleEngine {
         return min(1, max(0, (start - best) / (start - goal)))
     }
 
-    static func recordPrice(rate: Double, bought: Int) -> Double {
-        // Three to twelve hours, rather than tripling forever.
-        max(200, max(0, rate) * 3600 * min(12, 3 + Double(max(0, bought))))
-    }
-
     /// The trend weight that unlocks something at `fraction` of the way.
     static func unlockWeight(_ fraction: Double, plan: Plan) -> Double {
         plan.startingWeight - fraction * max(0, plan.startingWeight - plan.goalWeight)

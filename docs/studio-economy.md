@@ -47,8 +47,7 @@ and support affordable recurring purchases. Validate real journeys for 100 lb,
   day with three logged meals and calories in 90–110% of the target. This range
   is reward design, not a prescription. Today's partial intake cannot earn it.
   Logging and weekly progression remain available outside this range.
-- Purchased records cost 3 hours plus one hour per previous purchase, capped at
-  12 hours, with a 200-note minimum. Weekly earned records continue indefinitely.
+- Records cannot be bought. Weekly earned records continue indefinitely.
 
 ## Validation
 
@@ -67,8 +66,7 @@ weight trajectory, calendar-day visits, actual food logs, actual sync and jar
 collection, purchases, gifts, weekly records, tour and streak awards. The store
 is encoded and decoded every 30 days to exercise relaunches. Shopping allocates
 50% of available notes to the best affordable generator return, then buys
-unlocked gear; the irregular-logging scenario uses 25%. Once weekly the player
-buys a record if two times its price is available. Daily deals are not assumed.
+unlocked gear; the irregular-logging scenario uses 25%. Daily deals are not assumed.
 Two-visit players log at their final visit. Non-logging days still include a visit;
 separate ledger tests verify the offline cap and rate transitions.
 

@@ -308,13 +308,11 @@ private struct CrateView: View {
     private var spotify: SpotifyLink { .shared }
     @State private var searching = false
     @State private var revealed: CollectedRecord?
-    @State private var failed: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             digs
             crate
-            buyRecord
             SpotifySection()
         }
         .sheet(isPresented: $searching) {
@@ -364,7 +362,7 @@ private struct CrateView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("The crate · \(store.state.records.count)")
             if store.state.records.isEmpty {
-                Text("Empty for now. The first pound off the trend changes that.")
+                Text("Earn your first record through a weight milestone, seven sound-check days, or a daily gift. Records cannot be bought.")
                     .font(.footnote).foregroundStyle(Theme.textDim)
             } else {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 12)], spacing: 14) {
@@ -373,30 +371,6 @@ private struct CrateView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var buyRecord: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                if store.buyRecord(rate: store.rate(plan: plan, targets: targets)) {
-                    Haptics.success()
-                    failed = nil
-                } else {
-                    failed = "Not enough notes yet."
-                }
-            } label: {
-                HStack {
-                    Text("Buy a record dig")
-                    Spacer()
-                    Sprite("musical_note", size: 14)
-                    Text(IdleEngine.format(store.recordPrice(rate: store.rate(plan: plan, targets: targets)))).monospacedDigit()
-                }
-            }
-            .buttonStyle(.bordered).tint(Theme.accent)
-            Text("Earn records from weight milestones and every seven sound-check days. Purchased records cost 3–12 hours of current studio output; the price stops growing after that.")
-                .font(.caption).foregroundStyle(Theme.textDim)
-            if let failed { Text(failed).font(.caption).foregroundStyle(Theme.danger) }
         }
     }
 }

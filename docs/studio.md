@@ -80,9 +80,9 @@ The buddy stays well regardless of what you log. Log the day you actually had.
 
 ## Records
 
-Every **new whole pound toward your tour goal** earns a record, and so does **every seven sound-check days**: a real album with its cover art and a 30-second preview, courtesy of Apple Music. Records go up around the studio, framed on the walls first, then leaning on the shelf and the floor, then into the crate. Tap one, or the turntable, to play it. Your buddy and any bandmate dance while it spins.
+Every **new whole pound toward your tour goal** earns a record, and so does **every seven sound-check days**: a real album with its cover art and a 30-second preview, courtesy of Apple Music. Your four newest records hang framed on the wall; everything older goes into the crate on the floor. Tap the crate to flip through the whole collection. Tap one, or the turntable, to play it. Your buddy and any bandmate dance while it spins.
 
-You can also buy records. The first costs three hours of current production, then each purchase adds one hour to the next price, up to a maximum of twelve hours. Every record has a minimum price of 200 notes. Weekly record rewards continue during plateaus and maintenance.
+Records can't be bought: they come from the scale, from showing up, and from the daily gift. Weekly record rewards continue during plateaus and maintenance.
 
 ### Spotify (optional)
 
@@ -103,7 +103,7 @@ The distance from where you started to your goal weight is split into **ten trac
 
 **Changing your goal.** Your tour keeps the start and goal it began with. Editing the goal in Settings changes nutrition planning, but does not rewrite the current tour or unlock new shop tiers. To use a new goal, choose **Start a new tour** on the dashboard. It starts from today's trend, resets weight progress, and keeps your gear, generators, notes, records, and sound-check days. The new goal must be below the current trend.
 
-**Maintenance.** Reaching the goal is a completed achievement. You do not need to choose a lower weight to keep earning records: sound-check days and affordable record purchases continue.
+**Maintenance.** Reaching the goal is a completed achievement. You do not need to choose a lower weight to keep earning records: sound-check days keep earning them.
 
 **Simulation results.** Daily-logging simulations for 100, 50, 12, and 5 lb goals bought Coffee immediately, a first bandmate on day 7, and all purchasable gear on day 63. At five logging days per week, the first bandmate arrived on day 9 and the shop finished on day 86. Plateaus did not stop weekly rewards. The purchasable room can finish before a long weight journey; weight-exclusive tracks and the trophy continue on that journey. These are game simulations, not weight-loss forecasts. [Technical rules and reproducible tests](studio-economy).
 
